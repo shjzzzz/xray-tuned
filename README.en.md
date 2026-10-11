@@ -146,6 +146,18 @@ The server `config.json` and the client links use only the official Xray default
 > [!IMPORTANT]
 > The server and the client links must use the same setting. After a switch, regenerate the subscription and make every client update it and reconnect. A client on an old subscription cannot connect because its padding parameters no longer match. The switch takes effect only when the installer renders the configuration; an installed machine does not change by itself.
 
+#### DNS leak protection (v5.0.7)
+
+Measured on 2026-10-11 with packet captures in a Linux netns. Windows, macOS and Android cannot be tested on the server; those changes follow the Xray / Mihomo documentation and are **untested**.
+
+- **Xray-TUN (Linux):** a resolver on the LAN subnet never entered the TUN, so every lookup left in cleartext (A and AAAA). New `xray-tun-linux-dns.sh on` points the system resolver at `198.18.0.2` inside the TUN. Measured: app lookups no longer reach the LAN resolver.
+- **Xray-TUN (Linux / Windows):** IPv6 now routes into the TUN (`fc00::1/64`, `::/0`). Measured on Linux; Windows follows the docs.
+- **Xray-TUN:** the domestic resolver `223.5.5.5` is DoH instead of cleartext UDP.
+- **Mihomo (`mihomo-full*.yaml`):** `default-nameserver` was cleartext UDP to `223.5.5.5` and `1.2.4.8`. It now uses IP-based DoH. Measured: no cleartext DNS packets leave the client.
+- **Xray server:** `dns.servers` use `https+local://` DoH instead of UDP 53. Measured: about 2.4 ms more than UDP on a reused connection; no cleartext packets to port 53 in the capture.
+
+Remaining limits: Xray-TUN resolves the node's own domain with the system resolver; the macOS Xray-TUN config has no `gateway` field and is unchanged; link subscriptions (Shadowrocket, v2rayN) cannot carry DNS settings, so enable DoH in the app.
+
 ---
 
 ## 3. Resident Management Command `xh`

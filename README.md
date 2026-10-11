@@ -179,6 +179,29 @@ sudo bash <(curl -fsSL https://github.com/ShJChow/New-Xray-core-xhttp-cdn-realit
                                 0) 退出
 ```
 
+#### DNS 泄漏防护（v5.0.7）
+
+2026-10-11 在 Linux netns 里抓包实测，修了以下几处。Windows / macOS / Android 无法在服务器上测试，对应改动依据 Xray / Mihomo 文档，**未实测**。
+
+| 位置 | 原来的泄漏 | 现在 |
+| :--- | :--- | :--- |
+| Xray-TUN（Linux） | 系统解析器指向局域网 DNS 时，该地址在直连子网内，查询不进 TUN，明文发给局域网/运营商（A 和 AAAA 都在） | 新增 `xray-tun-linux-dns.sh on`，让系统解析器指向 TUN 内的 `198.18.0.2`；实测应用查询不再到达局域网解析器 |
+| Xray-TUN（Linux / Windows） | 只路由 `0.0.0.0/0`，IPv6 绕开 TUN | 补 `fc00::1/64` 与 `::/0`（Linux 实测；Windows 依文档） |
+| Xray-TUN | 国内 DNS `223.5.5.5` 明文 UDP | 改为 DoH |
+| Mihomo（`mihomo-full*.yaml`） | `default-nameserver` 明文 UDP 到 `223.5.5.5`、`1.2.4.8`（引导 `doh.pub`） | 全部改用 IP 型 DoH（`223.5.5.5`、`1.12.12.12`），实测不再发出明文 DNS 包 |
+| Xray 服务端 | 服务器上每条域名查询以明文 UDP 53 发出 | 改为 `https+local://` DoH；实测复用连接下比 UDP 多约 2.4 ms，抓包确认无发往 53 端口的明文包 |
+
+仍然存在的限制：
+- Xray-TUN 解析节点自己的域名（`bestcf` / CDN 域名）时用系统解析器，这一条查询会发给系统 DNS。
+- macOS 的 Xray-TUN 配置没有 `gateway` 字段，IPv6 与局域网 DNS 问题保持原样，需要手工把系统 DNS 指向 TUN 内地址。
+- Shadowrocket 与 v2rayN 的链接订阅不能携带 DNS 设置，DNS 防泄漏要在 App 里开（Shadowrocket：配置里的 DNS 用 DoH；v2rayN：TUN 模式的 DNS 设置）。
+
+Linux 使用方法：
+```bash
+sudo xray run -c xray-tun-linux.json &     # 先启动
+sudo bash xray-tun-linux-dns.sh on         # 再让系统 DNS 走 TUN；用完 off
+```
+
 #### 全量 CLI 快捷指令速查表（免进菜单）
 
 | 类别 | 快捷指令 | 对应菜单 | 功能说明 |

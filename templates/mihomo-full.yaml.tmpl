@@ -71,9 +71,11 @@ dns:
     - time.*.gov
     - pool.ntp.org
     - localhost.work.weixin.qq.com
+  # default-nameserver 只用来解析下面 DoH 服务器的域名。原来写明文 UDP 223.5.5.5 / 1.2.4.8，会把明文 DNS 发给运营商
+  # （Linux netns 抓包确认）。现在全部用 IP 型 DoH 地址（证书对 IP 有效，已用 curl 校验），不再需要引导解析。
   default-nameserver:
-    - 223.5.5.5
-    - 1.2.4.8
+    - https://223.5.5.5/dns-query
+    - https://1.12.12.12/dns-query
   nameserver:
     - https://208.67.222.222/dns-query
     - https://77.88.8.8/dns-query
@@ -81,14 +83,14 @@ dns:
     - https://8.8.4.4/dns-query
   proxy-server-nameserver:
     - https://223.5.5.5/dns-query
-    - https://doh.pub/dns-query
+    - https://1.12.12.12/dns-query
   direct-nameserver:
     - https://223.5.5.5/dns-query
-    - https://doh.pub/dns-query
+    - https://1.12.12.12/dns-query
   nameserver-policy:
     "geosite:private,cn":
       - https://223.5.5.5/dns-query
-      - https://doh.pub/dns-query
+      - https://1.12.12.12/dns-query
 
 @@include templates/mihomo-proxies.yaml.tmpl
 

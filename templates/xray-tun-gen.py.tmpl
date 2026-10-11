@@ -11,6 +11,16 @@ from urllib.parse import urlparse, parse_qs, unquote
 #                           等于旧版需要手工配置的「节点 IP 直连 / 防回环」，不用再给服务器 IP 加直连路由
 #   autoSystemWfpBlockLeak  仅 Windows：用 WFP 过滤器封死 DNS 泄漏与 TUN 配置错误时的明文外泄
 # 另外：节点域名与 IP 仍写进 direct 规则，作为第二道保险（DNS 解析本身也不走 TUN）。
+#
+# DNS 泄漏（2026-10-11 在 Linux netns 里抓包实测）：
+#   1. 系统解析器指向局域网 DNS（路由器 192.168.x.1）时，该地址在直连子网内，路由比 TUN 的 0.0.0.0/0 更具体，
+#      查询根本不进 TUN，明文发给局域网/运营商（A 和 AAAA 都在）。Xray 的 TUN 入站只有 Windows 能设 dns，
+#      Linux / macOS 要让系统把解析器指向 TUN 内的地址（Linux 见同目录 xray-tun-linux-dns.sh，原理：把
+#      resolv.conf 的 nameserver 换成 198.18.0.2 后，实测应用查询不再到达局域网解析器）。
+#   2. 只加了 0.0.0.0/0：IPv6 流量与发往 IPv6 解析器的查询绕开 TUN。Linux / Windows 补上 fc00::1/64 与 ::/0
+#      （已在 Linux 实测；Windows 依文档 inbounds/tun，未实测）。macOS 没有 gateway 字段，保持原样，未实测。
+#   3. 国内 DNS 223.5.5.5 原来是明文 UDP，改成 DoH（IP 型地址，证书对 IP 有效）。
+#   仍然存在：Xray 解析节点域名（bestcf / CDN 域名）时用系统解析器，这一条域名查询会发给系统 DNS。
 
 src, outdir, reality_domain, cdn_domain, vps_ip = sys.argv[1:6]
 
@@ -90,12 +100,12 @@ if vps_ip:
 
 # TUN 入站按系统区别：只写该系统确实支持、且有意义的字段
 TUN = {
-    "linux": {"name": "xray-tun", "mtu": 1500, "gateway": ["198.18.0.1/16"],
-              "autoSystemRoutingTable": ["0.0.0.0/0"], "autoOutboundsInterface": "auto"},
+    "linux": {"name": "xray-tun", "mtu": 1500, "gateway": ["198.18.0.1/16", "fc00::1/64"],
+              "autoSystemRoutingTable": ["0.0.0.0/0", "::/0"], "autoOutboundsInterface": "auto"},
     "macos": {"mtu": 1500,
               "autoSystemRoutingTable": ["0.0.0.0/0"], "autoOutboundsInterface": "auto"},
-    "windows": {"desc": "Wintun", "mtu": 1500, "gateway": ["10.0.0.1/16"], "dns": ["1.1.1.1", "8.8.8.8"],
-                "autoSystemRoutingTable": ["0.0.0.0/0"], "autoOutboundsInterface": "auto",
+    "windows": {"desc": "Wintun", "mtu": 1500, "gateway": ["10.0.0.1/16", "fc00::1/64"], "dns": ["1.1.1.1", "8.8.8.8"],
+                "autoSystemRoutingTable": ["0.0.0.0/0", "::/0"], "autoOutboundsInterface": "auto",
                 "autoSystemWfpBlockLeak": ["dns", "misconfigtun"]},
 }
 
@@ -104,7 +114,7 @@ for osname, tun in TUN.items():
         "log": {"loglevel": "warning"},
         "dns": {
             "servers": [
-                {"address": "223.5.5.5", "domains": ["geosite:cn"], "skipFallback": True},
+                {"address": "https://223.5.5.5/dns-query", "domains": ["geosite:cn"], "skipFallback": True},
                 "https://1.1.1.1/dns-query",
                 "https://8.8.8.8/dns-query",
             ],
@@ -147,3 +157,27 @@ for osname, tun in TUN.items():
         json.dump(cfg, f, ensure_ascii=False, indent=2)
         f.write("\n")
     os.replace(tmp, path)
+
+# Linux：让系统解析器的查询也走 TUN（否则发往局域网 DNS 的查询不进 TUN，明文泄漏）。
+dns_sh = r"""#!/bin/bash
+# xray-tun-linux-dns.sh on|off
+# on : 让 systemd-resolved 把所有域名的查询交给 xray-tun 链路上的 198.18.0.2；该地址在 TUN 子网内，
+#      查询进入 TUN 后被配置里的 "port 53 -> dns-out" 规则接走，走 Xray 的 DoH，不再发给局域网 DNS。
+# off: 还原。先启动 xray-tun-linux.json 再执行 on。没有 systemd-resolved 时按提示手工改 /etc/resolv.conf。
+IF=xray-tun
+DNS=198.18.0.2
+case "$1" in
+  on)
+    if command -v resolvectl >/dev/null 2>&1; then
+      resolvectl dns "$IF" "$DNS" && resolvectl domain "$IF" '~.' && resolvectl default-route "$IF" yes && echo "已启用：系统 DNS 经 $IF"
+    else
+      echo "没有 resolvectl：把 /etc/resolv.conf 改成  nameserver $DNS  即可（用完改回）" >&2; exit 1
+    fi ;;
+  off) resolvectl revert "$IF" && echo "已还原" ;;
+  *) echo "用法: $0 on|off" >&2; exit 2 ;;
+esac
+"""
+p = os.path.join(outdir, "xray-tun-linux-dns.sh")
+with open(p, "w", encoding="utf-8") as f:
+    f.write(dns_sh)
+os.chmod(p, 0o755)
