@@ -135,6 +135,17 @@ sudo bash <(curl -fsSL https://github.com/ShJChow/New-Xray-core-xhttp-cdn-realit
 | `FEATURE_BRUTAL` | `true` | Enables TCP Brutal congestion control (95% host speed). |
 | `REALITY_MIN_CLIENT_VER` | `default` | No `minClientVer` is written, so the latest Xray core default applies. Set `1.8.0` for old Mihomo/Clash/sing-box clients. |
 
+#### Xray official defaults switch `XRAY_DEFAULTS` (since v5.0.4, default `true`)
+
+The server `config.json` and the client links use only the official Xray default parameters. No tuning fields are written. `XRAY_DEFAULTS=false` restores the previous tuned output.
+
+- Not written: `policy`; sockopt tuning (TFO, MPTCP, keepalive, `tcpUserTimeout`, `tcpcongestion`, brutal); `xPadding*`; `scStreamUpServerSecs`; Hy2 `udpIdleTimeout`; `scMinPostsIntervalMs` and the QUIC-window `fm` in links. The congestion algorithm comes from the kernel setting `net.ipv4.tcp_congestion_control`.
+- XHTTP server `mode` is `auto`. It accepts auto, packet-up and stream-up clients.
+- Kept: ports, UUIDs, paths, certificates, the salamander password, masquerade, `trustedXForwardedFor`, freedom `domainStrategy`. The xmux values already equal the official defaults.
+
+> [!IMPORTANT]
+> The server and the client links must use the same setting. After a switch, regenerate the subscription and make every client update it and reconnect. A client on an old subscription cannot connect because its padding parameters no longer match. The switch takes effect only when the installer renders the configuration; an installed machine does not change by itself.
+
 ---
 
 ## 3. Resident Management Command `xh`

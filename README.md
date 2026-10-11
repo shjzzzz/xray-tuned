@@ -134,6 +134,25 @@ sudo bash <(curl -fsSL https://github.com/ShJChow/New-Xray-core-xhttp-cdn-realit
 ```
 > 如需覆盖更多自定义项，直接在末尾空格追加即可（如 `IP_CHOICE=1`、`CDN_FALLBACK_ORIGIN="https://www.harvard.edu"`）。
 >
+#### Xray 官方默认参数开关 `XRAY_DEFAULTS`（v5.0.4 起，默认 `true`）
+
+服务端 `config.json` 和客户端链接都只使用 Xray 官方默认参数，不写调优项。`XRAY_DEFAULTS=false` 恢复旧版调优输出。
+
+| 项目 | `XRAY_DEFAULTS=true`（默认） | `XRAY_DEFAULTS=false` |
+| :--- | :--- | :--- |
+| `policy`（bufferSize、超时） | 不写 | 写入 |
+| sockopt（TFO、MPTCP、keepalive、`tcpUserTimeout`、`tcpcongestion`、brutal） | 不写，拥塞算法由内核 `net.ipv4.tcp_congestion_control` 决定 | 写入 |
+| `xPadding*`、`scStreamUpServerSecs`、Hy2 `udpIdleTimeout` | 不写（`FEATURE_XPADDING` 强制为 false） | 按旧逻辑写入 |
+| XHTTP 服务端 `mode` | `auto`（同时接受 auto / packet-up / stream-up 客户端） | `stream-up` 或 `auto` |
+| 链接里的 `scMinPostsIntervalMs`、H3 链接的 QUIC 窗口 `fm` | 不带（`scMinPostsIntervalMs` 回到官方默认 30） | 带 |
+
+保留的功能项：端口、UUID、路径、证书、salamander 密码、masquerade、`trustedXForwardedFor`、freedom 的 `domainStrategy`。xmux 的取值本来就等于官方默认，不受影响。客户端链接里的 `mode=stream-up` 也不受影响。
+
+> [!IMPORTANT]
+> 服务端与客户端链接必须使用同一设置。切换后要重新生成订阅，并让所有客户端更新订阅、重新连接；没更新的旧客户端会因 padding 参数不一致而连不上。
+>
+> 此开关只在安装器渲染配置时生效。已安装的机器不会自动改变。
+
 ---
 
 ## 三、常驻管理命令 `xh`
@@ -475,6 +494,8 @@ systemctl enable --now cf-healthcheck.timer
 
 | 演进领域 | 涉及版本 | 核心技术方案与调优结论 |
 | :--- | :--- | :--- |
+| **v5.0.4：Xray 官方默认参数** | v5.0.4 | 新增 `XRAY_DEFAULTS`（默认 true）：服务端与客户端链接不再写 policy、sockopt 调优、xPadding、`scStreamUpServerSecs`、`scMinPostsIntervalMs`、QUIC 窗口 `fm`；XHTTP 服务端 `mode` 用 `auto`；默认内核 26.10.10（Pre-release）。 |
+| **v5.0.5：CDN 腿使用优选域名** | v5.0.5 | 上下行分离节点的 CDN 腿（`downloadSettings.address`、Mihomo `download-settings.server`、`CDN-Up-Reality-Down` 上行）改用 `CDN_CONNECT_ADDR`（优选域名），SNI 与 Host 仍为 `CDN_DOMAIN`。 |
 | **v5.0.0 正式版：默认节点集对齐本机、Reality 兼容模式默认关闭** | v5.0.0 | 本版把 v4.9.83 与 v4.9.84 的变化定为 5.0 基线，除版本号外没有新的功能改动。**默认节点（6 条）**：CDN-H2、Direct-H3、Direct-H2、Hysteria2-H3、Hysteria2-Obfs、Reality-XHTTP；备用节点（CDN-H3、Reality-Vision、Up-CDN-Down、CDN-Up-Reality-Down、MASQUE、XDRIVE、Noise）在 xh 菜单里开关。**Reality**：默认不写 `minClientVer`，使用 Xray 26.9.x 内核默认值（26.3.27），低于它的客户端内核需要升级；要兼容老客户端用 `xh minversion 1.8.0`。默认 Xray 内核 26.9.30。 |
 
 ---
