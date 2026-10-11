@@ -73,6 +73,13 @@ else
   MIHOMO_NODE_DIRECT_RULE="  - IP-CIDR,${VPS_IP_CIDR},全局直连,no-resolve"
 fi
 
+# CDN_ADDR 默认优先使用优选域名（若存在），保持 host 与 sni 仍为真实 CDN_DOMAIN
+CDN_CONNECT_ADDR="${CDN_ADDR:-${BESTCF_DOMAIN:-bestcf.${CDN_DOMAIN#*.}}}"
+# 验证优选域名是否能解析，若未配置或解析不到则回退到 CDN_DOMAIN
+if ! getent ahostsv4 "$CDN_CONNECT_ADDR" >/dev/null 2>&1; then
+  CDN_CONNECT_ADDR="${CDN_DOMAIN}"
+fi
+
 rm -f /etc/xhttp-cdn/dual-cdn-domains /etc/xhttp-cdn/dual-ip-domains 2>/dev/null || true
 
 # xmux 参数依据 Xray 官方文档及 #4113 建议：
@@ -99,6 +106,7 @@ rm -f /etc/xhttp-cdn/dual-cdn-domains /etc/xhttp-cdn/dual-ip-domains 2>/dev/null
 # （请求数是 CDN 侧最容易做特征的维度之一）。
 # 需要时可用环境变量覆盖：XHTTP_SC_MIN_POSTS_MS=30 bash install.sh
 XHTTP_SC_MIN_POSTS_MS=${XHTTP_SC_MIN_POSTS_MS:-10}
+[[ "${XRAY_DEFAULTS:-true}" == true ]] && XHTTP_SC_MIN_POSTS_MS=30   # XRAY_DEFAULTS：Xray 官方默认 30ms（只对 packet-up 有效）
 
 # ---------- Hysteria2 客户端带宽声明（v4.9.24） ----------
 # 链接里的 upmbps / downmbps 在 **sing-box 内核（v2rayN 的 Hysteria2 默认走它）与 Mihomo** 下会启用
@@ -106,7 +114,6 @@ XHTTP_SC_MIN_POSTS_MS=${XHTTP_SC_MIN_POSTS_MS:-10}
 # 生成器猜不出每个人的线路，只能给默认值。实测（netns，160ms RTT，sing-box 客户端，上行 Mbps）：
 #
 #   声明 ↑    线路 300↓/50↑（无丢包 / 下行1%）   线路 1000↓/300↑（无丢包 / 下行1%）
-[[ "${XRAY_DEFAULTS:-true}" == true ]] && XHTTP_SC_MIN_POSTS_MS=30   # XRAY_DEFAULTS：Xray 官方默认 30ms（只对 packet-up 有效）
 #   100          41 / 42                          85 / 85      ← 快上行被硬卡在 ~89
 #   300          —  / 27                         190 / 175
 #   1000         31 / 33                         163 / 167
@@ -141,6 +148,7 @@ XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A3%2C%22cMaxReuseTimes%22%3A
 # 只放大客户端（接收方）窗口；服务端不放大，避免陌生客户端让服务端按每连接 64MB 缓冲。
 # 只测了 Direct-H3；CDN-H3 的 QUIC 是客户端到 Cloudflare 边缘，同样的窗口语义，但边缘一侧无法用 netem 复现，未单独测。
 XH3_FM_PARAM="&fm=$(rawurlencode '{"quicParams":{"initStreamReceiveWindow":4194304,"maxStreamReceiveWindow":33554432,"initConnectionReceiveWindow":8388608,"maxConnectionReceiveWindow":67108864}}')"
+[[ "${XRAY_DEFAULTS:-true}" == true ]] && XH3_FM_PARAM=""   # XRAY_DEFAULTS：不放大 QUIC 接收窗口，用官方默认
 
 if [[ "$FEATURE_XPADDING" == true ]]; then
   XPAD_FIELDS_ENC="%22xPaddingBytes%22%3A%22100-1000%22%2C%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22${XHTTP_PADDING_METHOD}%22%2C%22xPaddingPlacement%22%3A%22${XHTTP_PADDING_PLACEMENT}%22%2C%22xPaddingHeader%22%3A%22${XHTTP_PADDING_HEADER}%22%2C%22xPaddingKey%22%3A%22${XHTTP_PADDING_KEY}%22"
@@ -148,7 +156,6 @@ if [[ "$FEATURE_XPADDING" == true ]]; then
   XPAD_CDN_EXTRA_ENC="%7B${XPAD_FIELDS_ENC}%2C%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D"
 
   MIHOMO_XPADDING_XHTTP_BLOCK=$(cat <<EOF
-[[ "${XRAY_DEFAULTS:-true}" == true ]] && XH3_FM_PARAM=""   # XRAY_DEFAULTS：不放大 QUIC 接收窗口，用官方默认
 
       x-padding-bytes: "100-1000"
       x-padding-obfs-mode: true
@@ -202,11 +209,11 @@ else
 fi
 if [[ "$FEATURE_XPADDING" == true ]]; then
   DOWNLOAD_XHTTP_ENC="%22xhttpSettings%22%3A%7B%22host%22%3A%22${CDN_DOMAIN}%22%2C%22path%22%3A%22${XHTTP_PATH_ENC}%22%2C%22mode%22%3A%22auto%22%2C%22extra%22%3A%7B${XPAD_FIELDS_ENC}%2C%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D%7D"
-  DOWNLOAD_SETTINGS_ENC="%22downloadSettings%22%3A%7B%22address%22%3A%22${CDN_DOMAIN}%22%2C%22port%22%3A443%2C%22network%22%3A%22xhttp%22%2C%22security%22%3A%22tls%22%2C${DOWNLOAD_TLS_ENC}%2C${DOWNLOAD_XHTTP_ENC}%7D"
+  DOWNLOAD_SETTINGS_ENC="%22downloadSettings%22%3A%7B%22address%22%3A%22${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}%22%2C%22port%22%3A443%2C%22network%22%3A%22xhttp%22%2C%22security%22%3A%22tls%22%2C${DOWNLOAD_TLS_ENC}%2C${DOWNLOAD_XHTTP_ENC}%7D"
   XPAD_SPLIT_EXTRA_ENC="%7B${XPAD_FIELDS_ENC}%2C%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_ENC}%2C${DOWNLOAD_SETTINGS_ENC}%7D"
 else
   DOWNLOAD_XHTTP_ENC="%22xhttpSettings%22%3A%7B%22host%22%3A%22${CDN_DOMAIN}%22%2C%22path%22%3A%22${XHTTP_PATH_ENC}%22%2C%22mode%22%3A%22auto%22%2C%22extra%22%3A%7B%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D%7D"
-  DOWNLOAD_SETTINGS_ENC="%22downloadSettings%22%3A%7B%22address%22%3A%22${CDN_DOMAIN}%22%2C%22port%22%3A443%2C%22network%22%3A%22xhttp%22%2C%22security%22%3A%22tls%22%2C${DOWNLOAD_TLS_ENC}%2C${DOWNLOAD_XHTTP_ENC}%7D"
+  DOWNLOAD_SETTINGS_ENC="%22downloadSettings%22%3A%7B%22address%22%3A%22${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}%22%2C%22port%22%3A443%2C%22network%22%3A%22xhttp%22%2C%22security%22%3A%22tls%22%2C${DOWNLOAD_TLS_ENC}%2C${DOWNLOAD_XHTTP_ENC}%7D"
   XPAD_SPLIT_EXTRA_ENC="%7B%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_ENC}%2C${DOWNLOAD_SETTINGS_ENC}%7D"
 fi
 
@@ -236,7 +243,7 @@ fi
 REALITY_DOWNLOAD_ENC="%22downloadSettings%22%3A%7B%22address%22%3A%22${VPS_IP//:/%3A}%22%2C%22port%22%3A443%2C%22network%22%3A%22xhttp%22%2C%22security%22%3A%22reality%22%2C%22realitySettings%22%3A%7B%22serverName%22%3A%22${REALITY_DOMAIN}%22%2C%22fingerprint%22%3A%22chrome%22%2C%22publicKey%22%3A%22${PUBLIC_KEY}%22%2C%22shortId%22%3A%22${SHORT_ID}%22%2C%22spiderX%22%3A%22%22%7D%2C%22xhttpSettings%22%3A%7B%22path%22%3A%22${XHTTP_PATH_ENC}%22%2C%22mode%22%3A%22stream-up%22%2C%22extra%22%3A${XPAD_EXTRA_ENC}%7D%7D"
 XPAD_REV_SPLIT_EXTRA_ENC="${XPAD_CDN_EXTRA_ENC%\%7D}%2C${REALITY_DOWNLOAD_ENC}%7D"
 if [[ "${FEATURE_CDN_UP_REALITY_DOWN:-false}" == true ]]; then
-  CDN_UP_REALITY_DOWN_NODE_LINE="vless://${UUID2}@${CDN_DOMAIN}:443?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3&insecure=0&allowInsecure=0${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${XPAD_REV_SPLIT_EXTRA_ENC}#VLESS-CDN-Up-Reality-Down${NODE_SUFFIX}"
+  CDN_UP_REALITY_DOWN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}:443?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3&insecure=0&allowInsecure=0${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${XPAD_REV_SPLIT_EXTRA_ENC}#VLESS-CDN-Up-Reality-Down${NODE_SUFFIX}"
 else
   CDN_UP_REALITY_DOWN_NODE_LINE=""
 fi
@@ -295,13 +302,6 @@ else
 fi
 
 # h2-cdn: 经 CDN 的 TCP(h2) 链路（默认关闭，FEATURE_CDN_H2=true 时启用）
-# CDN_ADDR 默认优先使用优选域名（若存在），保持 host 与 sni 仍为真实 CDN_DOMAIN
-CDN_CONNECT_ADDR="${CDN_ADDR:-${BESTCF_DOMAIN:-bestcf.${CDN_DOMAIN#*.}}}"
-# 验证优选域名是否能解析，若未配置或解析不到则回退到 CDN_DOMAIN
-if ! getent ahostsv4 "$CDN_CONNECT_ADDR" >/dev/null 2>&1; then
-  CDN_CONNECT_ADDR="${CDN_DOMAIN}"
-fi
-
 if [[ "$FEATURE_CDN_H2" == true ]]; then
   H2_CDN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-CDN-H2${NODE_SUFFIX}"
 else

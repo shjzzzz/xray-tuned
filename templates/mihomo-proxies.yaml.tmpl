@@ -235,7 +235,7 @@ proxies:
         h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
       # 下行腿（经 CDN）在 Mihomo 里没有独立的 mode 字段，随父级 stream-up；URI 版的下行腿是 auto。
       download-settings:
-        server: ${CDN_DOMAIN}
+        server: ${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}
         port: 443
         tls: true
         alpn:
@@ -259,7 +259,7 @@ proxies:
   # 下行腿必须自带 reality-opts 与 servername（Reality 域名），并关掉继承来的 ECH。
   - name: VLESS-CDN-Up-Reality-Down${NODE_SUFFIX}
     type: vless
-    server: ${CDN_DOMAIN}
+    server: ${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}
     port: 443
     uuid: ${UUID2}
     udp: true

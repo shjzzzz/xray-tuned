@@ -236,3 +236,17 @@
        - 凌晨低峰基准同步（04:00 校准）；
      - `probe.py` 补充真实 XHTTP 隧道探测耗时计算（毫秒级），`dns_updater.py` 在测试候选池时随机打乱并解析响应延迟，确保高峰时段由当前真实表现最优的 Anycast 节点提供解析。
 
+
+## 16. 上下行分离节点 (Reality-Up-CDN-Down) 优选 IP 链路修复规范 (2026-10-10)
+- **故障背景**：`VLESS-Reality-Up-CDN-Down`（上行 Reality 直连 VPS / 下行通过 Cloudflare CDN 回传）客户端测速或连接时，发现其下行链路没有走 Cloudflare 优选 IP（`bestcf` 域名），而是走了未优选、易遭阻断的原始 CDN 域名。
+- **根因分析**：
+  1. `11-client-config.sh` 中 `CDN_CONNECT_ADDR` 变量计算被置于文件后半部分（原仅供 `H2_CDN` / `H3_CDN` 节点使用），位于 `DOWNLOAD_SETTINGS_ENC` 构造之后。
+  2. `DOWNLOAD_SETTINGS_ENC` 与 `templates/mihomo-proxies.yaml.tmpl` 的 `download-settings` 将连接地址硬编码为 `${CDN_DOMAIN}`，未继承 `${CDN_CONNECT_ADDR}`。导致客户端在建立下行隧道时直连了未优选的 Cloudflare Anycast IP，失去 `bestcf` 优选加速效果。
+  3. 反向分离节点 `CDN-Up-Reality-Down` 的上行连接目标同样未接入 `${CDN_CONNECT_ADDR}`。
+- **修复措施与规范**：
+  1. **前置 `CDN_CONNECT_ADDR` 计算**：在客户端配置生成器早期解析并校验优选域名/IP（若未配置或不可解析则平滑回退 `${CDN_DOMAIN}`）。
+  2. **下行隧道连接目标绑定优选**：
+     - Xray URI 参数 `extra.downloadSettings.address` 绑定 `${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}`；TLS SNI (`serverName`) 与 HTTP Host 严格保持 `${CDN_DOMAIN}`。
+     - Mihomo 配置 `download-settings.server` 绑定 `${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}`；`servername` 与 `host` 严格保持 `${CDN_DOMAIN}`。
+  3. **反向分离节点上行对齐**：`CDN-Up-Reality-Down` 的上行连接地址同样绑定 `${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}`。
+  4. **全端订阅与备用节点库重载**：重新渲染本机 `/home/ubuntu/client-config*` 与 `/etc/xhttp-cdn/all/`，并通过 `xh resub` 刷新发布到 Nginx 订阅系统。

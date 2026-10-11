@@ -723,6 +723,8 @@ info "写入 ${NODE_ENV_FILE} ..."
     printf 'XHTTP_PADDING_PLACEMENT=%q\n' "${XHTTP_PADDING_PLACEMENT:-queryInHeader}"
     printf 'XHTTP_PADDING_METHOD=%q\n'    "${XHTTP_PADDING_METHOD:-tokenish}"
   fi
+  printf 'NODE_TAG=%q\n'                "${NODE_TAG:-}"
+  printf 'BESTCF_DOMAIN=%q\n'           "${BESTCF_DOMAIN:-}"
 } > "$NODE_ENV_FILE"
 chmod 600 "$NODE_ENV_FILE"
 
