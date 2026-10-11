@@ -106,6 +106,7 @@ XHTTP_SC_MIN_POSTS_MS=${XHTTP_SC_MIN_POSTS_MS:-10}
 # 生成器猜不出每个人的线路，只能给默认值。实测（netns，160ms RTT，sing-box 客户端，上行 Mbps）：
 #
 #   声明 ↑    线路 300↓/50↑（无丢包 / 下行1%）   线路 1000↓/300↑（无丢包 / 下行1%）
+[[ "${XRAY_DEFAULTS:-true}" == true ]] && XHTTP_SC_MIN_POSTS_MS=30   # XRAY_DEFAULTS：Xray 官方默认 30ms（只对 packet-up 有效）
 #   100          41 / 42                          85 / 85      ← 快上行被硬卡在 ~89
 #   300          —  / 27                         190 / 175
 #   1000         31 / 33                         163 / 167
@@ -147,6 +148,7 @@ if [[ "$FEATURE_XPADDING" == true ]]; then
   XPAD_CDN_EXTRA_ENC="%7B${XPAD_FIELDS_ENC}%2C%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D"
 
   MIHOMO_XPADDING_XHTTP_BLOCK=$(cat <<EOF
+[[ "${XRAY_DEFAULTS:-true}" == true ]] && XH3_FM_PARAM=""   # XRAY_DEFAULTS：不放大 QUIC 接收窗口，用官方默认
 
       x-padding-bytes: "100-1000"
       x-padding-obfs-mode: true

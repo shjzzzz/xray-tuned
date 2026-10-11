@@ -36,7 +36,7 @@ PROJECT_NAME="xray-xhttp"
 PROJECT_VERSION="5.0.4"
 PROJECT_REPO="ShJChow/New-Xray-core-xhttp-cdn-reality-hy2-tuned"
 # 默认推荐的 Xray-core 版本：升级至最新稳定/前沿版 v26.9.30（具备 XDRIVE 云盘代理、MASQUE、Finalmask Noise exp、WFP 防泄露等特性）。
-XRAY_DEFAULT_VERSION="26.9.30"
+XRAY_DEFAULT_VERSION="26.10.10"
 MANAGE_CMD="xh"
 MANAGE_BIN="/usr/local/bin/${MANAGE_CMD}"
 STATE_DIR="/etc/xhttp-cdn"
@@ -73,6 +73,14 @@ FEATURE_KEEPALIVE=${FEATURE_KEEPALIVE:-true}
 FEATURE_AUTOUPDATE=${FEATURE_AUTOUPDATE:-true}
 # Xray-core 通道：prerelease（默认，安装与每周自动更新都取 GitHub 最新含 pre-release 的版本）| stable
 XRAY_CHANNEL=${XRAY_CHANNEL:-stable}
+# XRAY_DEFAULTS=true（默认）：服务端与客户端链接里一律使用 Xray 官方默认参数，不写调优项
+# （policy、sockopt 的 TFO/MPTCP/keepalive/tcpUserTimeout/拥塞算法、xPadding*、scStreamUpServerSecs、
+#  scMinPostsIntervalMs、QUIC 窗口 fm）。XHTTP 服务端 mode 用默认 auto（同时接受 auto / packet-up / stream-up 客户端）。
+# 拥塞算法由内核 net.ipv4.tcp_congestion_control 决定。XRAY_DEFAULTS=false 恢复旧版调优输出。
+XRAY_DEFAULTS=${XRAY_DEFAULTS:-true}
+if [[ "$XRAY_DEFAULTS" == true ]]; then
+  FEATURE_XPADDING=false
+fi
 AUTO=${AUTO:-0}
 
 # ==================================================

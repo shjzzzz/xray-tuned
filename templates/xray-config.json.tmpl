@@ -101,13 +101,7 @@
             "streamSettings": {
                 "network": "xhttp",
                 "sockopt": {
-                    "trustedXForwardedFor": ["X-Real-IP"],
-                    "tcpFastOpen": true,
-                    "tcpMptcp": true,
-                    "tcpcongestion": "${XRAY_TCP_CC:-brutal}",
-                    "tcpKeepAliveIdle": 30,
-                    "tcpKeepAliveInterval": 5,
-                    "tcpUserTimeout": 300000
+                    "trustedXForwardedFor": ["X-Real-IP"]${XRAY_SOCKOPT_TUNE}
                 },
                 "xhttpSettings": {
                     "host": "",
@@ -151,13 +145,7 @@
                 // 取 X-Real-IP：nginx 用 grpc_set_header 无条件覆盖该头，客户端伪造不进来；
                 // 本入站又仅监听回环，只可能由 nginx 回源到达。
                 "sockopt": {
-                    "trustedXForwardedFor": ["X-Real-IP"],
-                    "tcpFastOpen": true,
-                    "tcpMptcp": true,
-                    "tcpcongestion": "${XRAY_TCP_CC:-brutal}",
-                    "tcpKeepAliveIdle": 30,
-                    "tcpKeepAliveInterval": 5,
-                    "tcpUserTimeout": 300000
+                    "trustedXForwardedFor": ["X-Real-IP"]${XRAY_SOCKOPT_TUNE}
                 },
                 "xhttpSettings": {
                     "host": "",
@@ -190,13 +178,7 @@
             "streamSettings": {
                 "sockopt": {
                     // Xray 26.9+ 弃用 freedom.settings.domainStrategy / targetStrategy，迁移至 sockopt.domainStrategy
-                    "domainStrategy": "UseIPv4",
-                    "tcpFastOpen": true,
-                    "tcpMptcp": false,
-                    "tcpcongestion": "bbr",
-                    "tcpKeepAliveIdle": 30,
-                    "tcpKeepAliveInterval": 5,
-                    "tcpUserTimeout": 300000
+                    "domainStrategy": "UseIPv4"${XRAY_FREEDOM_SOCKOPT_TUNE}
                 }
             }
         },

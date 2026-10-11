@@ -287,7 +287,9 @@ require_xray_version_for_udp
 migrate_legacy_udp_components
 check_udp_port_conflict
 
-if [[ "$FEATURE_XPADDING" == true ]]; then
+if [[ "$XRAY_DEFAULTS" == true ]]; then
+  XRAY_XHTTP_PADDING_JSON=""   # 官方默认：xPaddingBytes 100-1000、scStreamUpServerSecs 20-80 均不写
+elif [[ "$FEATURE_XPADDING" == true ]]; then
   XRAY_XHTTP_PADDING_JSON=$(cat <<EOF
 ,
                     "xPaddingBytes": "100-1000",

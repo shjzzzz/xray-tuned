@@ -81,6 +81,7 @@ elif [[ "$MEM_MB" -ge 4096  ]]; then XRAY_BUFFER_KB=2048
 else XRAY_BUFFER_KB=512
 fi
 XRAY_POLICY_JSON="\"policy\":{\"levels\":{\"0\":{\"handshake\":10,\"connIdle\":1800,\"uplinkOnly\":15,\"downlinkOnly\":30,\"bufferSize\":${XRAY_BUFFER_KB}}}},"
+[[ "$XRAY_DEFAULTS" == true ]] && XRAY_POLICY_JSON=""   # 官方默认 policy
 
 
 # Reality 入站 sockopt：不启用 TFO 避免部分运营商/移动端网络丢弃带数据的 SYN 包导致 failed to read client hello
@@ -118,6 +119,27 @@ else
   warn "BBR / Brutal 均不可用，Xray Reality 入站不写 tcpcongestion（TFO / keepalive 照常写入）"
   XRAY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpMptcp":true,"tcpKeepAliveIdle":30,"tcpKeepAliveInterval":5,"tcpUserTimeout":300000}'
   REALITY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpMptcp":true,"tcpKeepAliveIdle":30,"tcpKeepAliveInterval":5,"tcpUserTimeout":300000}'
+fi
+
+# 模板里内联的 sockopt 调优字段（trustedXForwardedFor 是功能项，始终保留）。
+XRAY_SERVER_MODE=stream-up
+if [[ "$XRAY_DEFAULTS" == true ]]; then
+  XRAY_SERVER_MODE=auto   # 官方默认；auto 同时接受 auto / packet-up / stream-up 客户端
+  XRAY_SOCKOPT_JSON=""
+  REALITY_SOCKOPT_JSON=""
+  XRAY_SOCKOPT_TUNE=""
+  XRAY_FREEDOM_SOCKOPT_TUNE=""
+  HY2_SOCKOPT_BLOCK=""
+  HY2_UDP_IDLE_JSON=""
+  HY2_SOCKOPT_JSON=""
+  H3_SOCKOPT_JSON=""
+else
+  XRAY_SOCKOPT_TUNE=$',\n                    "tcpFastOpen": true,\n                    "tcpMptcp": true,\n                    "tcpcongestion": "'"${XRAY_TCP_CC:-brutal}"$'",\n                    "tcpKeepAliveIdle": 30,\n                    "tcpKeepAliveInterval": 5,\n                    "tcpUserTimeout": 300000'
+  XRAY_FREEDOM_SOCKOPT_TUNE=$',\n                    "tcpFastOpen": true,\n                    "tcpMptcp": false,\n                    "tcpcongestion": "bbr",\n                    "tcpKeepAliveIdle": 30,\n                    "tcpKeepAliveInterval": 5,\n                    "tcpUserTimeout": 300000'
+  HY2_SOCKOPT_BLOCK=$'"sockopt": {\n                    "tcpFastOpen": true,\n                    "tcpcongestion": "brutal"\n                },'
+  HY2_UDP_IDLE_JSON=$'                    "udpIdleTimeout": 60,\n'
+  HY2_SOCKOPT_JSON=$',\n                "sockopt": {\n                    "tcpFastOpen": true,\n                    "tcpcongestion": "brutal"\n                }'
+  H3_SOCKOPT_JSON=$',\n                "sockopt": {\n                    "tcpcongestion": "bbr"\n                }'
 fi
 
 # Reality maxTimeDiff（毫秒，XTLS/REALITY README 的可选项，默认不设）：客户端时间偏差超过该值则拒绝握手
@@ -243,7 +265,7 @@ if [[ "$FEATURE_H3_DIRECT" == true ]]; then
                 "xhttpSettings": {
                     "host": "",
                     "path": "${XHTTP_PATH}",
-                    "mode": "stream-up"${XRAY_XHTTP_PADDING_JSON}
+                    "mode": "${XRAY_SERVER_MODE}"${XRAY_XHTTP_PADDING_JSON}
                 }
             },
             "sniffing": {
@@ -299,7 +321,7 @@ xray_h2_direct_inbound() {
                 "xhttpSettings": {
                     "host": "",
                     "path": "${XHTTP_PATH}",
-                    "mode": "stream-up"${XRAY_XHTTP_PADDING_JSON}
+                    "mode": "${XRAY_SERVER_MODE}"${XRAY_XHTTP_PADDING_JSON}
                 }
             },
             "sniffing": {
@@ -358,18 +380,14 @@ xray_hy2_obfs_inbound() {
                 },
                 "hysteriaSettings": {
                     "version": 2,
-                    "udpIdleTimeout": 60,
-                    "masquerade": {
+${HY2_UDP_IDLE_JSON}                    "masquerade": {
                         "type": "proxy",
                         "url": "https://127.0.0.1:8003",
                         "rewriteHost": false,
                         "insecure": true
                     }
                 },
-                "sockopt": {
-                    "tcpFastOpen": true,
-                    "tcpcongestion": "brutal"
-                },
+                ${HY2_SOCKOPT_BLOCK}
                 "finalmask": {
                     "udp": [
 $(if [[ "${FEATURE_NOISE_EXP:-false}" == true ]]; then cat <<NEOF
@@ -460,18 +478,13 @@ xray_hy2_h3_inbound() {
                 },
                 "hysteriaSettings": {
                     "version": 2,
-                    "udpIdleTimeout": 60,
-                    "masquerade": {
+${HY2_UDP_IDLE_JSON}                    "masquerade": {
                         "type": "proxy",
                         "url": "https://127.0.0.1:8003",
                         "rewriteHost": false,
                         "insecure": true
                     }
-                },
-                "sockopt": {
-                    "tcpFastOpen": true,
-                    "tcpcongestion": "brutal"
-                }$(if [[ "${FEATURE_NOISE_EXP:-false}" == true ]]; then cat <<NEOF
+                }${HY2_SOCKOPT_JSON}$(if [[ "${FEATURE_NOISE_EXP:-false}" == true ]]; then cat <<NEOF
 ,
                 "finalmask": {
                     "udp": [
@@ -544,10 +557,7 @@ xray_masque_inbound() {
                         }
                     ],
                     "alpn": ["h3", "h2"]
-                },
-                "sockopt": {
-                    "tcpcongestion": "bbr"
-                }
+                }${H3_SOCKOPT_JSON}
             },
             "sniffing": {
                 "enabled": true,
