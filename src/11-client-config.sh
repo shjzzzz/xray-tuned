@@ -438,7 +438,10 @@ prune_mihomo_features() {
   local file="$1" feat
   [[ -f "$file" ]] || return 0
   for feat in FEATURE_REALITY_VISION FEATURE_REALITY_XHTTP FEATURE_CDN_H2 FEATURE_CDN_H3 FEATURE_H3_DIRECT FEATURE_H2_DIRECT FEATURE_HY2 FEATURE_HY2_H3 FEATURE_HY2_OBFS FEATURE_UP_CDN_DOWN_MIHOMO FEATURE_CDN_UP_REALITY_DOWN; do
-    if [[ "${!feat}" == true ]]; then
+    local on="${!feat}"
+    # Reality-XHTTP 与最新版 Mihomo(Clash) / Shadowrocket 不兼容：不写进任何 Mihomo 产物（Shadowrocket 订阅本来就不含它）。
+    [[ "$feat" == FEATURE_REALITY_XHTTP ]] && on=false
+    if [[ "$on" == true ]]; then
       sed -i "/^[[:space:]]*#<<${feat}\$/d; /^[[:space:]]*#>>${feat}\$/d" "$file"
     else
       sed -i "/^[[:space:]]*#<<${feat}\$/,/^[[:space:]]*#>>${feat}\$/d" "$file"

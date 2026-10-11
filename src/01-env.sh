@@ -84,13 +84,16 @@ fi
 AUTO=${AUTO:-0}
 
 # ==================================================
-# 节点集：默认 5 条核心主力节点，全部由 Xray 单核心提供
+# 节点集：默认 7 条节点（与本机当前一致），全部由 Xray 单核心提供
 # ==================================================
 #   1. VLESS-XHTTP-CDN-H2    经 CDN，h2/TCP
-#   2. VLESS-XHTTP-Direct-H3 直连 UDP 8443，h3/QUIC
-#   3. Hysteria2-H3-Direct   直连 UDP 443，标准 HTTP/3
-#   4. VLESS-Reality-Vision-Direct 直连 TCP 443，Vision
-#   5. VLESS-Reality-XHTTP-Direct  直连 TCP 443，XHTTP 上下行不分离
+#   2. VLESS-XHTTP-CDN-H3    经 CDN，h3/QUIC
+#   3. VLESS-XHTTP-Direct-H2 直连 TCP，h2
+#   4. VLESS-XHTTP-Direct-H3 直连 UDP，h3/QUIC
+#   5. Hysteria2-H3-Direct   直连随机高 UDP 端口，标准 HTTP/3
+#   6. Hysteria2-Obfs-Direct 直连随机高 UDP 端口，salamander 混淆
+#   7. VLESS-Reality-XHTTP-Direct  直连 TCP 443，XHTTP 上下行不分离
+# 备用（默认关闭）：Reality-Vision（xh reality vision on）及 README 里列出的其它节点。
 #
 FEATURE_H3_DIRECT=${FEATURE_H3_DIRECT:-true}
 # v4.9.78 起 Hysteria2 重新默认安装（与本机当前节点集一致）；不需要时 FEATURE_HY2=false，或装好后 xh hy2 off。
@@ -191,9 +194,9 @@ FEATURE_NOISE_EXP=${FEATURE_NOISE_EXP:-false}
 # 确认所有客户端内核都 >= 26.9.30 后再开：xh noise links on。
 FEATURE_NOISE_LINKS=${FEATURE_NOISE_LINKS:-false}
 
-# FEATURE_REALITY_VISION / FEATURE_REALITY_XHTTP（Vision 与 XHTTP 默认开启，与本机当前节点一致）：Reality 443 入站上的两个直连节点。
+# FEATURE_REALITY_VISION / FEATURE_REALITY_XHTTP（XHTTP 默认开启，Vision 默认关闭，与本机当前节点一致）：Reality 443 入站上的两个直连节点。
 # 关闭 = 服务端去掉对应的 clients 项 / fallback 项并从订阅里移除节点；装好后用 xh reality vision|xhttp on|off 切换。
-FEATURE_REALITY_VISION=${FEATURE_REALITY_VISION:-true}
+FEATURE_REALITY_VISION=${FEATURE_REALITY_VISION:-false}
 FEATURE_REALITY_XHTTP=${FEATURE_REALITY_XHTTP:-true}
 NOISE_EXP_PACKET=${NOISE_EXP_PACKET:-"<b 16030100><r 32><t><c><rd 8>"}
 NOISE_EXP_DELAY=${NOISE_EXP_DELAY:-"10-50"}

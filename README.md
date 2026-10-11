@@ -454,19 +454,22 @@ systemctl enable --now cf-healthcheck.timer
 
 ## 六、节点拓扑与双轨架构
 
-安装完成后将提供 **6 条核心全协议节点**，客户端通过 `urltest` 自动分流调度：
+安装完成后将提供 **7 条核心全协议节点**，客户端通过 `urltest` 自动分流调度：
 
-| # | 节点名称（v4.9.83） | 传输协议 | 路由链路 | 核心特性 |
+| # | 节点名称（v5.0.6） | 传输协议 | 路由链路 | 核心特性 |
 | :--- | :--- | :--- | :--- | :--- |
 | **1** | `VLESS-XHTTP-CDN-H2` | XHTTP (h2) + vlessenc | 经 CDN TCP 443 | TCP 经 Cloudflare 回源 |
-| **2** | `VLESS-XHTTP-Direct-H3` | XHTTP (QUIC) + vlessenc | 直连 UDP 8446 | 直连 QUIC，`mode=stream-up` |
-| **3** | `VLESS-XHTTP-Direct-H2` | XHTTP (h2) + vlessenc | 直连 TCP 8445 | Direct-H3 的 TCP 孪生体 |
-| **4** | `Hysteria2-H3-Direct` | Hysteria 2 | 直连 随机高 UDP 端口 | 标准 HTTP/3 形态，实测下行最快（v4.9.26） |
-| **5** | `Hysteria2-Obfs-Direct` | Hysteria 2 + salamander | 直连 随机高 UDP 端口 | 混淆版，QUIC 被深度识别时使用 |
-| **6** | `VLESS-Reality-XHTTP-Direct` | XHTTP-Reality + vlessenc | 直连 TCP 443 | Reality 伪装 + XHTTP 填充混淆 |
+| **2** | `VLESS-XHTTP-CDN-H3` | XHTTP (QUIC) + vlessenc | 经 CDN UDP 443 | QUIC 经 Cloudflare 回源 |
+| **3** | `VLESS-XHTTP-Direct-H3` | XHTTP (QUIC) + vlessenc | 直连 UDP 8446 | 直连 QUIC，`mode=stream-up` |
+| **4** | `VLESS-XHTTP-Direct-H2` | XHTTP (h2) + vlessenc | 直连 TCP 8445 | Direct-H3 的 TCP 孪生体 |
+| **5** | `Hysteria2-H3-Direct` | Hysteria 2 | 直连 随机高 UDP 端口 | 标准 HTTP/3 形态，实测下行最快（v4.9.26） |
+| **6** | `Hysteria2-Obfs-Direct` | Hysteria 2 + salamander | 直连 随机高 UDP 端口 | 混淆版，QUIC 被深度识别时使用 |
+| **7** | `VLESS-Reality-XHTTP-Direct` | XHTTP-Reality + vlessenc | 直连 TCP 443 | Reality 伪装 + XHTTP 填充混淆 |
+
+> [!NOTE]
+> `VLESS-Reality-XHTTP-Direct` 与最新版 Shadowrocket、Mihomo（Clash）不兼容：Shadowrocket 订阅和 Mihomo 配置（`mihomo-*.yaml`）都不包含这条节点，`xh reality xhttp on` 也不会把它同步进 Mihomo 配置。请用 v2rayN / Xray 原生客户端（`v2rayn*.txt`、`xray-tun-*.json`）使用它。
 
 > 默认不装、按需用 `xh` 开启的备用与新特性节点（xh 菜单里都有对应项）：
-> - `VLESS-XHTTP-CDN-H3`（`xh cdnh3 on`，经 CDN 的 UDP 443 / QUIC）
 > - `VLESS-Reality-Vision-Direct`（`xh reality vision on`，xtls-rprx-vision 零拷贝，直连 TCP 443）
 > - `VLESS-Reality-Up-CDN-Down`（`xh split reality-up on`，上行 Reality、下行经 CDN，纯客户端链接）
 > - `VLESS-CDN-Up-Reality-Down`（`xh split cdn-up on`，上行经 CDN、下行 Reality）
@@ -496,6 +499,7 @@ systemctl enable --now cf-healthcheck.timer
 | :--- | :--- | :--- |
 | **v5.0.4：Xray 官方默认参数** | v5.0.4 | 新增 `XRAY_DEFAULTS`（默认 true）：服务端与客户端链接不再写 policy、sockopt 调优、xPadding、`scStreamUpServerSecs`、`scMinPostsIntervalMs`、QUIC 窗口 `fm`；XHTTP 服务端 `mode` 用 `auto`；默认内核 26.10.10（Pre-release）。 |
 | **v5.0.5：CDN 腿使用优选域名** | v5.0.5 | 上下行分离节点的 CDN 腿（`downloadSettings.address`、Mihomo `download-settings.server`、`CDN-Up-Reality-Down` 上行）改用 `CDN_CONNECT_ADDR`（优选域名），SNI 与 Host 仍为 `CDN_DOMAIN`。 |
+| **默认节点集改为 7 条：CDN-H3 默认开启，Reality-Vision 默认关闭** | v5.0.6 | 安装命令默认开启的节点与本机当前一致：CDN-H2、CDN-H3、Direct-H2、Direct-H3、Hysteria2-H3、Hysteria2-Obfs、Reality-XHTTP。`FEATURE_REALITY_VISION` 默认改为 false，需要时 `xh reality vision on`。Reality-XHTTP 与最新版 Shadowrocket、Mihomo(Clash) 不兼容，不再写进 Mihomo 配置（Shadowrocket 订阅本来就不含它）。 |
 | **v5.0.0 正式版：默认节点集对齐本机、Reality 兼容模式默认关闭** | v5.0.0 | 本版把 v4.9.83 与 v4.9.84 的变化定为 5.0 基线，除版本号外没有新的功能改动。**默认节点（6 条）**：CDN-H2、Direct-H3、Direct-H2、Hysteria2-H3、Hysteria2-Obfs、Reality-XHTTP；备用节点（CDN-H3、Reality-Vision、Up-CDN-Down、CDN-Up-Reality-Down、MASQUE、XDRIVE、Noise）在 xh 菜单里开关。**Reality**：默认不写 `minClientVer`，使用 Xray 26.9.x 内核默认值（26.3.27），低于它的客户端内核需要升级；要兼容老客户端用 `xh minversion 1.8.0`。默认 Xray 内核 26.9.30。 |
 
 ---

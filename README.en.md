@@ -251,16 +251,20 @@ flowchart TD
     end
 ```
 
-| # | Node Name (v4.9.83) | Transport | Topology | Highlights |
+| # | Node Name (v5.0.6) | Transport | Topology | Highlights |
 | :--- | :--- | :--- | :--- | :--- |
 | **1** | `VLESS-XHTTP-CDN-H2` | XHTTP (h2) + vlessenc | Via CDN TCP 443 | TCP to the Cloudflare origin |
-| **2** | `VLESS-XHTTP-Direct-H3` | XHTTP (QUIC) + vlessenc | Direct UDP 8446 | Direct QUIC, `mode=stream-up` |
-| **3** | `VLESS-XHTTP-Direct-H2` | XHTTP (h2) + vlessenc | Direct TCP 8445 | TCP twin of Direct-H3 |
-| **4** | `Hysteria2-H3-Direct` | Hysteria 2 | Direct random high UDP port | Standard HTTP/3 shape, fastest downlink measured (v4.9.26) |
-| **5** | `Hysteria2-Obfs-Direct` | Hysteria 2 + salamander | Direct random high UDP port | Obfuscated variant for networks that fingerprint QUIC |
-| **6** | `VLESS-Reality-XHTTP-Direct` | XHTTP-Reality + vlessenc | Direct TCP 443 | Reality camouflage + XHTTP padding |
+| **2** | `VLESS-XHTTP-CDN-H3` | XHTTP (QUIC) + vlessenc | Via CDN UDP 443 | QUIC to the Cloudflare origin |
+| **3** | `VLESS-XHTTP-Direct-H3` | XHTTP (QUIC) + vlessenc | Direct UDP 8446 | Direct QUIC, `mode=stream-up` |
+| **4** | `VLESS-XHTTP-Direct-H2` | XHTTP (h2) + vlessenc | Direct TCP 8445 | TCP twin of Direct-H3 |
+| **5** | `Hysteria2-H3-Direct` | Hysteria 2 | Direct random high UDP port | Standard HTTP/3 shape, fastest downlink measured (v4.9.26) |
+| **6** | `Hysteria2-Obfs-Direct` | Hysteria 2 + salamander | Direct random high UDP port | Obfuscated variant for networks that fingerprint QUIC |
+| **7** | `VLESS-Reality-XHTTP-Direct` | XHTTP-Reality + vlessenc | Direct TCP 443 | Reality camouflage + XHTTP padding |
 
-> Not installed by default; switch on with `xh` (every one has a menu item): `VLESS-XHTTP-CDN-H3` (`xh cdnh3 on`, UDP 443 / QUIC through the CDN), `VLESS-Reality-Vision-Direct` (`xh reality vision on`), `VLESS-Reality-Up-CDN-Down` (`xh split reality-up on`, client-link only), `VLESS-CDN-Up-Reality-Down` (`xh split cdn-up on`), `MASQUE-CONNECT-IP` (`xh masque on`), `XDRIVE-Google-Drive` (`xh xdrive setup` / `on`) and Finalmask Noise exp (`xh noise on`). Hysteria2 is installed by default; turn it off with `xh hy2 off` (the obfs node goes with it) or only the obfs node with `xh hy2 obfs off`.
+> [!NOTE]
+> `VLESS-Reality-XHTTP-Direct` is not compatible with the latest Shadowrocket and Mihomo (Clash). The Shadowrocket subscription and the Mihomo configs (`mihomo-*.yaml`) do not contain it, and `xh reality xhttp on` does not sync it into Mihomo configs. Use v2rayN or a native Xray client (`v2rayn*.txt`, `xray-tun-*.json`) for this node.
+
+> Not installed by default; switch on with `xh` (every one has a menu item): `VLESS-Reality-Vision-Direct` (`xh reality vision on`), `VLESS-Reality-Up-CDN-Down` (`xh split reality-up on`, client-link only), `VLESS-CDN-Up-Reality-Down` (`xh split cdn-up on`), `MASQUE-CONNECT-IP` (`xh masque on`), `XDRIVE-Google-Drive` (`xh xdrive setup` / `on`) and Finalmask Noise exp (`xh noise on`). Hysteria2 is installed by default; turn it off with `xh hy2 off` (the obfs node goes with it) or only the obfs node with `xh hy2 obfs off`.
 
 ---
 

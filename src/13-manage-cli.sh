@@ -2980,6 +2980,8 @@ try:
                     pending.append((tf, '\n'.join(live) + '\n'))
 
         for fname in ('client-config-mihomo-nodes.yaml', 'client-config-mihomo-full.yaml'):
+            if name.startswith('VLESS-Reality-XHTTP'):
+                continue    # Reality-XHTTP 与最新版 Mihomo(Clash) 不兼容，不同步进 Mihomo 配置
             lf = os.path.join(home, fname)
             sf = os.path.join(store, fname)
             if not (os.path.isfile(lf) and os.path.isfile(sf)):
