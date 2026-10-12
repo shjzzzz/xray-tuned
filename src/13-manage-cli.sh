@@ -1146,10 +1146,17 @@ cmd_brutal() {
         echo -e "  内核模块:       ${RED}未加载${NC}"
       fi
       local cc_xray
-      cc_xray=$(grep -o '"tcpcongestion"[[:space:]]*:[[:space:]]*"[^"]*"' /usr/local/etc/xray/config.json 2>/dev/null | head -1 | cut -d'"' -f4 || echo "未知")
+      cc_xray=$(grep -o '"tcpcongestion"[[:space:]]*:[[:space:]]*"[^"]*"' /usr/local/etc/xray/config.json 2>/dev/null | head -1 | cut -d'"' -f4)
+      [[ -z "$cc_xray" ]] && cc_xray="未显式配置 (随系统默认 BBR)"
       echo -e "  Xray 入站 CC:   ${YELLOW}${cc_xray}${NC}"
-      echo -e "  本机最大带宽:   ${GREEN}${max_spd} Mbps${NC}"
-      echo -e "  默认下发速率:   ${GREEN}${default_spd} Mbps (本机最大带宽 95%)${NC}"
+      local cur_rate
+      cur_rate=$(sed -n -E 's/^0\.0\.0\.0\/0[[:space:]]+([0-9]+).*/\1/p' "$TCP_BRUTAL_RULES_FILE" 2>/dev/null | head -1)
+      [[ -n "$cur_rate" ]] || cur_rate="$default_spd"
+      echo -e "  本机网卡规格:   ${GREEN}${max_spd} Mbps${NC}"
+      echo -e "  当前 Brutal 速率: ${GREEN}${cur_rate} Mbps${NC}"
+      if [[ "$cur_rate" -gt 1500 ]]; then
+        echo -e "  ${YELLOW}提示：Brutal 属固定速率发包；若远超客户端宽带会引发严重丢包，推荐对齐实际宽带 (如 300M)：${MANAGE_CMD} brutal speed 300${NC}"
+      fi
       echo ""
       echo -e "${CYAN}=== 当前 Brutal 规则与实时连接 ===${NC}"
       if command -v brutalctl >/dev/null 2>&1; then
@@ -1204,13 +1211,22 @@ cmd_brutal() {
       echo ""
       ;;
     on)
-      set_tcp_brutal_xray on "${1:-auto}"
+      local mbps="${1:-}"
+      if [[ -z "$mbps" || "$mbps" == "auto" ]]; then
+        mbps="$(choose_brutal_speed auto)"
+      fi
+      set_tcp_brutal_xray on "$mbps"
+      set_tcp_brutal_speed "$mbps"
       ;;
     off)
       set_tcp_brutal_xray off
       ;;
     speed)
-      set_tcp_brutal_speed "${1:-auto}"
+      local mbps="${1:-}"
+      if [[ -z "$mbps" || "$mbps" == "auto" ]]; then
+        mbps="$(choose_brutal_speed auto)"
+      fi
+      set_tcp_brutal_speed "$mbps"
       ;;
     add)
       add_tcp_brutal_rule "$@"
@@ -2182,28 +2198,38 @@ cmd_bestcf() {
   case "$action" in
     show|status)
       echo ""
-      echo -e "${CYAN}=== Cloudflare CDN 优选 IP 自动化状态 ===${NC}"
-      if systemctl is-active --quiet cf-bestip.timer 2>/dev/null; then
-        echo -e "  定时轮换:       ${GREEN}运行中 (Active)${NC}"
+      echo -e "${CYAN}=== Cloudflare CDN 优选 IP 状态 ===${NC}"
+      local lock_file="${dir}/lock"
+      local locked_ip_file="${dir}/locked_ips.txt"
+      if [[ -f "$lock_file" || -f "$locked_ip_file" ]]; then
+        local l_ips=""
+        [[ -f "$locked_ip_file" ]] && l_ips=$(tr '\n' ' ' < "$locked_ip_file" | xargs)
+        echo -e "  IP 轮换模式:    ${GREEN}已锁定 (Fixed / 禁止自动轮换)${NC}"
+        echo -e "  锁定的 IP:      ${GREEN}${l_ips:-当前解析 IP}${NC}"
+        echo -e "  轮换策略:       ${YELLOW}完全由您自主决定，禁止后台自动轮换与漂移${NC}"
       else
-        echo -e "  定时轮换:       ${YELLOW}未激活 (Inactive)${NC}"
+        echo -e "  IP 轮换模式:    ${CYAN}自动轮换模式 (Active)${NC}"
+        if systemctl is-active --quiet cf-bestip.timer 2>/dev/null; then
+          echo -e "  定时轮换:       ${GREEN}运行中 (Active)${NC}"
+        else
+          echo -e "  定时轮换:       ${YELLOW}未激活 (Inactive)${NC}"
+        fi
+        local cur_interval="每日高峰模式"
+        if [[ -f "$timer_file" ]]; then
+          if grep -q 'OnCalendar=' "$timer_file"; then
+            cur_interval="每日高峰模式 (12:30, 19:00-23:00 每整点, 04:00)"
+          else
+            cur_interval=$(grep -oE 'OnUnitActiveSec=[^ ]+' "$timer_file" | cut -d= -f2 || echo "2h")
+          fi
+        fi
+        echo -e "  轮换周期:       ${GREEN}${cur_interval}${NC}"
       fi
 
       if systemctl is-active --quiet cf-healthcheck.timer 2>/dev/null; then
-        echo -e "  故障自愈健康检查: ${GREEN}运行中 (每 1 分钟检测握手、延迟与源站可达性，异常自动切 IP)${NC}"
+        echo -e "  健康自愈监听:   ${GREEN}运行中 (每 1 分钟检测握手与延迟)${NC}"
       else
-        echo -e "  故障自愈健康检查: ${YELLOW}未激活${NC}"
+        echo -e "  健康自愈监听:   ${YELLOW}未激活${NC}"
       fi
-
-      local cur_interval="每日高峰模式"
-      if [[ -f "$timer_file" ]]; then
-        if grep -q 'OnCalendar=' "$timer_file"; then
-          cur_interval="每日高峰模式 (12:30, 19:00-23:00 每整点, 04:00)"
-        else
-          cur_interval=$(grep -oE 'OnUnitActiveSec=[^ ]+' "$timer_file" | cut -d= -f2 || echo "2h")
-        fi
-      fi
-      echo -e "  轮换周期:       ${GREEN}${cur_interval}${NC}"
 
       if [[ -f "$py_script" ]]; then
         local cur_domain cur_zone
@@ -2221,7 +2247,7 @@ cmd_bestcf() {
         echo -e "  更新脚本:       ${YELLOW}未安装配置 (/root/cf-bestip/dns_updater.py)${NC}"
       fi
 
-      if command -v systemctl >/dev/null 2>&1; then
+      if ! [[ -f "$lock_file" || -f "$locked_ip_file" ]] && command -v systemctl >/dev/null 2>&1; then
         local next_run
         next_run=$(systemctl list-timers cf-bestip.timer --no-pager --no-legend --full 2>/dev/null | grep 'cf-bestip' | awk '{print $1" "$2" "$3" "$4" (剩余 "$5" "$6")"}' || true)
         if [[ -n "$next_run" ]]; then
@@ -2231,10 +2257,12 @@ cmd_bestcf() {
       echo ""
       echo -e "快捷指令:"
       echo -e "  ${MANAGE_CMD} bestcf show             # 查看状态与当前解析"
-      echo -e "  ${MANAGE_CMD} bestcf setup            # 交互式配置 Cloudflare 凭据与优选域名"
+      echo -e "  ${MANAGE_CMD} bestcf lock             # 锁定当前优选 IP (禁止自动轮换)"
+      echo -e "  ${MANAGE_CMD} bestcf unlock           # 解锁并恢复自动轮换"
+      echo -e "  ${MANAGE_CMD} bestcf set <IP...>      # 自定义指定优选 IP 并锁定"
+      echo -e "  ${MANAGE_CMD} bestcf interval <周期>  # 调整定时周期 (0/peak/1h/2h/4h/6h)"
       echo -e "  ${MANAGE_CMD} bestcf check            # 立即检测当前优选 IP 延迟/握手质量"
       echo -e "  ${MANAGE_CMD} bestcf run              # 强制立即测速与更新 DNS"
-      echo -e "  ${MANAGE_CMD} bestcf interval <周期>  # 调整定时周期 (如 2h, 4h, 6h)"
       echo -e "  ${MANAGE_CMD} bestcf on / off         # 开启 / 暂停自动更新定时器与健康检查"
       echo ""
       ;;
@@ -2317,6 +2345,11 @@ def cf_api_request(method, endpoint, data=None):
         return json.load(resp)
 
 def get_existing_records():
+    try:
+        res = cf_api_request("GET", f"dns_records?type=A&name={DOMAIN_NAME}")
+        return res.get("result", [])
+    except Exception:
+        pass
     cf_bin = shutil.which("cf") or "/usr/local/bin/cf"
     if os.path.exists(cf_bin) and os.access(cf_bin, os.X_OK):
         try:
@@ -2332,8 +2365,7 @@ def get_existing_records():
                     return [r for r in records if r.get("name") == DOMAIN_NAME and r.get("type") == "A"]
         except Exception:
             pass
-    res = cf_api_request("GET", f"dns_records?type=A&name={DOMAIN_NAME}")
-    return res.get("result", [])
+    return []
 
 def sync_dns(ips):
     if not ips:
@@ -2747,23 +2779,149 @@ print('')
       if [[ ! -x "$py_script" ]]; then
         fail "未找到 ${py_script}，请先执行 ${MANAGE_CMD} bestcf setup"
       fi
+      local lock_file="${dir}/lock"
+      local locked_ip_file="${dir}/locked_ips.txt"
+      if [[ -f "$lock_file" || -f "$locked_ip_file" ]]; then
+        echo -e "${YELLOW}[!] 当前优选 IP 正处于【锁定模式】${NC}"
+        read -rp "是否确认强制重新测速并同步最优 IP？[y/N]: " confirm_run
+        if [[ ! "${confirm_run:-n}" =~ ^[Yy]$ ]]; then
+          info "已取消操作，保持当前优选 IP 锁定状态不变。"
+          return 0
+        fi
+      fi
       info "正在手动触发测速与 DNS 解析同步 (约需 10~30 秒)..."
-      "$py_script"
+      "$py_script" --force
+      if [[ -f "$lock_file" || -f "$locked_ip_file" ]]; then
+        # 同步更新锁定列表中的 IP
+        if [[ -n "$cur_domain" ]] && command -v getent >/dev/null 2>&1; then
+          getent ahostsv4 "$cur_domain" 2>/dev/null | awk '{print $1}' | sort -u > "${dir}/locked_ips.txt"
+        fi
+      fi
       info "测速与 DNS 解析同步完成！"
+      ;;
+    lock)
+      mkdir -p "$dir"
+      local cur_domain cur_zone cur_token
+      if [[ -f "$py_script" ]]; then
+        cur_domain=$(grep -E '^\s*DOMAIN_NAME\s*=' "$py_script" | cut -d'"' -f2 || true)
+        cur_zone=$(grep -E '^\s*CF_ZONE_ID\s*=' "$py_script" | cut -d'"' -f2 || true)
+        cur_token=$(grep -E '^\s*CF_TOKEN\s*=' "$py_script" | cut -d'"' -f2 || true)
+      fi
+      local cur_records=""
+      if [[ -n "$cur_domain" ]] && command -v getent >/dev/null 2>&1; then
+        cur_records=$(getent ahostsv4 "$cur_domain" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ')
+      fi
+      if [[ -z "$cur_records" && -n "$cur_zone" && -n "$cur_token" ]]; then
+        cur_records=$(python3 -c "
+import urllib.request, json
+try:
+    url = f'https://api.cloudflare.com/client/v4/zones/${cur_zone}/dns_records?type=A&name=${cur_domain}'
+    req = urllib.request.Request(url, headers={'Authorization': 'Bearer ${cur_token}'})
+    with urllib.request.urlopen(req) as resp:
+        print(' '.join([r['content'] for r in json.load(resp).get('result', [])]))
+except Exception:
+    pass
+" 2>/dev/null || true)
+      fi
+      local lock_ips="${2:-$cur_records}"
+      [[ -n "$lock_ips" ]] || fail "未能获取当前解析 IP，请通过: ${MANAGE_CMD} bestcf set <IP...> 手动指定"
+
+      echo "$lock_ips" | tr ' ' '\n' | grep -E '^[0-9.]+$' > "${dir}/locked_ips.txt"
+      touch "${dir}/lock"
+      systemctl stop cf-bestip.timer 2>/dev/null || true
+      systemctl disable cf-bestip.timer 2>/dev/null || true
+
+      info "已成功锁定当前优选 IP: $(tr '\n' ' ' < "${dir}/locked_ips.txt")"
+      info "已停止并禁用后台定时轮换 (cf-bestip.timer)"
+      info "已开启 IP 防漂移保护，后续更新与切换完全由您自主决定！"
+      ;;
+    unlock)
+      rm -f "${dir}/lock" "${dir}/locked_ips.txt"
+      systemctl enable --now cf-bestip.timer 2>/dev/null || true
+      systemctl enable --now cf-healthcheck.timer 2>/dev/null || true
+      info "已解除优选 IP 锁定，恢复定时自动轮换与自愈监听。"
+      ;;
+    set)
+      local cur_domain="" cur_zone="" cur_token=""
+      if [[ -f "$py_script" ]]; then
+        cur_domain=$(grep -E '^\s*DOMAIN_NAME\s*=' "$py_script" | cut -d'"' -f2 || true)
+        cur_zone=$(grep -E '^\s*CF_ZONE_ID\s*=' "$py_script" | cut -d'"' -f2 || true)
+        cur_token=$(grep -E '^\s*CF_TOKEN\s*=' "$py_script" | cut -d'"' -f2 || true)
+      fi
+
+      local input_ips="${2:-}"
+      if [[ -z "$input_ips" ]]; then
+        local cur_ip_str=""
+        [[ -f "${dir}/locked_ips.txt" ]] && cur_ip_str=$(tr '\n' ' ' < "${dir}/locked_ips.txt")
+        [[ -z "$cur_ip_str" && -n "$cur_domain" ]] && cur_ip_str=$(getent ahostsv4 "$cur_domain" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ')
+        echo -e "当前解析 IP: ${cur_ip_str:-未获取到}"
+        read -rp "请输入要指定并锁定的 Cloudflare IP (多个 IP 空格隔开): " input_ips
+      fi
+      [[ -n "$input_ips" ]] || fail "IP 不能为空"
+
+      if [[ -n "$cur_domain" && -n "$cur_zone" && -n "$cur_token" ]]; then
+        python3 -c "
+import urllib.request, json
+ips = '${input_ips}'.strip().split()
+headers = {'Authorization': 'Bearer ${cur_token}', 'Content-Type': 'application/json'}
+url = f'https://api.cloudflare.com/client/v4/zones/${cur_zone}/dns_records?type=A&name=${cur_domain}'
+req = urllib.request.Request(url, headers=headers)
+with urllib.request.urlopen(req) as resp:
+    records = json.load(resp).get('result', [])
+deletes = [{'id': r['id']} for r in records]
+posts = [{'type': 'A', 'name': '${cur_domain}', 'content': ip, 'ttl': 60, 'proxied': False, 'comment': 'Auto BestCF Locked'} for ip in ips]
+batch_url = f'https://api.cloudflare.com/client/v4/zones/${cur_zone}/dns_records/batch'
+b_req = urllib.request.Request(batch_url, headers=headers, data=json.dumps({'deletes': deletes, 'posts': posts}).encode('utf-8'))
+with urllib.request.urlopen(b_req) as resp:
+    res = json.load(resp)
+if res.get('success'):
+    print('已成功同步至 Cloudflare DNS 记录！')
+else:
+    print('DNS 批量更新未成功:', res.get('errors'))
+" 2>/dev/null || true
+      fi
+
+      mkdir -p "$dir"
+      echo "$input_ips" | tr ' ' '\n' | grep -E '^[0-9.]+$' > "${dir}/locked_ips.txt"
+      touch "${dir}/lock"
+      systemctl stop cf-bestip.timer 2>/dev/null || true
+      systemctl disable cf-bestip.timer 2>/dev/null || true
+      info "已更新 DNS 并锁定为目标 IP: ${input_ips}"
+      info "后台定时轮换已停用，后续更新由您自主决定。"
       ;;
     interval)
       local int_val="${2:-}"
       if [[ -z "$int_val" ]]; then
         echo -e "定时周期预设:"
+        echo -e "  0) lock  - 锁定当前 IP，关闭自动轮换 (完全由我自主决定)"
         echo -e "  1) peak  - 每日高峰模式 (推荐: 12:30, 19:00-23:00 每整点, 04:00 凌晨基准)"
         echo -e "  2) 1h    - 每 1 小时定时轮换"
         echo -e "  3) 2h    - 每 2 小时定时轮换"
         echo -e "  4) 4h    - 每 4 小时定时轮换"
-        read -rp "请输入选项 [peak/1h/2h/4h/6h]: " int_val
+        echo -e "  5) 6h    - 每 6 小时定时轮换"
+        read -rp "请输入选项 [0/peak/1h/2h/4h/6h]: " int_val
       fi
       [[ -n "$int_val" ]] || fail "周期不能为空"
+      case "$int_val" in
+        0|lock|LOCK)
+          cmd_bestcf lock
+          return 0
+          ;;
+        1|peak|PEAK) int_val="peak" ;;
+        2) int_val="1h" ;;
+        3) int_val="2h" ;;
+        4) int_val="4h" ;;
+        5) int_val="6h" ;;
+        *)
+          # 若输入纯数字，默认单位是小时 (例如输入 4 -> 4h，避免 systemd 误按秒执行导致死循环)
+          if [[ "$int_val" =~ ^[0-9]+$ ]]; then
+            int_val="${int_val}h"
+          fi
+          ;;
+      esac
+      rm -f "${dir}/lock" "${dir}/locked_ips.txt"
       [[ -f "$timer_file" ]] || fail "定时器文件不存在，请先执行 ${MANAGE_CMD} bestcf setup"
-      if [[ "$int_val" == "peak" || "$int_val" == "1" ]]; then
+      if [[ "$int_val" == "peak" ]]; then
         cat > "$timer_file" <<TMREOF
 [Unit]
 Description=Run Cloudflare Best IP DNS Auto-Updater periodically
@@ -2786,7 +2944,6 @@ Description=Run Cloudflare Best IP DNS Auto-Updater periodically
 
 [Timer]
 OnBootSec=5min
-OnActiveSec=${int_val}
 OnUnitActiveSec=${int_val}
 Persistent=true
 
@@ -2795,23 +2952,23 @@ WantedBy=timers.target
 TMREOF
       fi
       systemctl daemon-reload
-      systemctl restart cf-bestip.timer
-      info "定时周期已更新为: ${int_val}"
+      systemctl enable --now cf-bestip.timer
+      info "定时周期已更新为: ${int_val} (已恢复自动轮换)"
       ;;
     on)
+      rm -f "${dir}/lock" "${dir}/locked_ips.txt"
       systemctl enable --now cf-bestip.timer 2>/dev/null || true
       systemctl enable --now cf-healthcheck.timer 2>/dev/null || true
-      info "Cloudflare 优选定时器与故障自愈监听已开启"
+      info "Cloudflare 优选定时轮换与故障自愈监听已开启 (已解除锁定)"
       ;;
     off)
-      systemctl stop cf-bestip.timer 2>/dev/null || true
-      systemctl disable cf-bestip.timer 2>/dev/null || true
+      cmd_bestcf lock
       systemctl stop cf-healthcheck.timer 2>/dev/null || true
       systemctl disable cf-healthcheck.timer 2>/dev/null || true
-      info "Cloudflare 优选定时器与故障自愈监听已停用"
+      info "已暂停后台监听服务，当前 IP 保持锁定"
       ;;
     *)
-      fail "用法: ${MANAGE_CMD} bestcf [show|setup|check|audit|run|interval|on|off]"
+      fail "用法: ${MANAGE_CMD} bestcf [show|lock|unlock|set|interval|check|run|audit|setup|on|off]"
       ;;
   esac
 }
@@ -4323,7 +4480,7 @@ cmd_menu() {
     echo " 28) 证书续期方式查看 / 切换 DNS-01 (cert: show / dnscf)"
     echo " 29) Nginx 版本检查与升级 (nginx: show / check / update)"
     echo " 30) Reality 节点管理 (show / vision on|off / xhttp on|off / updown on|off)"
-    echo " 31) Cloudflare CDN 优选 IP 自动化 (bestcf: show / setup / run / interval / on / off)"
+    echo " 31) Cloudflare CDN 优选 IP (bestcf: 锁定当前IP / 自主控制 / 定时轮换)"
     echo " 32) 卸载"
     echo "  0) 退出"
     read -rp "请选择: " choice
@@ -4410,25 +4567,30 @@ cmd_menu() {
       30) read -rp "  show / vision on|off / xhttp on|off / updown on|off: " a; ( cmd_reality ${a:-show} ) ;;
       31)
         echo ""
-        echo -e "${CYAN}--- Cloudflare 优选 IP 自动化操作选择 ---${NC}"
+        echo -e "${CYAN}--- Cloudflare 优选 IP 操作菜单 (自主控制) ---${NC}"
         echo "  1) 查看当前状态与解析 (show)"
-        echo "  2) 配置 Cloudflare 凭据与域名 (setup)"
-        echo "  3) 立即执行链路健康与延迟检测 (check)"
-        echo "  4) Cloudflare DNS 全面规范性体检 (audit: 校验小黄云/灰云状态)"
-        echo "  5) 立即强制重新测速与 DNS 同步 (run)"
-        echo "  6) 修改自动轮换周期 (interval)"
-        echo "  7) 开启自动更新与故障自愈监听 (on)"
-        echo "  8) 暂停自动更新与故障自愈监听 (off)"
-        read -rp "请选择 [1-8 或输入指令，直接回车查看状态]: " a
+        echo "  2) 锁定当前优选 IP (lock: 禁止自动轮换，由我自主决定)"
+        echo "  3) 解锁并恢复自动轮换 (unlock: 开启定时自动轮换)"
+        echo "  4) 手动指定优选 IP (set: 自定义填入 IP 并锁定)"
+        echo "  5) 调整自动轮换周期 (interval: 高峰模式/1h/2h/4h/6h/锁定关闭)"
+        echo "  6) 立即执行链路健康与延迟检测 (check)"
+        echo "  7) 立即强制重新测速与 DNS 同步 (run)"
+        echo "  8) Cloudflare DNS 全面规范性体检 (audit: 校验小黄云/灰云状态)"
+        echo "  9) 配置 Cloudflare 凭据与域名 (setup)"
+        echo " 10) 暂停自动更新与健康检查 (off)"
+        read -rp "请选择 [1-10 或输入指令，直接回车查看状态]: " a
         case "$a" in
           1|show|"")  cmd_bestcf show ;;
-          2|setup)    cmd_bestcf setup ;;
-          3|check)    cmd_bestcf check ;;
-          4|audit)    cmd_bestcf audit ;;
-          5|run)      cmd_bestcf run ;;
-          6|interval) cmd_bestcf interval ;;
-          7|on)       cmd_bestcf on ;;
-          8|off)      cmd_bestcf off ;;
+          2|lock)     cmd_bestcf lock ;;
+          3|unlock)   cmd_bestcf unlock ;;
+          4|set)      cmd_bestcf set ;;
+          5|interval) cmd_bestcf interval ;;
+          6|check)    cmd_bestcf check ;;
+          7|run)      cmd_bestcf run ;;
+          8|audit)    cmd_bestcf audit ;;
+          9|setup)    cmd_bestcf setup ;;
+          10|off)     cmd_bestcf off ;;
+          on)         cmd_bestcf on ;;
           *)          cmd_bestcf "${a:-show}" ;;
         esac
         ;;
@@ -4476,7 +4638,7 @@ xray-xhttp 管理命令
   xh autoupdate [on|off|show]       每周日 04:00 自动更新 Xray-core，并检查 nginx / tcp-brutal 新版本（只提醒）
   xh guard              健康检查并拉起异常服务（cron 调用）
   xh reality [show|vision on|off|xhttp on|off|updown on|off]  Reality 节点管理（Vision / XHTTP 增删服务端项并重启 xray；updown 为纯客户端链接）
-  xh bestcf [show|setup|check|audit|run|interval|on|off]  Cloudflare 优选 IP 自动化测速、秒级自愈与 DNS 规范体检
+  xh bestcf [show|lock|unlock|set|interval|check|run|audit|setup|on|off]  Cloudflare 优选 IP 管理（支持锁定IP/自主决策/定时轮换）
   xh uninstall          卸载全部组件
   xh version
 USAGEEOF

@@ -133,6 +133,10 @@ if [[ "$XRAY_DEFAULTS" == true ]]; then
   HY2_UDP_IDLE_JSON=""
   HY2_SOCKOPT_JSON=""
   H3_SOCKOPT_JSON=""
+  if [[ "$XRAY_TCP_CC" == "brutal" ]]; then
+    XRAY_SOCKOPT_TUNE=$',\n                    "tcpcongestion": "brutal"'
+    XRAY_FREEDOM_SOCKOPT_TUNE=$',\n                    "tcpcongestion": "bbr"'
+  fi
 else
   XRAY_SOCKOPT_TUNE=$',\n                    "tcpFastOpen": true,\n                    "tcpMptcp": true,\n                    "tcpcongestion": "'"${XRAY_TCP_CC:-brutal}"$'",\n                    "tcpKeepAliveIdle": 30,\n                    "tcpKeepAliveInterval": 5,\n                    "tcpUserTimeout": 300000'
   XRAY_FREEDOM_SOCKOPT_TUNE=$',\n                    "tcpFastOpen": true,\n                    "tcpMptcp": false,\n                    "tcpcongestion": "bbr",\n                    "tcpKeepAliveIdle": 30,\n                    "tcpKeepAliveInterval": 5,\n                    "tcpUserTimeout": 300000'

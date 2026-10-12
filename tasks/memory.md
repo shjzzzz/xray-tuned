@@ -250,3 +250,19 @@
      - Mihomo 配置 `download-settings.server` 绑定 `${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}`；`servername` 与 `host` 严格保持 `${CDN_DOMAIN}`。
   3. **反向分离节点上行对齐**：`CDN-Up-Reality-Down` 的上行连接地址同样绑定 `${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}`。
   4. **全端订阅与备用节点库重载**：重新渲染本机 `/home/ubuntu/client-config*` 与 `/etc/xhttp-cdn/all/`，并通过 `xh resub` 刷新发布到 Nginx 订阅系统。
+
+## 17. TCP Brutal 极速拥塞控制全面优化与入站分工修复规范 (2026-10-12)
+- **故障与优化背景**：
+  1. **Xray Brutal 开启静默失效**：在 `XRAY_DEFAULTS=true` 规范下，`config.json` 不包含预设的 `"tcpcongestion":"bbr"`，导致 `xh brutal on` 的字符串替换落空，Xray 始终未真正应用 Brutal，且 `xh brutal show` 中 `Xray 入站 CC:` 显示为空白。
+  2. **默认速率严重超配引发重传风暴**：此前 `get_default_brutal_speed_mbps` 默认绑定物理网卡 95%（Oracle 4000M 网卡即 3800 Mbps）。对于 100M~1000M 的普通家宽客户端，Brutal 不退让的定速发包会导致高达 20%~30% 的丢包和重传风暴，且 3800 Mbps 的 BDP 超过了系统单流缓冲区 64MB 上限。
+  3. **双项目诊断体系不同步**：`sbbox brutal show` 缺少 `ss -tin` 实时 CC 连接分布、重传率监测及路由锁检测，且未与 Hysteria 2 原生 Brutal 联动提示。
+- **优化对策与工程落地**：
+  1. **智能 JSONC 注入与出站保护**：
+     - 重构 `set_tcp_brutal_xray`：精准定位 TCP/xhttp/raw 入站并在 `sockopt` 注入 `"tcpcongestion": "brutal"`，`off` 时无缝恢复为 `bbr`；
+     - 严格守卫 Freedom 直连出站，确保出站始终维持 `bbr`，防止服务器向外部公网发包时发生拥塞崩溃。
+  2. **智能宽带档位推荐交互 (`choose_brutal_speed`)**：
+     - 引入多档位智能推荐：100M (90M)、300M (270M，主流推荐)、500M (450M)、1000M (900M)、峰值 (3800M) 与自定义；
+     - 当下发速率高于 1500 Mbps 时，`show` 界面主动给出调优告警指引。
+  3. **双端管理体系（`xh` / `sbbox`）深度对齐**：
+     - 升级 `sbbox brutal show`，同步引入 `ss -tin` 在线连接 CC 吞吐与重传率监控、路由锁检测及 Hysteria 2 Brutal 状态看板；
+     - 两端统一交互逻辑与安全边界。

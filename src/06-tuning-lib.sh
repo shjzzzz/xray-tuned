@@ -835,6 +835,58 @@ get_default_brutal_speed_mbps() {
   echo "$target"
 }
 
+choose_brutal_speed() {
+  local input="${1:-}"
+  if [[ -n "$input" && "$input" != "auto" ]]; then
+    echo "$input"
+    return 0
+  fi
+
+  if [[ ! -t 0 ]]; then
+    get_default_brutal_speed_mbps
+    return 0
+  fi
+
+  local max_spd def_spd
+  max_spd=$(get_machine_max_speed_mbps)
+  def_spd=$(( max_spd * 95 / 100 ))
+  [[ "$def_spd" -gt 0 ]] || def_spd=950
+
+  echo "" >&2
+  echo -e "${CYAN}--- 请选择 TCP Brutal 下发速率 (建议对齐客户端实际下行宽带) ---${NC}" >&2
+  echo -e "  ${YELLOW}注意：Brutal 属固定速率发包；若高于客户端物理带宽会引发严重丢包，设为下行 80%~90% 最优。${NC}" >&2
+  echo "  1) 100 Mbps   (手机蜂窝 / 百兆宽带，推荐下发 90M)" >&2
+  echo "  2) 300 Mbps   (主流家庭宽带，推荐下发 270M)" >&2
+  echo "  3) 500 Mbps   (中高规格宽带，推荐下发 450M)" >&2
+  echo "  4) 1000 Mbps  (千兆极速光纤，推荐下发 900M)" >&2
+  echo "  5) 峰值最大   (本机网卡 95%: ${def_spd} Mbps)" >&2
+  echo "  6) 自定义速率 (手动输入 Mbps)" >&2
+  read -rp "请选择 [1-6，直接回车推荐 300M (270)]: " choice >&2
+
+  case "$choice" in
+    1) echo "90" ;;
+    2|"") echo "270" ;;
+    3) echo "450" ;;
+    4) echo "900" ;;
+    5) echo "$def_spd" ;;
+    6)
+      read -rp "请输入自定义下发速率 (Mbps，如 200): " custom >&2
+      if [[ "$custom" =~ ^[0-9]+$ && "$custom" -gt 0 ]]; then
+        echo "$custom"
+      else
+        echo "270"
+      fi
+      ;;
+    *)
+      if [[ "$choice" =~ ^[0-9]+$ && "$choice" -gt 0 ]]; then
+        echo "$choice"
+      else
+        echo "270"
+      fi
+      ;;
+  esac
+}
+
 # 报告内核里的 bbr 是 v1 还是 v3。
 #
 # 主判据：/proc/kallsyms 里的函数符号。v3 重写了 ProbeBW 状态机，引入
@@ -1056,48 +1108,81 @@ EOF
 set_tcp_brutal_xray() {
   local action="$1"
   local mbps="${2:-}"
-  if [[ -z "$mbps" || "$mbps" == "auto" ]]; then
-    mbps="$(get_default_brutal_speed_mbps)"
-  fi
   local cfg="/usr/local/etc/xray/config.json"
   [[ -f "$cfg" ]] || { warn "未找到 Xray 配置文件: $cfg"; return 1; }
 
+  local bak="${cfg}.bak-brutal"
+  cp -a "$cfg" "$bak"
+
   if [[ "$action" == "on" ]]; then
+    if [[ -z "$mbps" || "$mbps" == "auto" ]]; then
+      mbps="$(choose_brutal_speed auto)"
+    fi
     install_tcp_brutal_module || true
     install_tcp_brutal_service "$mbps"
 
     python3 -c "
 import re
-with open('$cfg', 'r') as f:
-    s = f.read()
-s = s.replace('\"tcpcongestion\":\"bbr\"', '\"tcpcongestion\":\"brutal\"')
-s = s.replace('\"tcpcongestion\": \"bbr\"', '\"tcpcongestion\": \"brutal\"')
+
+cfg = '$cfg'
+with open(cfg, 'r', encoding='utf-8') as f:
+    text = f.read()
+
+# 1. 对所有已存在 sockopt 但缺少 tcpcongestion 的块注入 tcpcongestion: brutal
+s = re.sub(r'(\"sockopt\"\s*:\s*\{)(?![^}]*\"tcpcongestion\")', r'\1\n                    \"tcpcongestion\": \"brutal\",', text)
+# 2. 对已存在 tcpcongestion 的块替换为 brutal
+s = re.sub(r'\"tcpcongestion\"\s*:\s*\"[^\"]*\"', '\"tcpcongestion\": \"brutal\"', s)
+# 3. 对 Reality 入站 (network: raw) 若尚无 sockopt 则注入
+if '\"network\": \"raw\"' in s:
+    idx = s.find('\"network\": \"raw\"')
+    sub = s[idx:idx+400]
+    if '\"sockopt\"' not in sub:
+        s = re.sub(r'(\"realitySettings\"\s*:\s*\{[\s\S]*?\n\s*\})', r'\1,\n                \"sockopt\": {\n                    \"tcpcongestion\": \"brutal\"\n                }', s, count=1)
+# 4. 严格保护 freedom 直连出站：严禁出站使用 brutal，始终维持 bbr
 s = re.sub(r'(\"protocol\"\s*:\s*\"freedom\"[\s\S]*?\"sockopt\"\s*:\s*\{[\s\S]*?\"tcpcongestion\"\s*:\s*)\"brutal\"', r'\g<1>\"bbr\"', s)
-with open('$cfg', 'w') as f:
+
+with open(cfg, 'w', encoding='utf-8') as f:
     f.write(s)
-" 2>/dev/null || sed -i -e 's/"tcpcongestion":[[:space:]]*"bbr"/"tcpcongestion":"brutal"/g' "$cfg"
+" 2>/dev/null || true
 
     if "$XRAY_BIN" run -test -c "$cfg" >/dev/null 2>&1; then
+      rm -f "$bak"
       svc restart xray
-      info "Xray 已成功开启 TCP Brutal（默认速率: ${mbps} Mbps）"
+      if declare -f update_node_env >/dev/null 2>&1; then
+        update_node_env "XRAY_TCP_CC" "brutal"
+      fi
+      info "Xray 已成功开启 TCP Brutal（入站下发速率: ${mbps} Mbps，Freedom 出站维持 BBR 保护）"
     else
       warn "Xray 配置文件测试失败，正在回滚..."
-      set_tcp_brutal_xray off
+      mv -f "$bak" "$cfg"
       return 1
     fi
   else
     python3 -c "
-with open('$cfg', 'r') as f:
-    s = f.read()
-s = s.replace('\"tcpcongestion\":\"brutal\"', '\"tcpcongestion\":\"bbr\"')
-s = s.replace('\"tcpcongestion\": \"brutal\"', '\"tcpcongestion\": \"bbr\"')
-with open('$cfg', 'w') as f:
+import re
+
+cfg = '$cfg'
+with open(cfg, 'r', encoding='utf-8') as f:
+    text = f.read()
+
+# 入站切回 BBR（若已有 tcpcongestion 则改为 bbr）
+s = re.sub(r'\"tcpcongestion\"\s*:\s*\"brutal\"', '\"tcpcongestion\": \"bbr\"', text)
+
+with open(cfg, 'w', encoding='utf-8') as f:
     f.write(s)
-" 2>/dev/null || sed -i -e 's/"tcpcongestion":[[:space:]]*"brutal"/"tcpcongestion":"bbr"/g' "$cfg"
+" 2>/dev/null || true
 
     if "$XRAY_BIN" run -test -c "$cfg" >/dev/null 2>&1; then
+      rm -f "$bak"
       svc restart xray
+      if declare -f update_node_env >/dev/null 2>&1; then
+        update_node_env "XRAY_TCP_CC" "bbr"
+      fi
       info "Xray 已成功切回 BBR 拥塞控制"
+    else
+      warn "Xray 配置文件测试失败，正在回滚..."
+      mv -f "$bak" "$cfg"
+      return 1
     fi
   fi
 }
@@ -1241,8 +1326,8 @@ reload_tcp_brutal() {
 set_tcp_brutal_speed() {
   local mbps="${1:-}"
   if [[ -z "$mbps" || "$mbps" == "auto" ]]; then
-    mbps="$(get_default_brutal_speed_mbps)"
-    info "未指定速率，已自动设置为本机最大速度的 95%: ${mbps} Mbps"
+    mbps="$(choose_brutal_speed auto)"
+    info "下发速率已设置为: ${mbps} Mbps"
   fi
   install_tcp_brutal_service "$mbps"
 
