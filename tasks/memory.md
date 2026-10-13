@@ -292,8 +292,8 @@
      - **智能归属判定**：重构 `backup_port_busy "$proto" "$port" "$key"`，先用 `ss -ltnpH` 检查是否有非 `xray` 进程占用；若仅为 `xray`，进一步检查 `config.json` 是否包含当前节点专属标记（如 `// >>xh:${key}`）。若是自身标记，则允许开启流程执行，从而完成 `node.env`、客户端文件与订阅的自愈同步。
      - **状态脱节双重校验与进程名提示**：在 `cmd_backup_server_node` 的 `show`、`on`、`off` 以及 `cmd_hy2` 中，双重检查 `node.env` 状态与 `config.json` 入站标记（`$cur == true || $has_inbound == true`）；端口占用时抓取具体进程信息（如 `users:((...))`）清晰输出，并在 `off` 中允许清理残留标记，彻底终结死锁。
   2. **CDN 节点全链路极速性能调优**：
-     - **客户端多路并发突破（`maxConnections: 6`）**：将 `src/11-client-config.sh` 中的 `XMUX_CDN_ENC` 调整为 `maxConnections=6`，客户端通过 6 条物理 TCP 隧道并发分流，突破 Cloudflare 边缘的单流限速限制。
-     - **QUIC 接收窗口全量注入（`fm` 参数）**：解除 `XRAY_DEFAULTS=true` 对 `XH3_FM_PARAM` 的清空限制，确保 `CDN-H3` 客户端链接恒常注入 32MB 流窗口与 64MB 连接窗口（`quicParams`），消除高延迟长肥管道（BDP）的吞吐瓶颈。
+     - **客户端多路并发拉满突破（`maxConnections: 16`）**：将 `src/11-client-config.sh` 中的 `XMUX_CDN_ENC` 由 3 -> 6 进一步拉满至 `maxConnections=16`，匹配主流多线程下载（如 IDM / Aria2）与测速上限，客户端通过最多 16 条物理 TCP 隧道并发分流，彻底突破 Cloudflare 免费版 Anycast 边缘的单流限速（多流叠加可释放 300~450 Mbps 吞吐）。
+     - **QUIC 接收窗口极致拉满（`fm` 参数）**：解除 `XRAY_DEFAULTS=true` 对 `XH3_FM_PARAM` 的清空限制，将流接收窗口扩至初始 8MB / 上限 64MB，连接接收窗口扩至初始 16MB / 上限 128MB（`quicParams`）。在 160ms+ 跨境网络下理论 BDP 吞吐上限跃升至 6.4 Gbps，同时兼顾 iOS Network Extension 50MB 内存上限避免 Jetsam 闪退。
      - **Nginx 反代缓冲翻倍扩容**：在 `templates/nginx.conf.tmpl` 与 `/etc/nginx/nginx.conf` 中，将 `http2_max_concurrent_streams` 提升至 2048，`http2_recv_buffer_size` 与 `grpc_buffer_size` 由 1024k 扩容至 4096k (4MB)，`client_body_buffer_size` 扩至 1024k，减少 TCP/gRPC 报文分片与内存复制开销。
      - **Clean IP 深度净化与锁定**：运行 `probe.py` 进行毫秒级 TLS 握手与真实 XHTTP 隧道回源探测，剔除异常停顿节点，选定低延迟（12ms 握手、140ms 隧道）优选 Clean IP 并通过 `xh bestcf set` 锁定。
   3. **全端订阅刷新与平滑重载**：
