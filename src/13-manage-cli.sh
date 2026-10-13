@@ -3337,12 +3337,31 @@ backup_open_port() {
   [[ $failed -eq 0 ]] || warn "端口 ${proto^^} ${port} 的防火墙规则没有全部写入或保存，请手动检查：iptables -S INPUT | grep ${port}"
 }
 
-backup_port_busy() {   # $1 = tcp|udp，$2 = 端口
-  if [[ "$1" == tcp ]]; then
-    ss -Hltn "sport = :$2" 2>/dev/null | grep -q .
-  else
-    ss -Hlun "sport = :$2" 2>/dev/null | grep -q .
+backup_port_busy() {   # $1 = tcp|udp，$2 = 端口，$3 = key (可选，如 h2direct, hy2h3, hy2obfs, masque)
+  local proto="$1" port="$2" key="${3:-}"
+  local flag="-ltnpH"
+  [[ "$proto" == udp ]] && flag="-lunpH"
+
+  local listeners
+  listeners=$(ss $flag "sport = :$port" 2>/dev/null)
+  [[ -z "$listeners" ]] && return 1
+
+  # 检查是否有非 xray 进程占用
+  local non_xray
+  non_xray=$(echo "$listeners" | grep -v '"xray"')
+  if [[ -n "$non_xray" ]]; then
+    return 0
   fi
+
+  # 若仅有 xray 占用，检查是否正是本节点自身的入站标记（配置已包含该入站但状态不同步时不阻断开启）
+  local conf="${XRAY_CONF:-/usr/local/etc/xray/config.json}"
+  if [[ -n "$key" && -f "$conf" ]]; then
+    if grep -q "// >>xh:${key}" "$conf"; then
+      return 1
+    fi
+  fi
+
+  return 0
 }
 
 # 需要服务端入站的备用节点：h2direct（TCP H2_PORT）、hy2obfs（UDP HY2_PORT）与 masque（UDP MASQUE_PORT）。$1 = key，$2 = show|on|off
@@ -3359,7 +3378,9 @@ cmd_backup_server_node() {
     show|status)
       echo ""
       echo -e "${CYAN}=== ${label} ===${NC}"
-      if [[ "$cur" == true ]]; then
+      local has_inbound=false
+      [[ -f "$XRAY_CONF" ]] && grep -q "// >>xh:${key}" "$XRAY_CONF" && has_inbound=true
+      if [[ "$cur" == true || "$has_inbound" == true ]]; then
         echo -e "  当前状态:       ${GREEN}已开启${NC}  (${proto^^} ${port})"
       else
         echo -e "  当前状态:       ${YELLOW}未开启${NC}  (开启后监听 ${proto^^} ${port})"
@@ -3377,7 +3398,9 @@ cmd_backup_server_node() {
       echo ""
       ;;
     on)
-      [[ "$cur" == true ]] && { info "${label} 已经是开启状态"; return 0; }
+      local has_inbound=false
+      [[ -f "$XRAY_CONF" ]] && grep -q "// >>xh:${key}" "$XRAY_CONF" && has_inbound=true
+      [[ "$cur" == true && "$has_inbound" == true ]] && { info "${label} 已经是开启状态"; return 0; }
       backup_store_check
       [[ -f "$NODE_ENV_FILE" ]] || fail "未找到 ${NODE_ENV_FILE}，无法保存开关状态"
       if [[ ! -s "${ALL_STORE_DIR}/inbound-${key}.json" ]]; then
@@ -3394,7 +3417,9 @@ cmd_backup_server_node() {
         [[ "${FEATURE_HY2:-false}" == true ]] || fail "Hysteria2 总开关未开启，不能开混淆节点。先执行：${MANAGE_CMD} hy2 on"
         [[ "${FEATURE_PORT_HOPPING:-false}" != true ]] || fail "本机开着端口跳跃（FEATURE_PORT_HOPPING），该开关暂不处理跳跃规则"
       fi
-      backup_port_busy "$proto" "$port" && fail "${proto^^} ${port} 已被其他进程占用，未做任何修改"
+      local occupier="" flag_chk="-ltnpH"; [[ "$proto" == udp ]] && flag_chk="-lunpH"
+      occupier=$(ss $flag_chk "sport = :$port" 2>/dev/null | grep -o 'users:(([^)]*' | head -1)
+      backup_port_busy "$proto" "$port" "$key" && fail "${proto^^} ${port} 已被其他进程占用${occupier:+ ($occupier)}，未做任何修改"
       info "正在开启 ${label} ..."
       backup_node_sync_files "$name" on || fail "更新客户端文件失败，未改动服务端（原因见上）"
       backup_inbound_edit "$key" on "$port"; rc=$?
@@ -3413,7 +3438,12 @@ cmd_backup_server_node() {
       cmd_resub
       ;;
     off)
-      [[ "$cur" == true ]] || { info "${label} 本来就是关闭状态"; return 0; }
+      local has_inbound=false
+      [[ -f "$XRAY_CONF" ]] && grep -q "// >>xh:${key}" "$XRAY_CONF" && has_inbound=true
+      if [[ "$cur" != true && "$has_inbound" != true ]]; then
+        info "${label} 本来就是关闭状态"
+        return 0
+      fi
       [[ "$key" != hy2obfs || "${FEATURE_PORT_HOPPING:-false}" != true ]] || fail "本机开着端口跳跃，关闭混淆节点会留下跳跃规则，请先手动处理 FEATURE_PORT_HOPPING"
       backup_store_check
       info "正在关闭 ${label} ..."
@@ -3552,8 +3582,9 @@ cmd_hy2() {
       [[ -f "$NODE_ENV_FILE" ]] || fail "未找到 ${NODE_ENV_FILE}，无法保存开关状态"
       [[ -s "${ALL_STORE_DIR}/inbound-hy2h3.json" ]] || fail "备用节点库缺少 inbound-hy2h3.json，需用最新安装命令重新部署"
       [[ -s /etc/ssl/private/fullchain.cer ]] || fail "未找到证书 /etc/ssl/private/fullchain.cer，无法开启 Hysteria2"
-      [[ -n "${HY2_PASSWORD:-}" ]] || fail "node.env 里没有 HY2_PASSWORD，无法开启 Hysteria2"
-      backup_port_busy udp "$port" && fail "UDP ${port} 已被其他进程占用，未做任何修改"
+      local occupier
+      occupier=$(ss -lunpH "sport = :$port" 2>/dev/null | grep -o 'users:(([^)]*' | head -1)
+      backup_port_busy udp "$port" hy2h3 && fail "UDP ${port} 已被其他进程占用${occupier:+ ($occupier)}，未做任何修改"
       info "正在开启 Hysteria2 直连节点 ..."
       backup_node_sync_files "Hysteria2-H3-Direct" on || fail "更新客户端文件失败，未改动服务端（原因见上）"
       backup_inbound_edit hy2h3 on "tag:hy2-h3"; rc=$?
