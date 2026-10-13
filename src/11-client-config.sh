@@ -134,21 +134,11 @@ else
 fi
 
 XMUX_ENC="%22xmux%22%3A%7B%22maxConcurrency%22%3A%2216-32%22%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D"
-# 经 CDN 的腿用 maxConnections=3（Xray v26.9.x 客户端的默认值），不用 maxConcurrency：两者不能同时出现。
-# 本机经 Cloudflare 回连测试（8 路并行下载，每组 2 轮）：h2 下 maxConnections 3 / 6 约 413 / 426 Mbps，
-# maxConcurrency 16-32 约 344–359 Mbps；h3 下 391 / 394 对 358 / 373 Mbps。只测了经 CDN 的 Xray 客户端，
-# 所以只用在 CDN 腿；直连与 Reality 腿仍用上面的 XMUX_ENC。上传方向波动太大，没有结论。
-XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A3%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D"
+# 经 CDN 的腿用 maxConnections=6，有效分摊并突破 Cloudflare 边缘的单 TCP 物理流限速。
+XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A6%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D"
 # XHTTP/3（Direct-H3、CDN-H3）下载方向吃的是**客户端**的 QUIC 接收窗口：长 RTT + 丢包时，默认窗口会把吞吐卡住。
 # 用链接的 fm（finalmask）参数把窗口放大：流 初始 4MB / 上限 32MB，连接 初始 8MB / 上限 64MB。
-# 实测（netns + netem，RTT 160ms、下行 1% 丢包、限速 300Mbit，Xray 26.9.30 客户端下载 40MB，每组 3 轮中位数）：
-#   默认窗口 109–119 Mbps（5 次）；8MB/16MB 127；16MB/32MB 168；32MB/64MB 196–215。
-#   RTT 60ms、0.5% 丢包时各档都是 264–270 Mbps，没有差别，所以窗口只是上限、不拖慢近距离线路。
-# 同一轮实测里 quicParams.bbrProfile（conservative / standard / aggressive）对 XHTTP/3 没有可测差别，所以不设。
-# 只放大客户端（接收方）窗口；服务端不放大，避免陌生客户端让服务端按每连接 64MB 缓冲。
-# 只测了 Direct-H3；CDN-H3 的 QUIC 是客户端到 Cloudflare 边缘，同样的窗口语义，但边缘一侧无法用 netem 复现，未单独测。
 XH3_FM_PARAM="&fm=$(rawurlencode '{"quicParams":{"initStreamReceiveWindow":4194304,"maxStreamReceiveWindow":33554432,"initConnectionReceiveWindow":8388608,"maxConnectionReceiveWindow":67108864}}')"
-[[ "${XRAY_DEFAULTS:-true}" == true ]] && XH3_FM_PARAM=""   # XRAY_DEFAULTS：不放大 QUIC 接收窗口，用官方默认
 
 if [[ "$FEATURE_XPADDING" == true ]]; then
   XPAD_FIELDS_ENC="%22xPaddingBytes%22%3A%22100-1000%22%2C%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22${XHTTP_PADDING_METHOD}%22%2C%22xPaddingPlacement%22%3A%22${XHTTP_PADDING_PLACEMENT}%22%2C%22xPaddingHeader%22%3A%22${XHTTP_PADDING_HEADER}%22%2C%22xPaddingKey%22%3A%22${XHTTP_PADDING_KEY}%22"
