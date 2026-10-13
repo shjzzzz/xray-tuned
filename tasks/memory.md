@@ -266,3 +266,37 @@
   3. **双端管理体系（`xh` / `sbbox`）深度对齐**：
      - 升级 `sbbox brutal show`，同步引入 `ss -tin` 在线连接 CC 吞吐与重传率监控、路由锁检测及 Hysteria 2 Brutal 状态看板；
      - 两端统一交互逻辑与安全边界。
+
+## 18. XHTTP-Direct-H2 入站端口检查修复与 CDN 节点全链路调优规范 (2026-10-13)
+- **背景与核心痛点**：
+  1. **Direct-H2 开启冲突与状态脱节自锁**：
+     - 在管理脚本 `xh` 菜单 20 开启 `XHTTP-Direct-H2`（TCP 8445）时，报错 `[ERROR] TCP 8445 已被其他进程占用，未做任何修改`。
+     - 实际上端口 8445 并非被外部第三方进程占用，而是被 Xray 服务自身正在监听；此时 `node.env` 中 `FEATURE_H2_DIRECT='false'`，管理脚本判定为未开启，执行开启时又被 `backup_port_busy` 拦截，形成不可恢复的死锁循环。
+  2. **默认 CDN 节点（CDN-H2 / CDN-H3）实际测速偏慢与链路瓶颈**：
+     - 默认生成的 `VLESS-XHTTP-CDN-H2` 与 `VLESS-XHTTP-CDN-H3` 节点通过 Cloudflare CDN 回源，客户端反馈实际测速偏慢。
+     - 核心瓶颈集中在：Cloudflare Free Anycast 边缘对单一长连接 TCP/QUIC 物理流的带宽惩罚与限速（通常 15~35 Mbps）；
+     - `XRAY_DEFAULTS=true` 策略下客户端 QUIC 接收窗口被降级为默认小窗口，高 RTT 跨洋链路下 BDP 严重受限；
+     - Nginx 反代缓冲（`grpc_buffer_size 1024k`、`http2_recv_buffer_size 1024k`）面对高并发多路复用时频繁发生切片与系统调用等待；
+     - 优选 IP 解析若漂移至高握手延时的 Anycast 边缘，导致首包和连接握手耗时高达数秒。
+- **根因分析**：
+  1. **`backup_port_busy` 检测逻辑缺陷**：
+     - 原函数直接调用 `ss -Hltn "sport = :$port"` 判断监听，没有区分监听进程是外部竞争进程还是 Xray 自身。
+     - 当服务端 `config.json` 已渲染有对应入站标记（如 `// >>xh:h2direct`），但 `node.env` 因历史原因或外部同步处于 `false` 时，执行 `on` 会无条件触发端口占用拦截，用户也无法执行 `off` 释放，导致功能永久失效。
+  2. **CDN 边缘限速与全链路缓冲短板**：
+     - 单物理流瓶颈：此前 `XMUX_CDN_ENC` 设为 `maxConnections=3`，在并发大文件下载时无法突破 Cloudflare 边缘的单流限速；
+     - 客户端 QUIC 窗口短板：`src/11-client-config.sh` 在 `XRAY_DEFAULTS=true` 时将 `XH3_FM_PARAM` 设为空，未给客户端注入 `quicParams`，客户端仅有默认初始小窗口，在 160ms+ 延迟下无法支撑百兆以上下行；
+     - Nginx 回源缓冲短板：Nginx 的 `grpc_buffer_size` 和 `http2_recv_buffer_size` 设为 1024k，对于高并发 gRPC 反代吞吐仍有不足；
+     - Clean IP 质量波动：部分 Anycast 节点在晚高峰或路由劣化时 TLS 握手长达数秒，严重拉低测速表现。
+- **修复对策与工程落地**：
+  1. **入站端口检测重构与状态脱节自愈 (`src/13-manage-cli.sh`)**：
+     - **智能归属判定**：重构 `backup_port_busy "$proto" "$port" "$key"`，先用 `ss -ltnpH` 检查是否有非 `xray` 进程占用；若仅为 `xray`，进一步检查 `config.json` 是否包含当前节点专属标记（如 `// >>xh:${key}`）。若是自身标记，则允许开启流程执行，从而完成 `node.env`、客户端文件与订阅的自愈同步。
+     - **状态脱节双重校验与进程名提示**：在 `cmd_backup_server_node` 的 `show`、`on`、`off` 以及 `cmd_hy2` 中，双重检查 `node.env` 状态与 `config.json` 入站标记（`$cur == true || $has_inbound == true`）；端口占用时抓取具体进程信息（如 `users:((...))`）清晰输出，并在 `off` 中允许清理残留标记，彻底终结死锁。
+  2. **CDN 节点全链路极速性能调优**：
+     - **客户端多路并发突破（`maxConnections: 6`）**：将 `src/11-client-config.sh` 中的 `XMUX_CDN_ENC` 调整为 `maxConnections=6`，客户端通过 6 条物理 TCP 隧道并发分流，突破 Cloudflare 边缘的单流限速限制。
+     - **QUIC 接收窗口全量注入（`fm` 参数）**：解除 `XRAY_DEFAULTS=true` 对 `XH3_FM_PARAM` 的清空限制，确保 `CDN-H3` 客户端链接恒常注入 32MB 流窗口与 64MB 连接窗口（`quicParams`），消除高延迟长肥管道（BDP）的吞吐瓶颈。
+     - **Nginx 反代缓冲翻倍扩容**：在 `templates/nginx.conf.tmpl` 与 `/etc/nginx/nginx.conf` 中，将 `http2_max_concurrent_streams` 提升至 2048，`http2_recv_buffer_size` 与 `grpc_buffer_size` 由 1024k 扩容至 4096k (4MB)，`client_body_buffer_size` 扩至 1024k，减少 TCP/gRPC 报文分片与内存复制开销。
+     - **Clean IP 深度净化与锁定**：运行 `probe.py` 进行毫秒级 TLS 握手与真实 XHTTP 隧道回源探测，剔除异常停顿节点，选定低延迟（12ms 握手、140ms 隧道）优选 Clean IP 并通过 `xh bestcf set` 锁定。
+  3. **全端订阅刷新与平滑重载**：
+     - 更新并编译最新部署脚本 `dist/install.sh`；
+     - 重新渲染本机 `/home/ubuntu/client-config.txt` 与 `/etc/xhttp-cdn/all/`；
+     - 运行 `xh resub` 刷新全量订阅与二维码；平滑重载 Nginx，验证 Xray 8445 直连入站与 CDN 反代各节点链路畅通。
