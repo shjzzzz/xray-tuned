@@ -327,3 +327,21 @@
      - 执行 `.github/scripts/build-install.sh` 编译更新 `dist/install.sh` 与 `dist/install-xpadding.sh`；
      - 启用 `FEATURE_CDN_H3`（`xh cdnh3 on`），使 `CDN-H2` 与 `CDN-H3` 同时处于顶配就绪状态；
      - 重新渲染本机 `/home/ubuntu/client-config.txt` 与备用节点库 `/etc/xhttp-cdn/all/`，并通过 `xh resub` 发布全量订阅。
+
+## 20. Xray 内核锁定官方正式版 (v26.3.27 stable) 与前序全链路优化承接验证规范 (2026-10-13)
+- **背景与内核切换**：
+  为确保系统在生产与日常使用中的绝对稳定，规避上游 Pre-release 测试版（如 v26.10.x）可能引入的未稳定变更，将 Xray-core 内核切换并锁定为官方最新正式稳定版（v26.3.27 stable，`XRAY_CHANNEL=stable`）。同时对前序所有性能优化在此正式版内核下的承接状态进行逐项核验与固化。
+- **优化承接与全链路验证**：
+  1. **TCP Brutal 拥塞控制承接**：
+     - 正式版内核（v26.3.27）完美支持原生 `sockopt.tcpcongestion: "brutal"`；
+     - 清除 Reality 443 入站中因历史编辑残留的重复 `sockopt` 冗余块，保证 JSON 配置结构规范标准；
+     - 维持入站 1000 Mbps 定速发包与出站 `bbr` 保护，实测在线连接平稳切换，重传率维持在 0.6% 极佳状态。
+  2. **XHTTP-Direct-H2 (TCP 8445) 链路保持**：
+     - 在正式版内核下保持双向放行与监听，curl 本地测试直连返回预期的 `HTTP/2 404` 响应，协议栈工作正常。
+  3. **CDN 16 物理连接并发与 64MB/128MB QUIC 窗口全量兼容**：
+     - 验证正式版内核对 `maxConnections: 16` 与顶配 `quicParams` 的解析与承接，`xray -test` 配置语法测试 100% 通过；
+     - Nginx 反代缓冲维持 4096k (4MB)，CDN Clean IP 解析与锁定维持最优状态。
+  4. **宿主机内核流控（sysctl）重新固化**：
+     - 热加载并固化 `/etc/sysctl.d/99-xray-xhttp.conf`，将内核 `somaxconn` 提升至 65535、`netdev_max_backlog` 提升至 65536，确保高并发连接队列不发生丢溢。
+  5. **全量订阅刷新**：
+     - 执行 `xh resub` 重新渲染全量客户端配置与订阅，包含 7 条顶配主力节点（CDN-H2, CDN-H3, Direct-H3, Direct-H2, Hysteria2 x2, Reality-Vision）。
