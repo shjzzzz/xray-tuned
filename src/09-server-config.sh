@@ -138,11 +138,11 @@ if [[ "$XRAY_DEFAULTS" == true ]]; then
     XRAY_FREEDOM_SOCKOPT_TUNE=$',\n                    "tcpcongestion": "bbr"'
   fi
 else
-  XRAY_SOCKOPT_TUNE=$',\n                    "tcpFastOpen": true,\n                    "tcpMptcp": true,\n                    "tcpcongestion": "'"${XRAY_TCP_CC:-brutal}"$'",\n                    "tcpKeepAliveIdle": 30,\n                    "tcpKeepAliveInterval": 5,\n                    "tcpUserTimeout": 300000'
+  XRAY_SOCKOPT_TUNE=$',\n                    "tcpFastOpen": true,\n                    "tcpMptcp": true,\n                    "tcpcongestion": "'"${XRAY_TCP_CC:-bbr}"$'",\n                    "tcpKeepAliveIdle": 30,\n                    "tcpKeepAliveInterval": 5,\n                    "tcpUserTimeout": 300000'
   XRAY_FREEDOM_SOCKOPT_TUNE=$',\n                    "tcpFastOpen": true,\n                    "tcpMptcp": false,\n                    "tcpcongestion": "bbr",\n                    "tcpKeepAliveIdle": 30,\n                    "tcpKeepAliveInterval": 5,\n                    "tcpUserTimeout": 300000'
-  HY2_SOCKOPT_BLOCK=$'"sockopt": {\n                    "tcpFastOpen": true,\n                    "tcpcongestion": "brutal"\n                },'
+  HY2_SOCKOPT_BLOCK=$'"sockopt": {\n                    "tcpFastOpen": true,\n                    "tcpcongestion": "'"${XRAY_TCP_CC:-bbr}"$'"\n                },'
   HY2_UDP_IDLE_JSON=$'                    "udpIdleTimeout": 60,\n'
-  HY2_SOCKOPT_JSON=$',\n                "sockopt": {\n                    "tcpFastOpen": true,\n                    "tcpcongestion": "brutal"\n                }'
+  HY2_SOCKOPT_JSON=$',\n                "sockopt": {\n                    "tcpFastOpen": true,\n                    "tcpcongestion": "'"${XRAY_TCP_CC:-bbr}"$'"\n                }'
   H3_SOCKOPT_JSON=$',\n                "sockopt": {\n                    "tcpcongestion": "bbr"\n                }'
 fi
 

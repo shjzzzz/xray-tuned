@@ -1150,6 +1150,7 @@ with open(cfg, 'w', encoding='utf-8') as f:
       svc restart xray
       if declare -f update_node_env >/dev/null 2>&1; then
         update_node_env "XRAY_TCP_CC" "brutal"
+        update_node_env "FEATURE_BRUTAL" "true"
       fi
       info "Xray 已成功开启 TCP Brutal（入站下发速率: ${mbps} Mbps，Freedom 出站维持 BBR 保护）"
     else
@@ -1177,6 +1178,7 @@ with open(cfg, 'w', encoding='utf-8') as f:
       svc restart xray
       if declare -f update_node_env >/dev/null 2>&1; then
         update_node_env "XRAY_TCP_CC" "bbr"
+        update_node_env "FEATURE_BRUTAL" "false"
       fi
       info "Xray 已成功切回 BBR 拥塞控制"
     else

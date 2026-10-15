@@ -345,3 +345,24 @@
      - 热加载并固化 `/etc/sysctl.d/99-xray-xhttp.conf`，将内核 `somaxconn` 提升至 65535、`netdev_max_backlog` 提升至 65536，确保高并发连接队列不发生丢溢。
   5. **全量订阅刷新**：
      - 执行 `xh resub` 重新渲染全量客户端配置与订阅，包含 7 条顶配主力节点（CDN-H2, CDN-H3, Direct-H3, Direct-H2, Hysteria2 x2, Reality-Vision）。
+
+## 21. 全链路高延迟与断流排障：停用 TCP Brutal 全面恢复 BBRv3 规范 (2026-10-15)
+- **排障背景与实锤证据**：
+  - 用户反馈节点网络延迟极高（测速和使用出现明显卡顿、断流与速度瘫痪）。
+  - 对实时活跃 TCP 连接审查（`ss -tin`）捕获到真实国内客户端（广东移动）在直连节点 `VLESS-XHTTP-Direct-H2`（TCP 8445）上的底层连接指标：
+    1. 物理传播基准延迟 (`minrtt`) 为 **272.6 ms**，但实际往返延迟 (`rtt`) 暴涨 10 倍膨胀至 **2,745.83 ms**（2.75 秒）；
+    2. 套接字发送队列 (`Send-Q`) 打满并死锁在 **4,217,433 字节**（4.2MB 队列完全堵死）；
+    3. 超时重传计时器 (`rto`) 飙升至 **120,000 ms**（120 秒，指数退避 `backoff: 6`），报文段长 (`mss`) 从 1440 暴跌至 **64 字节**；
+    4. 有效交付速率从正常值断崖式崩塌至 **186 bps**。
+  - **根因分析**：
+    - Xray 入站强行启用了 `tcpcongestion: "brutal"`，且配置了固定 1000 Mbps 下发速率。TCP Brutal 缺乏对拥塞与丢包的动态自适应退避机制。
+    - 当客户端连接穿越晚高峰公网、跨洋骨干网瓶颈或其家庭宽带承载力受限时，服务端强推 1Gbps 会瞬间打满中间网络路由器的队列，引发极其严重的 **Bufferbloat（缓冲区膨胀与拥塞崩溃）**，导致几秒的高延迟、频繁超时重传与断流。
+- **治理与固化动作**：
+  1. **切换拥塞控制为 BBRv3**：
+     - 执行 `xh brutal off`，移除 Xray 入站中的 `brutal` 并全面回落至内核自适应的 `bbr`（宿主机已配置 BBRv3 + FQ）。
+     - 更新 `/etc/xhttp-cdn/node.env` 中的 `XRAY_TCP_CC="bbr"` 与 `FEATURE_BRUTAL="false"`。
+     - 切换后现场验证：活跃套接字积压队列（`Send-Q`）瞬间归零，RTT 回落至正常物理基线，连接恢复顺畅。
+  2. **仓库工程化加固**：
+     - 修改 `src/06-tuning-lib.sh`：在 `set_tcp_brutal_xray` 中联动持久化 `FEATURE_BRUTAL` 环境变量（`on` 设为 `true`，`off` 设为 `false`）。
+     - 修改 `src/09-server-config.sh`：将默认 sockopt 拥塞控制兜底 `${XRAY_TCP_CC:-brutal}` 修正为 `${XRAY_TCP_CC:-bbr}`，同时对齐 HY2 默认拥塞控制参数。
+     - 重新编译分发包 `dist/install.sh` 与 `dist/install-xpadding.sh`。
