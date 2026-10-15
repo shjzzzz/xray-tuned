@@ -370,3 +370,16 @@
      - 执行 `xh autoupdate stable`，通道模式明确锁定为 `stable`（仅拉取官方正式版，跳过 pre-release）；
      - 运行内核切换并验证为最新稳定版 `v26.3.27`（`XRAY_CHANNEL='stable'` 写入 `node.env`）；
      - 与已完成的 BBRv3、64MB 读写缓冲区、CDN 16 并发物理连接以及 64MB/128MB QUIC 窗口全链路协同，确保系统长期运行稳定可靠。
+
+## 22. 极端第三方调优清理与科学流控体系防劣化规范 (2026-10-15)
+- **排障背景**：
+  - 用户尝试运行第三方 BBR 脚本的「BBR v3 疯批模式」，生成了 `/etc/sysctl.d/99-joeyblog.conf`。
+  - 该模式将 `tcp_wmem`/`tcp_rmem` 放大至 1GB、`tcp_limit_output_bytes` 放大 64 倍至 256MB、并关闭反压（`tcp_notsent_lowat=4294967295`）。
+  - **严重后果分析**：该模式仅适合内网零延迟单线程打流测试，在真实跨洋国际弱网中会彻底摧毁 TSQ（TCP Small Queues）排队反压保护，造成 20 秒以上的严重排队延迟（Bufferbloat 再次爆发）与内存耗尽风险。
+- **治理与固化动作**：
+  1. 通过 `xh tuning off && xh tuning on` 自动清理 `/etc/sysctl.d/99-joeyblog.conf`；
+  2. 重新加载并固化官方科学流控配置 `/etc/sysctl.d/99-xray-xhttp.conf`：
+     - 单流保护上限收敛锁定在安全稳妥的 **64MB**（`67108864`）；
+     - TSQ 输出队列反压限制锁定在 **4MB**（`4194304`），根绝网络缓冲区排队时延膨胀；
+     - `tcp_notsent_lowat` 锁定在 **16KB**（`16384`），确保应用层反压顺畅；
+  3. 平滑重载 `xray` 与 `nginx`，验证各节点与端口（443/8445/8446/8447/8001/8002/8003）监听就绪且无冲突。
