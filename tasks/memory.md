@@ -366,3 +366,7 @@
      - 修改 `src/06-tuning-lib.sh`：在 `set_tcp_brutal_xray` 中联动持久化 `FEATURE_BRUTAL` 环境变量（`on` 设为 `true`，`off` 设为 `false`）。
      - 修改 `src/09-server-config.sh`：将默认 sockopt 拥塞控制兜底 `${XRAY_TCP_CC:-brutal}` 修正为 `${XRAY_TCP_CC:-bbr}`，同时对齐 HY2 默认拥塞控制参数。
      - 重新编译分发包 `dist/install.sh` 与 `dist/install-xpadding.sh`。
+  3. **Xray 内核通道与版本固化 (v26.3.27 stable)**：
+     - 执行 `xh autoupdate stable`，通道模式明确锁定为 `stable`（仅拉取官方正式版，跳过 pre-release）；
+     - 运行内核切换并验证为最新稳定版 `v26.3.27`（`XRAY_CHANNEL='stable'` 写入 `node.env`）；
+     - 与已完成的 BBRv3、64MB 读写缓冲区、CDN 16 并发物理连接以及 64MB/128MB QUIC 窗口全链路协同，确保系统长期运行稳定可靠。
