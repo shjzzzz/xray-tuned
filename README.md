@@ -36,7 +36,7 @@ sudo env AUTO=1 \
 | **4** | `VLESS-XHTTP-Direct-H2` | VLESS + XHTTP | 8445 / h2 (TCP) | TLS 1.3 直连 | UDP 受限场景 TCP 直连 |
 | **5** | `Hysteria2-H3-Direct` | Hysteria2 | 33385 / UDP | BBRv3 / 标准 H3 | 跨洋千兆跑满、丢包极速回血 |
 | **6** | `Hysteria2-Obfs-Direct` | Hysteria2 | 37987 / UDP | Salamander 密码混淆 | 运营商 UDP 封锁重灾区穿透 |
-| **7** | `VLESS-Reality-Vision-Direct` | VLESS + Reality | 443 / TCP (RAW) | xtls-rprx-vision 零拷贝 | **日常主力推荐**，低延迟与跑满千兆 |
+| **7** | `VLESS-Reality-Vision-Direct` | VLESS + Reality | 443 / TCP (RAW) | xtls-rprx-vision 零拷贝 | 低延迟与跑满千兆 |
 | **8** | `VLESS-Reality-PQ-Vision` | VLESS + Reality | 8447 / TCP (RAW) | mlkem768x25519plus 后量子 | 强前向保密、抗量子计算破译 |
 
 ---
