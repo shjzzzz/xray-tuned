@@ -6,9 +6,11 @@
 > 
 > | 架构维度 | 当前生产环境权威规范 | 最终裁定章节 |
 > | :--- | :--- | :--- |
+> | **操作系统与基础环境** | **Ubuntu 26.10 (Stonking Stingray)**，ARM64 物理 24GB，BBRv3 双内核备选 | 第 25 节 |
 > | **Xray 内核与通道** | 官方稳定版 **`v26.3.27 stable`** (`XRAY_CHANNEL=stable`)，跳过 pre-release | 第 20 节、第 21 节 |
+> | **Xray Policy 与连接保活** | bufferSize **4096KB**，connIdle **1800s**，scStreamUpServerSecs **300-600s**（禁用 MPTCP） | 第 4 节、第 25 节 |
 > | **拥塞控制 (CC)** | 全协议、入站、直连出站统一使用 **`BBRv3 + FQ`**（彻底废止 Brutal，根绝 Bufferbloat） | 第 21 节、第 22 节 |
-> | **系统流控与缓冲** | 单流保护上限 **64MB**，TSQ 发送队列限制 **4MB**，反压 `tcp_notsent_lowat=16KB` | 第 7 节、第 22 节 |
+> | **系统流控与缓冲** | 单流保护上限 **64MB**，TSQ 发送队列限制 **4MB**，反压 `tcp_notsent_lowat=16KB` | 第 7 节、第 22 节、第 25 节 |
 > | **CDN-H2 节点** | 严格单一 **`alpn=h2`**，物理连接并发 **`maxConnections: 16`**，Nginx `Alt-Svc: clear` | 第 14 节、第 19 节 |
 > | **CDN-H3 节点** | 独立纯 QUIC 节点 **`alpn=h3`**，QUIC 窗口：流 **64MB** / 连接 **128MB** | 第 14 节、第 19 节 |
 > | **DNS 回退解析** | 三核 Anycast DOH/DOD（`9.9.9.10` / `1.1.1.1` / `8.8.8.8`，弃用 `127.0.0.53`） | 第 12 节 |
@@ -457,4 +459,25 @@
      - **严禁开启 Mux（多路复用）**：Vision 依赖 Linux 内核 `splice()` 零拷贝机制，开启传统 Mux 会破坏内核直接转发导致速度断崖式下跌；
      - **ALPN 扩充**：建议配置 `alpn=h2,http/1.1`，防止 H2 单连接队头阻塞；
      - **主力推荐**：日常大带宽下载与低延迟需求推荐切换至 443 标口的 `VLESS-Reality-Vision-Direct`（`encryption=none` 无 2KB 额外握手包，同链路性能上限最高）。
+
+## 25. 系统平滑升级至 Ubuntu 26.10 与节点稳定性/速度全链路固化规范 (2026-10-17)
+- **背景与升级记录**：
+  - 系统成功由 Ubuntu 26.04.1 LTS 平滑升级至最新版本 **Ubuntu 26.10 (Stonking Stingray)**。
+  - 通过 `Prompt=normal` 与 `do-release-upgrade -f DistUpgradeViewNonInteractive -d` 在后台实现无缝静默升级，保留原自定义 BBRv3 内核（`7.2.10-joeyblog-bbrv3`）并安全引入官方新内核（`7.3.0-1003-oracle`）。
+- **深水区排障与稳定性/提速调优**：
+  1. **补齐 Xray 全局 Policy 优雅关闭与缓冲队列 (`bufferSize: 4096KB`)**：
+     - **痛点**：在 `XRAY_DEFAULTS=true` 规范下，Xray 服务端 `config.json` 遗漏了 `policy` 块，`xh status` 提示 `policy.bufferSize 未设置 KB`。默认小缓冲与过短的关闭等待导致大文件下载、测速尾部以及长连接连接断开时报文被强行掐断。
+     - **修复**：注入顶层 `policy.levels.0` 配置：`bufferSize: 4096KB`、`connIdle: 1800s`、`handshake: 10s`、`uplinkOnly: 15s`、`downlinkOnly: 30s`，彻底消除非对称关闭截断。
+  2. **8445 直连流保活扩容与 MPTCP 握手阻断修复**：
+     - **痛点**：`XHTTP-Direct-H2`（8445 端口）入站残留 `scStreamUpServerSecs: "20-50"` 秒，服务端每隔 20~50 秒强制切断上行流触发客户端频繁重连切片；同时启用了 `"tcpMptcp": true`，公网防火墙不识别 TCP SYN `MP_CAPABLE` 易触发 1~3 秒 RTO 超时重传。
+     - **修复**：将 `scStreamUpServerSecs` 放宽至 `"300-600"` 秒（5~10分钟）；关闭 MPTCP 锁定为 `"tcpMptcp": false`。
+  3. **Sing-box / sbbox 硬件加速与内存软上限强化**：
+     - **优化**：在 `/etc/systemd/system/sbbox.service.d/10-sbbox.conf` 补充注入 `GOMEMLIMIT=17985MiB`（占 24GB 物理内存的 75%）、`LimitMEMLOCK=infinity` 与 `Nice=-10`，释放物理大内存对象池并赋予系统最高调度优先级，彻底消除 Go GC 停顿与排队抖动。
+  4. **Sysctl 科学流控与缓冲区规范统一**：
+     - **清理**：彻底清理历史残留的 `/etc/sysctl.d/99-joeyblog.conf`；
+     - **对齐**：更新 `/etc/sysctl.d/99-sbbox.conf` 中的旧 128MB 配置，全系统所有 sysctl 配置严格收敛统一至 **64MB** 单流保护上限与 **16KB** `tcp_notsent_lowat` 反压标准，根绝 Bufferbloat 风险。
+  5. **全端订阅刷新与服务热重载**：
+     - 执行 `xh resub` 重新渲染全量客户端明文、Base64 与 Mihomo 配置；
+     - 热重载 `xray`、`nginx`、`sbbox` 与 `sbbox-nowhere`，实测各节点均以零报错正常转发。
+
 
