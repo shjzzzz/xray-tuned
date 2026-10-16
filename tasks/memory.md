@@ -14,6 +14,7 @@
 > | **DNS 回退解析** | 三核 Anycast DOH/DOD（`9.9.9.10` / `1.1.1.1` / `8.8.8.8`，弃用 `127.0.0.53`） | 第 12 节 |
 > | **MTU 与防黑洞** | 网卡 MTU **1500**，全链路 iptables **`TCPMSS --clamp-mss-to-pmtu`** | 第 5 节、第 15 节 |
 > | **双回环与多端兼容** | 8001（V2RayN/Mihomo，mlkem） / 8002（Shadowrocket，免解密）分立 | 第 1 节、第 8 节 |
+> | **Reality 直连与 UDP** | 全 Reality 入站注入 `tcpFastOpen: true` 与 `BBR`；客户端注入 `packetEncoding=xudp`；禁用 Mux 保证 `splice` 零拷贝 | 第 24 节 |
 
 ---
 
@@ -437,3 +438,23 @@
   - 改造 `/root/sbbox/sub_server.py`：对 Shadowrocket 客户端请求自动过滤 `nowhere://` 节点，杜绝小火箭因未知协议 scheme 报错闪退；同时提供 `/nowhere` 路径专属拉取；
   - 联动 `sbbox.sh`：将 Nowhere 纳入 `sbbox status` 监控、`sbbox cert sync` 证书轮换自动热重载以及 `sbrestart` 启停流水线；
   - 验证：通过 `nowhere probe` 实测 TCP 与 UDP 往返建联延迟均在 2~4ms 内，端到端就绪。
+
+## 24. VLESS-Reality-PQ-Vision 性能与延迟专项调优规范 (2026-10-16)
+- **排障与调优背景**：
+  - 用户反馈 `VLESS-Reality-PQ-Vision`（端口 8447）及 Reality 直连系列节点延迟偏高、测速及首屏加载缓慢。
+- **根因分析**：
+  1. **后量子 KEM 握手开销 (`mlkem768x25519plus`)**：握手阶段传输超 2KB 格密码公钥，跨洋弱网极易分片重传触发指数退避，且对终端算力要求高；
+  2. **缺失底层 Socket 快速打开与拥塞控制**：`reality-pq-vision-in`（端口 8447）入站漏配 `sockopt`，无法继承宿主机 BBR 拥塞控制与 TFO（TCP Fast Open）；
+  3. **缺少 UDP 封包加速 (`packetEncoding=xudp`)**：原订阅链接未显式指定，第三方客户端（如 v2rayN / Mihomo）回落到传统单包封包模式，导致 DNS 查询及 UDP 数据流严重拥塞；
+  4. **非标端口 QoS**：8447 端口在晚高峰易受省际骨干网降级限速。
+- **治理与固化动作**：
+  1. **服务端入站补齐底层加速**：
+     - 在 Xray 8447 端口（以及 443 端口）入站显式注入 `"sockopt": {"tcpFastOpen": true, "tcpcongestion": "bbr"}`，平滑热重载 `xray.service`；
+  2. **客户端订阅补全 XUDP**：
+     - 在客户端链接中注入 `&packetEncoding=xudp`，消除 UDP 传输队头阻塞；
+     - 同步更新模板 `templates/client-config.txt.tmpl`，使后续新构建和重新生成保持一致；
+  3. **客户端参数黄金推荐准则**：
+     - **严禁开启 Mux（多路复用）**：Vision 依赖 Linux 内核 `splice()` 零拷贝机制，开启传统 Mux 会破坏内核直接转发导致速度断崖式下跌；
+     - **ALPN 扩充**：建议配置 `alpn=h2,http/1.1`，防止 H2 单连接队头阻塞；
+     - **主力推荐**：日常大带宽下载与低延迟需求推荐切换至 443 标口的 `VLESS-Reality-Vision-Direct`（`encryption=none` 无 2KB 额外握手包，同链路性能上限最高）。
+
