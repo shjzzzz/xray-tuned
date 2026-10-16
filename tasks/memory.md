@@ -421,3 +421,19 @@
      - TSQ 输出队列反压限制锁定在 **4MB**（`4194304`），根绝网络缓冲区排队时延膨胀；
      - `tcp_notsent_lowat` 锁定在 **16KB**（`16384`），确保应用层反压顺畅；
   3. 平滑重载 `xray` 与 `nginx`，验证各节点与端口（443/8445/8446/8447/8001/8002/8003）监听就绪且无冲突。
+
+## 23. sbbox 体系集成 Nowhere 自研上下行分流协议与双模式部署 (2026-10-16)
+- **部署背景**：
+  - 用户引入新兴高性能抗封锁与抗 QoS 中继协议 Nowhere（Rust 原生开发，支持上下行分流独立承载、BLAKE3 混淆与 Morph 掩码），要求无侵入集成进 VPS 的 `sbbox` 生态。
+- **架构方案与端口规划**：
+  - 采用 **Sidecar 独立守护进程** 架构部署（`sbbox-nowhere.service`），既保持 sing-box / Xray 核心纯净，又复用 sbbox 现有 Let's Encrypt 证书体系（`cert/fullchain.cer`）；
+  - 分配独立监听端口：`18448`（TCP + UDP 双栈监听），并注入系统 iptables 放行规则；
+  - 密钥管理：独立生成 128-bit 随机 hex 密钥（落盘至 `/root/sbbox/nw_key`，chmod 600），并提取证书 SHA-256 指纹（落盘至 `/root/sbbox/nw_pin`）。
+- **双运行模式**：
+  1. **高速模式 (Nowhere-Split-HighSpeed)**：`up=tcp` & `down=udp`（上行走 TLS/TCP 彻底规避国内运营商对 UDP 上行的恶性 QoS 丢包；下行走 QUIC/UDP 享受 0-RTT 与无队头阻塞极速大吞吐）。
+  2. **常用稳定模式 (Nowhere-Common-TCP)**：`net=tcp` & `up=tcp` & `down=tcp`（全链路 TLS/TCP，兼具 100% 防火墙与公共 Wi-Fi 穿透力）。
+- **生态与订阅联动**：
+  - 更新 `/root/sbbox/nodes.txt` 与 token base64 订阅文件；
+  - 改造 `/root/sbbox/sub_server.py`：对 Shadowrocket 客户端请求自动过滤 `nowhere://` 节点，杜绝小火箭因未知协议 scheme 报错闪退；同时提供 `/nowhere` 路径专属拉取；
+  - 联动 `sbbox.sh`：将 Nowhere 纳入 `sbbox status` 监控、`sbbox cert sync` 证书轮换自动热重载以及 `sbrestart` 启停流水线；
+  - 验证：通过 `nowhere probe` 实测 TCP 与 UDP 往返建联延迟均在 2~4ms 内，端到端就绪。
