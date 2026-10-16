@@ -1,5 +1,22 @@
 # 项目运作与排障记忆 (Memory)
 
+> [!IMPORTANT]
+> ### 🏆 生产环境当前权威技术基线速查表（Authoritative Baseline）
+> 本文档记录了架构演进与深水区排障的完整探索历史。为避免历史中间方案误导，当前生产环境生效的最终裁定如下：
+> 
+> | 架构维度 | 当前生产环境权威规范 | 最终裁定章节 |
+> | :--- | :--- | :--- |
+> | **Xray 内核与通道** | 官方稳定版 **`v26.3.27 stable`** (`XRAY_CHANNEL=stable`)，跳过 pre-release | 第 20 节、第 21 节 |
+> | **拥塞控制 (CC)** | 全协议、入站、直连出站统一使用 **`BBRv3 + FQ`**（彻底废止 Brutal，根绝 Bufferbloat） | 第 21 节、第 22 节 |
+> | **系统流控与缓冲** | 单流保护上限 **64MB**，TSQ 发送队列限制 **4MB**，反压 `tcp_notsent_lowat=16KB` | 第 7 节、第 22 节 |
+> | **CDN-H2 节点** | 严格单一 **`alpn=h2`**，物理连接并发 **`maxConnections: 16`**，Nginx `Alt-Svc: clear` | 第 14 节、第 19 节 |
+> | **CDN-H3 节点** | 独立纯 QUIC 节点 **`alpn=h3`**，QUIC 窗口：流 **64MB** / 连接 **128MB** | 第 14 节、第 19 节 |
+> | **DNS 回退解析** | 三核 Anycast DOH/DOD（`9.9.9.10` / `1.1.1.1` / `8.8.8.8`，弃用 `127.0.0.53`） | 第 12 节 |
+> | **MTU 与防黑洞** | 网卡 MTU **1500**，全链路 iptables **`TCPMSS --clamp-mss-to-pmtu`** | 第 5 节、第 15 节 |
+> | **双回环与多端兼容** | 8001（V2RayN/Mihomo，mlkem） / 8002（Shadowrocket，免解密）分立 | 第 1 节、第 8 节 |
+
+---
+
 ## 1. Shadowrocket CDN 节点连通性规范与修复记录 (2026-10-07)
 - **故障背景**：新版 Shadowrocket 客户端拉取订阅后 CDN 节点不通（或订阅中缺失 CDN 节点）。
 - **根因分析**：
@@ -66,12 +83,16 @@
   1. **锁定 Freedom 出站协议栈**：
      - 显式将 freedom 出站中的 `tcpcongestion` 锁定为标准的 `"bbr"`，同时关闭 `"tcpMptcp": false`，严禁在直连出站上使用 Brutal。
      - `06-tuning-lib.sh` 中的 `set_tcp_brutal_xray` 在开启 Brutal 时通过正则守卫，确保 freedom 出站始终维持 BBR。
-  2. **修复 DNS 本地解析**：
-     - `xray-config.json.tmpl` 中的 fallback DNS 统一修正为 `127.0.0.53`。
+  2. **修复 DNS 本地解析（注意：后续已被第 12 节升级替代）**：
+     - `xray-config.json.tmpl` 中的 fallback DNS 此前修正为 `127.0.0.53`。
+     - *演进标注*：在 **第 12 节 (第 4 条)** 中发现 `127.0.0.53` 处理特定压缩标签会报 `segment prefix is reserved` 崩溃，当前已全面升级替换为权威 Anycast DNS `8.8.8.8` / `9.9.9.10` / `1.1.1.1`。
   3. **停用境外服务端优选定时器**：
      - 明确优选 IP 测速必须在客户端或本地网关执行，停用服务端的 `cf-bestip.timer` 与 `cf-healthcheck.timer`。
 
 ## 7. 全局单流缓冲区保护上限 64MB 规格调整与 Brutal 卸载 (2026-10-08)
+> [!NOTE]
+> **演进与权威状态**：本节确立的 **64MB 单流保护上限** 始终权威有效（参见第 22 节）。其中关于 Brutal 退役的结论，在第 17/20 节曾尝试按档位限速重新引入，但最终在 **第 21 节** 经国内移动真实连接抓包证实其缺乏退避机制必将导致晚高峰 2.75 秒 Bufferbloat，因而在第 21 节已最终定案彻底废止 Brutal，全协议永久回归 BBRv3。
+
 - **背景与原因**：
   - 此前 medium/large 档位将单流缓冲区保护上限与 TCP 读写缓冲直接开至 128MB (`134217728` 字节)。
   - 在高突发多并发连接场景下，单流无节制增长至 128MB 会导致内存池被局部大流侵占，增加系统 OOM 风险。
@@ -125,6 +146,11 @@
 
 
 ## 10. CDN 节点自适应 ALPN (h2, h3) 规范与落地 (2026-10-09)
+> [!WARNING]
+> **【已废弃 / SUPERSEDED BY 第 14 节】本章节设想的 `alpn=h2,h3` 自适应方案在实际生产中已被推翻，请勿采纳！**
+> * **废弃原因**：Cloudflare CDN 边缘对 XHTTP 不支持 H3 长连接流（`stream-up` 模式会被切断）；且 Shadowrocket (小火箭) 收到 `h2,h3` 后会在 443 上强行发起 UDP 握手，导致连通性彻底归零。
+> * **最终权威方案**：见 **第 14 节**。`CDN-H2` 严格锁定单一 `alpn=h2`；QUIC 协议则分立为独立的 `CDN-H3` 节点 (`alpn=h3`)。
+
 - **背景与需求**：
   - 此前 CDN 节点在客户端 URI 和配置中写死为单一协议（如仅 `alpn=h2` 或仅 `alpn=h3`）。
   - 当客户端网络环境或代理工具对 HTTP/2 与 HTTP/3 (QUIC) 具备不同支持度时，单一协议锁定会导致无法动态协商最优传输层。
@@ -148,7 +174,9 @@
      - 将静态回落根目录由 `${USER_HOME}/dist` 规范迁移至符合 Linux FHS 标准的 `/var/www/dist`，彻底杜绝 Ubuntu/Debian 普通用户 home 目录权限（700）下 Nginx 运行身份（nobody/www-data）因权限不足导致的 403 报错；
      - 保持向后兼容：当 `${USER_HOME}/dist` 存在时自动平滑识别，目录与文件统一赋予 755/644 安全访问权限；
      - 同步更新 `src/04-input.sh`、`extensions/dual-cdn/01-read-existing.sh`、`extensions/dual-ip/01-read-existing.sh`。
-  2. **Nginx HTTP/3 广播声明 (`Alt-Svc`)**：
+  2. **Nginx HTTP/3 广播声明 (`Alt-Svc`)（注意：CDN 虚拟主机部分已被第 14 节推翻废弃）**：
+     - > [!CAUTION]
+     - > **【第 2 项部分废弃】**：在 Nginx CDN 虚拟主机上广播 `Alt-Svc: 'h3=":443"'` 会导致客户端强升 H3 并被 Nginx 防探测 444 阻断。该项已在 **第 14 节** 中被彻底推翻，当前 CDN 虚拟主机实际配置已改为 `add_header Alt-Svc 'clear' always;`。普通伪装站或直连站仍可广播。本节第 1/3/4/5 项继续有效。
      - 在 `templates/nginx.conf.tmpl` 与本机运行的 Nginx 对应 server 块中，加入标准 HTTP/3 响应头声明：`add_header Alt-Svc 'h3=":443"; ma=86400' always;`；
      - 使得伪装站点和直接请求对现代浏览器和客户端通告 443 端口支持 HTTP/3，对齐主流互联网大厂（Cloudflare/Google）真实站点行为特征。
   3. **Mihomo TUN DNS 劫持防护强化**：
@@ -252,6 +280,11 @@
   4. **全端订阅与备用节点库重载**：重新渲染本机 `/home/ubuntu/client-config*` 与 `/etc/xhttp-cdn/all/`，并通过 `xh resub` 刷新发布到 Nginx 订阅系统。
 
 ## 17. TCP Brutal 极速拥塞控制全面优化与入站分工修复规范 (2026-10-12)
+> [!WARNING]
+> **【已废弃 / SUPERSEDED BY 第 21 节】本章节的 TCP Brutal 速率调优在真实公网中已被彻底推翻废止，请勿采纳！**
+> * **废弃原因**：TCP Brutal 属于单向固定速率算法，缺乏动态拥塞退避机制。在晚高峰跨境公网弱网瓶颈下，固定速率灌包直接引发致命 **Bufferbloat（实测往返时延暴涨 10 倍达 2,745ms，发送队列完全卡死 4.2MB，RTO 飙升至 120 秒，传输速率断崖跌至 186 bps）**。
+> * **最终权威方案**：见 **第 21 节**，已执行 `xh brutal off`，全量入站彻底废止 Brutal 并永久回归 **BBRv3 + FQ** 动态自适应拥塞控制。
+
 - **故障与优化背景**：
   1. **Xray Brutal 开启静默失效**：在 `XRAY_DEFAULTS=true` 规范下，`config.json` 不包含预设的 `"tcpcongestion":"bbr"`，导致 `xh brutal on` 的字符串替换落空，Xray 始终未真正应用 Brutal，且 `xh brutal show` 中 `Xray 入站 CC:` 显示为空白。
   2. **默认速率严重超配引发重传风暴**：此前 `get_default_brutal_speed_mbps` 默认绑定物理网卡 95%（Oracle 4000M 网卡即 3800 Mbps）。对于 100M~1000M 的普通家宽客户端，Brutal 不退让的定速发包会导致高达 20%~30% 的丢包和重传风暴，且 3800 Mbps 的 BDP 超过了系统单流缓冲区 64MB 上限。
@@ -268,6 +301,9 @@
      - 两端统一交互逻辑与安全边界。
 
 ## 18. XHTTP-Direct-H2 入站端口检查修复与 CDN 节点全链路调优规范 (2026-10-13)
+> [!NOTE]
+> **参数升级标注**：本节关于 `backup_port_busy` 端口检测自锁修复与 Nginx 4MB 缓冲扩容依然权威有效。但其中针对 CDN 节点的参数设定（`maxConnections: 6`，QUIC 窗口 32M/64M）属于中间过渡值，已在 **第 19 节** 中全面升级拉满为 **`maxConnections: 16`** 以及 **流 64MB / 连接 128MB**。
+
 - **背景与核心痛点**：
   1. **Direct-H2 开启冲突与状态脱节自锁**：
      - 在管理脚本 `xh` 菜单 20 开启 `XHTTP-Direct-H2`（TCP 8445）时，报错 `[ERROR] TCP 8445 已被其他进程占用，未做任何修改`。
@@ -292,8 +328,8 @@
      - **智能归属判定**：重构 `backup_port_busy "$proto" "$port" "$key"`，先用 `ss -ltnpH` 检查是否有非 `xray` 进程占用；若仅为 `xray`，进一步检查 `config.json` 是否包含当前节点专属标记（如 `// >>xh:${key}`）。若是自身标记，则允许开启流程执行，从而完成 `node.env`、客户端文件与订阅的自愈同步。
      - **状态脱节双重校验与进程名提示**：在 `cmd_backup_server_node` 的 `show`、`on`、`off` 以及 `cmd_hy2` 中，双重检查 `node.env` 状态与 `config.json` 入站标记（`$cur == true || $has_inbound == true`）；端口占用时抓取具体进程信息（如 `users:((...))`）清晰输出，并在 `off` 中允许清理残留标记，彻底终结死锁。
   2. **CDN 节点全链路极速性能调优**：
-     - **客户端多路并发突破（`maxConnections: 6`）**：将 `src/11-client-config.sh` 中的 `XMUX_CDN_ENC` 调整为 `maxConnections=6`，客户端通过 6 条物理 TCP 隧道并发分流，突破 Cloudflare 边缘的单流限速限制。
-     - **QUIC 接收窗口全量注入（`fm` 参数）**：解除 `XRAY_DEFAULTS=true` 对 `XH3_FM_PARAM` 的清空限制，确保 `CDN-H3` 客户端链接恒常注入 32MB 流窗口与 64MB 连接窗口（`quicParams`），消除高延迟长肥管道（BDP）的吞吐瓶颈。
+     - **客户端多路并发突破（`maxConnections: 6`，第 19 节已升至 16）**：将 `src/11-client-config.sh` 中的 `XMUX_CDN_ENC` 调整为 `maxConnections=6`，客户端通过 6 条物理 TCP 隧道并发分流，突破 Cloudflare 边缘的单流限速限制。
+     - **QUIC 接收窗口全量注入（`fm` 参数，第 19 节已升级为 64M/128M）**：解除 `XRAY_DEFAULTS=true` 对 `XH3_FM_PARAM` 的清空限制，确保 `CDN-H3` 客户端链接恒常注入 32MB 流窗口与 64MB 连接窗口（`quicParams`），消除高延迟长肥管道（BDP）的吞吐瓶颈。
      - **Nginx 反代缓冲翻倍扩容**：在 `templates/nginx.conf.tmpl` 与 `/etc/nginx/nginx.conf` 中，将 `http2_max_concurrent_streams` 提升至 2048，`http2_recv_buffer_size` 与 `grpc_buffer_size` 由 1024k 扩容至 4096k (4MB)，`client_body_buffer_size` 扩至 1024k，减少 TCP/gRPC 报文分片与内存复制开销。
      - **Clean IP 深度净化与锁定**：运行 `probe.py` 进行毫秒级 TLS 握手与真实 XHTTP 隧道回源探测，剔除异常停顿节点，选定低延迟（12ms 握手、140ms 隧道）优选 Clean IP 并通过 `xh bestcf set` 锁定。
   3. **全端订阅刷新与平滑重载**：
@@ -332,7 +368,9 @@
 - **背景与内核切换**：
   为确保系统在生产与日常使用中的绝对稳定，规避上游 Pre-release 测试版（如 v26.10.x）可能引入的未稳定变更，将 Xray-core 内核切换并锁定为官方最新正式稳定版（v26.3.27 stable，`XRAY_CHANNEL=stable`）。同时对前序所有性能优化在此正式版内核下的承接状态进行逐项核验与固化。
 - **优化承接与全链路验证**：
-  1. **TCP Brutal 拥塞控制承接**：
+  1. **TCP Brutal 拥塞控制承接（注意：后续已在第 21 节彻底停用）**：
+     - > [!NOTE]
+     - > *演进覆盖*：本条记录的“维持入站 1000 Mbps 定速发包”已被 **第 21 节** 彻底关闭并替换为 BBRv3。内核版本锁定 `v26.3.27 stable` 依然完全权威有效。
      - 正式版内核（v26.3.27）完美支持原生 `sockopt.tcpcongestion: "brutal"`；
      - 清除 Reality 443 入站中因历史编辑残留的重复 `sockopt` 冗余块，保证 JSON 配置结构规范标准；
      - 维持入站 1000 Mbps 定速发包与出站 `bbr` 保护，实测在线连接平稳切换，重传率维持在 0.6% 极佳状态。
