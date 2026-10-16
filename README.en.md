@@ -92,7 +92,7 @@ Log in to your VPS terminal as root:
 
 ```bash
 sudo -i
-curl -fsSL https://github.com/shjzzzz/New-Xray-core-xhttp-cdn-reality-hy2-tuned/releases/latest/download/install.sh -o ~/install.sh
+curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download/install.sh -o ~/install.sh
 bash ~/install.sh
 ```
 
@@ -107,7 +107,7 @@ Follow the prompts to enter:
 Recommended single-line positional parameter installation:
 
 ```bash
-sudo bash <(curl -fsSL https://github.com/shjzzzz/New-Xray-core-xhttp-cdn-reality-hy2-tuned/releases/latest/download/install.sh) AUTO=1 REALITY_DOMAIN="reality.example.com" CDN_DOMAIN="cdn.example.com" NODE_TAG="vps"
+sudo bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download/install.sh) AUTO=1 REALITY_DOMAIN="reality.example.com" CDN_DOMAIN="cdn.example.com" NODE_TAG="vps"
 ```
 
 > **If the CDN domain is proxied by Cloudflare (orange cloud), append `CF_Token="<API Token>"`** (Zone.Zone read + Zone.DNS edit): certificates are issued and renewed via DNS-01, no port 80 and no nginx stop on renewal. Without it the installer uses standalone (HTTP-01), which fails to renew once the CDN is proxied; on existing installs run `CF_Token=<API Token> xh cert dnscf`, and check with `xh cert show` / `xh diag`.

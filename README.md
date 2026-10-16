@@ -110,7 +110,7 @@ chmod 600 /etc/ssl/private/*.key
 
 ```bash
 sudo -i
-curl -fsSL https://github.com/shjzzzz/New-Xray-core-xhttp-cdn-reality-hy2-tuned/releases/latest/download/install.sh -o ~/install.sh
+curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download/install.sh -o ~/install.sh
 bash ~/install.sh
 ```
 
@@ -130,7 +130,7 @@ bash ~/install.sh
 
 #### 方案 A：现代位置参数单行版（强烈推荐：100% 免疫终端换行与转义报错）
 ```bash
-sudo bash <(curl -fsSL https://github.com/shjzzzz/New-Xray-core-xhttp-cdn-reality-hy2-tuned/releases/latest/download/install.sh) AUTO=1 REALITY_DOMAIN="reality.example.com" CDN_DOMAIN="cdn.example.com" NODE_TAG="oracle-vps"
+sudo bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download/install.sh) AUTO=1 REALITY_DOMAIN="reality.example.com" CDN_DOMAIN="cdn.example.com" NODE_TAG="oracle-vps"
 ```
 > 如需覆盖更多自定义项，直接在末尾空格追加即可（如 `IP_CHOICE=1`、`CDN_FALLBACK_ORIGIN="https://www.harvard.edu"`）。
 >

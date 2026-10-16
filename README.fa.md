@@ -92,7 +92,7 @@ chmod 600 /etc/ssl/private/*.key
 
 ```bash
 sudo -i
-curl -fsSL https://github.com/shjzzzz/New-Xray-core-xhttp-cdn-reality-hy2-tuned/releases/latest/download/install.sh -o ~/install.sh
+curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download/install.sh -o ~/install.sh
 bash ~/install.sh
 ```
 
@@ -103,7 +103,7 @@ bash ~/install.sh
 اجرای تک‌خطی بدون نیاز به پاسخ‌دهی تعاملی:
 
 ```bash
-sudo bash <(curl -fsSL https://github.com/shjzzzz/New-Xray-core-xhttp-cdn-reality-hy2-tuned/releases/latest/download/install.sh) AUTO=1 REALITY_DOMAIN="reality.example.com" CDN_DOMAIN="cdn.example.com" NODE_TAG="vps"
+sudo bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download/install.sh) AUTO=1 REALITY_DOMAIN="reality.example.com" CDN_DOMAIN="cdn.example.com" NODE_TAG="vps"
 ```
 
 #### متغیرهای محیطی کلیدی
