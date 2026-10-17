@@ -479,5 +479,10 @@
   5. **全端订阅刷新与服务热重载**：
      - 执行 `xh resub` 重新渲染全量客户端明文、Base64 与 Mihomo 配置；
      - 热重载 `xray`、`nginx`、`sbbox` 与 `sbbox-nowhere`，实测各节点均以零报错正常转发。
+  6. **Ubuntu 26.10 升级后 Nginx OpenSSL 动态库兼容修复 (libssl.so.3)**：
+     - **故障现象**：系统重启后访问 Xray xh 订阅链接报 TLS 握手/安全错误。
+     - **根因分析**：Ubuntu 26.10 发行版将默认密码库升级至 OpenSSL 4 (`libssl.so.4`)，导致原有 Nginx 二进制因缺失 `libssl.so.3` 与 `libcrypto.so.3` 报错退出 (`error while loading shared libraries`)，8003 监听下线。Xray 443 标口接收到真实域名请求回落时因目标端口未监听而断开 TLS。
+     - **修复**：安装系统兼容运行库 `apt-get install -y libssl3t64` 补齐 `libssl.so.3` 依赖链；重载并启动 Nginx，外部 `curl -Iv` 验证全量订阅链接（v2rayn、shadowrocket、mihomo）HTTPS/2 200 秒级恢复正常。
+
 
 
