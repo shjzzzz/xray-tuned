@@ -528,9 +528,9 @@
 ## 28. 三大后量子核心节点（TLS+XHTTP、TLS+Vision+XHTTP、REALITY+Vision）架构与最佳参数裁定 (2026-10-18)
 - **部署背景**：
   - 用户要求在 `xh reality` 菜单及全量配置中部署三大后量子 (Post-Quantum, ML-KEM-768) 核心节点，并根据 ARM 4核 24GB 本机硬件配置设定最优参数：
-    1. `VLESS-TLS+后量子+XHTTP+CDN`
-    2. `VLESS-TLS+后量子+Vision+XHTTP+CDN`
-    3. `VLESS-REALITY+后量子+Vision（自域名）`
+    1. `VLESS-TLS+PQ+XHTTP+CDN`
+    2. `VLESS-TLS+PQ+Vision+XHTTP+CDN`
+    3. `VLESS-REALITY+PQ+Vision（自域名）`
 - **内核机制与架构解耦设计**：
   1. **Xray Fallbacks 与 Decryption 互斥铁律**：
      - Xray 规范强制要求：VLESS 设置中 `fallbacks` 与 `decryption` **严禁同时存在于同一个入站**。
