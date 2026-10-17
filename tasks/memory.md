@@ -17,6 +17,7 @@
 > | **MTU 与防黑洞** | 网卡 MTU **1500**，全链路 iptables **`TCPMSS --clamp-mss-to-pmtu`** | 第 5 节、第 15 节 |
 > | **双回环与多端兼容** | 8001（V2RayN/Mihomo，mlkem） / 8002（Shadowrocket，免解密）分立 | 第 1 节、第 8 节 |
 > | **Reality 直连与 UDP** | target 锁定本地网关 `127.0.0.1:8003`；入站注入 TFO 与 BBR；客户端扩充 `alpn=h2,http/1.1` 与 `packetEncoding=xudp`；严禁开启 Mux 保证 `splice` 零拷贝 | 第 24 节、第 26 节 |
+| **后量子三大核心节点** | 8001 承载 TLS+PQ+XHTTP 与 TLS+PQ+Vision+XHTTP；8447 独立承载 REALITY+PQ+Vision（自域名）；统一注入 BBR+TFO 与 TSQ 4MB 反压 | 第 28 节 |
 | **Git 代码与仓库推送** | **绝对红线：严禁未经用户明确允许执行 `git push`**（任何远程推送必须事先向用户报备并获得许可） | 第 27 节 |
 
 ---
@@ -524,6 +525,37 @@
   4. **拒绝隐式或捆绑推送**：
      - 任何打包脚本、安装生成脚本（如 `build-install.sh`、release 脚本）中若带有 `git push` 行为，必须予以剥离或设立交互确认守卫，严禁静默带出远端推送。
 
-
-
-
+## 28. 三大后量子核心节点（TLS+XHTTP、TLS+Vision+XHTTP、REALITY+Vision）架构与最佳参数裁定 (2026-10-18)
+- **部署背景**：
+  - 用户要求在 `xh reality` 菜单及全量配置中部署三大后量子 (Post-Quantum, ML-KEM-768) 核心节点，并根据 ARM 4核 24GB 本机硬件配置设定最优参数：
+    1. `VLESS-TLS+后量子+XHTTP+CDN`
+    2. `VLESS-TLS+后量子+Vision+XHTTP+CDN`
+    3. `VLESS-REALITY+后量子+Vision（自域名）`
+- **内核机制与架构解耦设计**：
+  1. **Xray Fallbacks 与 Decryption 互斥铁律**：
+     - Xray 规范强制要求：VLESS 设置中 `fallbacks` 与 `decryption` **严禁同时存在于同一个入站**。
+     - 443 标口需保留 fallback 到本地 8003 证书站与 Hysteria/TCP 分流，因此不能直接在 443 增设 `decryption`。
+     - **解决方案**：
+       - 节点 1、节点 2（CDN 节点）：外部 443 标口经 Nginx TLS 解密反代至 `127.0.0.1:8001`（8001 开启 `decryption: mlkem768x25519plus...`），同时支持无 flow 的客户端（节点 1）与 `xtls-rprx-vision` 客户端（节点 2）。
+       - 节点 3（REALITY 直连节点）：独立部署在 **TCP 8447** 入站（`reality-pq-vision-in`），纯原生 VLESS-REALITY + `decryption: mlkem768x25519plus` + `flow: xtls-rprx-vision`，伪装 target 指向 `127.0.0.1:8003`（自域名证书站）。
+  2. **Flow 客户端隔离**：
+     - Xray VLESS 中若只配置带 flow 的 client，无 flow 的客户端握手会报 `account is rejected since the client flow is empty`。
+     - 在 8001 入站中同时注册两个 client（无 flow 的 UUID2 与带 flow 的 UUID1），实现节点 1 与节点 2 在同一 XHTTP 路径上无冲突共存。
+- **本机最佳参数设定矩阵**：
+  - **XHTTP 物理并发与连接复用 (xmux)**：
+    - `maxConnections: 16`：充分发挥 ARM 4 OCPU 多核调度与带宽吞吐；
+    - `scMinPostsIntervalMs: 30`：优化上行小包流控，降低突发拥塞；
+    - `hMaxRequestTimes: "600-900"`、`hMaxReusableSecs: "1800-3000"`：大幅减少高频建联开销，保证长时间下载不断流。
+  - **底层网络协议栈 (Inbound sockopt)**：
+    - `"tcpFastOpen": true`：节省 1-RTT 建联开销；
+    - `"tcpcongestion": "bbr"`：绑定 BBR 拥塞控制算法；
+    - `"tcpUserTimeout": 300000`：容忍跨境链路偶发抖动（5 分钟）；
+    - TSQ 发送队列限制 4MB、单流缓冲 64MB。
+  - **客户端高级参数**：
+    - 全面注入 `packetEncoding=xudp`：彻底消除 UDP 队头阻塞，提升游戏与实时通信体验；
+    - 直连 REALITY 节点使用 `alpn=h2,http/1.1`：防止单一协议协商失败；
+    - `minClientVer: 1.8.0`：保证多端兼容握手不被高版本内核阻断。
+- **系统集成与订阅交付**：
+  - 更新 `xh reality` 菜单，优先高亮展示三大后量子精选节点及一键导入链接；
+  - 自动注入 `/home/ubuntu/client-config.txt` 顶部，并通过 `xh resub` 自动刷新全量订阅分发（v2rayn、v2rayn-tun 等）；
+  - 防火墙放行 TCP 8447，并持久化至 `/etc/iptables/rules.v4` 与 `rules.v6`。

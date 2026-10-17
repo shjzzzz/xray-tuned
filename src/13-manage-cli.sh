@@ -4388,30 +4388,46 @@ reality_toggle() {
 
 cmd_reality() {
   local what="${1:-show}" act="${2:-show}" v x u sid minv mtd
+  local link1 link2 link3 bestcf
+  bestcf="${BESTCF_DOMAIN:-${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}}"
+  local extra_enc='%7B%22scMinPostsIntervalMs%22%3A30%2C%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D%7D'
+  link1="vless://${UUID2}@${bestcf}:443?encryption=${VLESSENC_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${extra_enc}&packetEncoding=xudp#VLESS-TLS+后量子+XHTTP+CDN"
+  link2="vless://${UUID1}@${bestcf}:443?encryption=${VLESSENC_ENCRYPTION}&flow=xtls-rprx-vision&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${extra_enc}&packetEncoding=xudp#VLESS-TLS+后量子+Vision+XHTTP+CDN"
+  link3="vless://${UUID1}@${VPS_IP_URI}:8447?encryption=${VLESSENC_ENCRYPTION}&flow=xtls-rprx-vision&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2,http/1.1&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&spx=%2Feda9889069e9&type=raw&headerType=none&packetEncoding=xudp#VLESS-REALITY+后量子+Vision（自域名）"
+
   case "$what" in
-    show|status)
+    show|status|list|"")
       v="${FEATURE_REALITY_VISION:-false}"; x="${FEATURE_REALITY_XHTTP:-true}"; u="${FEATURE_REALITY_UP_CDN_DOWN:-false}"
       sid="${SHORT_ID:-}"; [[ -n "$sid" ]] && sid="${sid:0:2}$(printf '%*s' $(( ${#sid} > 2 ? ${#sid} - 2 : 0 )) '' | tr ' ' '*')"
       minv=$(grep -o '"minClientVer"[[:space:]]*:[[:space:]]*"[^"]*"' "$XRAY_CONF" 2>/dev/null | head -1 | sed -E 's/.*"([^"]*)"$/\1/')
       mtd=$(grep -o '"maxTimeDiff"[[:space:]]*:[[:space:]]*[0-9]*' "$XRAY_CONF" 2>/dev/null | head -1 | grep -o '[0-9]*$')
       echo ""
-      echo -e "${CYAN}=== Reality 节点 ===${NC}"
+      echo -e "${CYAN}=== Reality 与后量子精选核心节点 (最佳本机配置) ===${NC}"
+      printf '  %-40s %s\n' "1) VLESS-TLS+后量子+XHTTP+CDN" "$([[ "${FEATURE_TLS_PQ_XHTTP:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  CF CDN(443)  TLS+ML-KEM+XHTTP(16流)"
+      printf '  %-40s %s\n' "2) VLESS-TLS+后量子+Vision+XHTTP+CDN" "$([[ "${FEATURE_TLS_PQ_VISION:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  CF CDN(443)  TLS+ML-KEM+Vision+XHTTP"
+      printf '  %-40s %s\n' "3) VLESS-REALITY+后量子+Vision(自域名)" "$([[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  直连(8447)   REALITY+ML-KEM+Vision(BBR)"
+      echo ""
+      echo -e "${CYAN}--- 核心节点链接 (可直接导入客户端) ---${NC}"
+      echo -e "  ${YELLOW}[1] VLESS-TLS+后量子+XHTTP+CDN:${NC}"
+      echo -e "  ${link1}"
+      echo ""
+      echo -e "  ${YELLOW}[2] VLESS-TLS+后量子+Vision+XHTTP+CDN:${NC}"
+      echo -e "  ${link2}"
+      echo ""
+      echo -e "  ${YELLOW}[3] VLESS-REALITY+后量子+Vision（自域名）:${NC}"
+      echo -e "  ${link3}"
+      echo ""
+      echo -e "  伪装目标 target:   127.0.0.1:8003（本机 Nginx，证书域名 ${REALITY_DOMAIN:-?}）"
+      echo -e "  serverNames:       ${REALITY_DOMAIN:-?}、${CDN_DOMAIN:-?}"
+      echo -e "  后量子加密套件:    ML-KEM-768 (mlkem768x25519plus)"
+      echo -e "  拥塞控制与流控:    BBR + FQ / TSQ 4MB 反压 / packetEncoding=xudp"
+      echo -e "  shortId:           ${sid:-?}（已隐藏）"
+      [[ -n "$minv" ]] && echo -e "  minClientVer:      ${minv}    （${MANAGE_CMD} minversion）"
+      echo ""
+      echo -e "${CYAN}=== 历史兼容节点 ===${NC}"
       printf '  %-30s %s\n' "VLESS-Reality-Vision-Direct" "$([[ "$v" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  TCP 443  xtls-rprx-vision      ${MANAGE_CMD} reality vision on|off"
       printf '  %-30s %s\n' "VLESS-Reality-XHTTP-Direct" "$([[ "$x" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  TCP 443  XHTTP + vlessenc       ${MANAGE_CMD} reality xhttp on|off"
       printf '  %-30s %s\n' "VLESS-Reality-Up-CDN-Down" "$([[ "$u" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  上行 Reality / 下行 CDN   ${MANAGE_CMD} reality updown on|off"
-      echo ""
-      echo -e "  伪装目标 target:   127.0.0.1:8003（本机 nginx，证书域名 ${REALITY_DOMAIN:-?}）"
-      echo -e "  serverNames:       ${REALITY_DOMAIN:-?}、${CDN_DOMAIN:-?}"
-      echo -e "  shortId:           ${sid:-?}（已隐藏）"
-      if [[ -n "$minv" ]]; then
-        echo -e "  minClientVer:      ${minv}    （${MANAGE_CMD} minversion）"
-      else
-        echo -e "  minClientVer:      ${YELLOW}未设置${NC}    （${MANAGE_CMD} minversion）"
-        echo -e "    ${YELLOW}注意：Xray 26.9.x 的默认值是 26.3.27，Shadowrocket / sing-box / Mihomo / 老版本内核的 Reality 连接可能被拒；${NC}"
-        echo -e "    ${YELLOW}需要兼容这些客户端时执行 ${MANAGE_CMD} minversion 1.8.0（会重启 xray）。${NC}"
-      fi
-      echo -e "  maxTimeDiff:       ${mtd:+${mtd} ms}${mtd:-未设置}    （${MANAGE_CMD} timediff）"
-      echo -e "  说明: 443 入站始终保留（CDN 域名的回源要靠它）；vision / xhttp 开关会增删入站里对应的一项并重启 xray。"
       echo ""
       ;;
     vision|xhttp)
@@ -4427,7 +4443,7 @@ cmd_reality() {
         *) cmd_split reality-up show ;;
       esac
       ;;
-    *) echo "用法: ${MANAGE_CMD} reality [show | vision on|off | xhttp on|off | updown on|off]" ;;
+    *) echo "用法: ${MANAGE_CMD} reality [show | list | vision on|off | xhttp on|off | updown on|off]" ;;
   esac
 }
 
