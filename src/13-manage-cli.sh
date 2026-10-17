@@ -338,7 +338,7 @@ cmd_resub() {
   {
     # v4.9.49：剔除 v2rayN 专用的 fm（finalmask JSON）参数，小火箭解析不了复杂 URI
     # 小火箭专属处理同 12-subscription.sh：去 fm、type=raw→tcp、去 spx
-    grep -E 'Reality-Vision|Hysteria2-(Obfs|H3)-Direct' "${home}/client-config.txt" | sed -E 's/&fm=[^&#]*//; s/&type=raw(&|#)/\&type=tcp\1/; s/&spx=[^&#]*//' || true
+    grep -E 'Reality-Vision|Hysteria2-(Obfs|H3)-Direct|Hysteria2-TLS-BBR-Salamander' "${home}/client-config.txt" | sed -E 's/&fm=[^&#]*//; s/&type=raw(&|#)/\&type=tcp\1/; s/&spx=[^&#]*//' || true
     if [[ "${FEATURE_CDN_H2:-false}" == true ]]; then
       local cdn_host="${BESTCF_DOMAIN:-${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}}"
       [[ -z "$cdn_host" || "$cdn_host" == "127.0.0.1" ]] && cdn_host="bestcf.${REALITY_DOMAIN#reality.}"
@@ -3095,7 +3095,11 @@ def frag(line):
     return line.rsplit('#', 1)[-1]
 
 def match(line):
-    return frag(line).startswith(name)
+    if frag(line).startswith(name):
+        return True
+    if name in ('Hysteria2-TLS-BBR-Salamander', 'Hysteria2-Obfs-Direct') and any(frag(line).startswith(x) for x in ('Hysteria2-TLS-BBR-Salamander', 'Hysteria2-Obfs-Direct')):
+        return True
+    return False
 
 def insert_pos(all_items, idx, live_keys, key):
     """新节点放在节点库顺序里「前一个本机已有的节点」之后，都没有就放最前。"""
@@ -3370,7 +3374,7 @@ cmd_backup_server_node() {
   local key="$1" action="${2:-show}" flag name label proto port cur rc
   case "$key" in
     h2direct) flag=FEATURE_H2_DIRECT; name="VLESS-XHTTP-Direct-H2"; label="XHTTP-Direct-H2（TCP 直连，h3-direct 的孪生体）"; proto=tcp; port="${H2_PORT:-8445}" ;;
-    hy2obfs)  flag=FEATURE_HY2_OBFS;  name="Hysteria2-Obfs-Direct"; label="Hysteria2-Obfs-Direct（salamander 混淆）";       proto=udp; port="${HY2_PORT}" ;;
+    hy2obfs)  flag=FEATURE_HY2_OBFS;  name="Hysteria2-TLS-BBR-Salamander"; label="Hysteria2-TLS-BBR-Salamander（salamander 混淆）";       proto=udp; port="${HY2_PORT}" ;;
     masque)   flag=FEATURE_MASQUE;    name="MASQUE-CONNECT-IP";     label="MASQUE 标准 L3 隧道 (RFC 9484 CONNECT-IP)";        proto=udp; port="${MASQUE_PORT:-8447}" ;;
   esac
   cur="${!flag:-false}"

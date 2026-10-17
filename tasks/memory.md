@@ -559,3 +559,16 @@
   - 更新 `xh reality` 菜单，优先高亮展示三大后量子精选节点及一键导入链接；
   - 自动注入 `/home/ubuntu/client-config.txt` 顶部，并通过 `xh resub` 自动刷新全量订阅分发（v2rayn、v2rayn-tun 等）；
   - 防火墙放行 TCP 8447，并持久化至 `/etc/iptables/rules.v4` 与 `rules.v6`。
+
+## 29. Hysteria2 混淆节点重命名与全端订阅同步规范 (2026-10-18)
+- **指令背景**：
+  - 用户要求将 Hysteria2 节点统一改名为 `Hysteria2-TLS-BBR-Salamander`，以对齐技术栈（TLS 证书握手 + BBR 拥塞控制 + Salamander 混淆）。
+- **同步范围与兼容机制**：
+  1. **实时配置与订阅渲染**：
+     - 将 `/home/ubuntu/client-config.txt` 与 `/etc/xhttp-cdn/all/client-config.txt` 中的 `#Hysteria2-Obfs-Direct-Or-Arm` 重命名为 `#Hysteria2-TLS-BBR-Salamander`；
+     - 同步更新 Mihomo 完整分流与纯节点配置（`client-config-mihomo-full.yaml` / `client-config-mihomo-nodes.yaml`）；
+     - 执行 `xh resub` 重新分发全量订阅（v2rayn、v2rayn-tun、shadowrocket、mihomo 等）。
+  2. **多客户端订阅过滤兼容**：
+     - 更新 `12-subscription.sh`、`13-manage-cli.sh` 及 `/usr/local/bin/xh` 的小火箭专属订阅正则表达式（加入 `Hysteria2-TLS-BBR-Salamander`），确保剔除 `fm` 复杂参数后正常下发；
+     - 更新 `backup_node_sync_files` 节点同步逻辑，双向兼容 `Hysteria2-TLS-BBR-Salamander` 与历史名称。
+
