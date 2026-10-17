@@ -3723,7 +3723,7 @@ cmd_xdrive() {
       fi
       echo -e "  客户端配置示例:       ${USER_HOME:-/root}/xdrive-client.json"
       echo ""
-      echo -e "  使用说明与提示 (Google zhoushj6@gmail.com):"
+      echo -e "  使用说明与提示 (Google Drive OAuth):"
       echo -e "    1. 在 Google Cloud Console 创建 OAuth 2.0 Client ID (类型选桌面应用或 Web)"
       echo -e "    2. 在 Google Drive 新建一个中转文件夹，获取 URL 中的 folderId"
       echo -e "    3. 获取 OAuth Refresh Token 并运行: ${MANAGE_CMD} xdrive setup 进行配置"
