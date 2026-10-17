@@ -8,19 +8,26 @@
 ---
 
 ## ⚡ استقرار سریع
-
-### ۱. استقرار تعاملی
+ 
+### ۱. استقرار خودکار و بی‌صدا Xray-Tuned (پیشنهادی)
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/shjzzzz/xray-tuned/main/dist/install.sh)
+bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download/install.sh) \
+  AUTO=1 \
+  REALITY_DOMAIN="reality.yourdomain.com" \
+  CDN_DOMAIN="cdn.yourdomain.com" \
+  NODE_TAG="US-Node" \
+  FEATURE_REALITY_VISION=true \
+  FEATURE_XHTTP_VLESSENC=true
 ```
 
-### ۲. استقرار خودکار و بدون پرسش
+### ۲. استقرار خودکار sbbox-tuned
 ```bash
-sudo env AUTO=1 \
-  REALITY_DOMAIN="reality.example.com" \
-  CDN_DOMAIN="cdn.example.com" \
-  NODE_TAG="my-vps" \
-  bash <(curl -fsSL https://raw.githubusercontent.com/shjzzzz/xray-tuned/main/dist/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/shjzzzz/sbbox-tuned/main/sbbox.sh) hyp=1 anyp=1 nvp=1 tup=1 alns=1 sub=1 sbrel=pre ym=reality.yourdomain.com
+```
+
+### ۳. استقرار تعاملی
+```bash
+bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download/install.sh)
 ```
 
 ---

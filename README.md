@@ -9,18 +9,25 @@
 
 ## ⚡ 快速一键部署
 
-### 1. 交互式部署
+### 1. Xray-Tuned 自动化静默部署（推荐）
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/shjzzzz/xray-tuned/main/dist/install.sh)
+bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download/install.sh) \
+  AUTO=1 \
+  REALITY_DOMAIN="reality.yourdomain.com" \
+  CDN_DOMAIN="cdn.yourdomain.com" \
+  NODE_TAG="US-Node" \
+  FEATURE_REALITY_VISION=true \
+  FEATURE_XHTTP_VLESSENC=true
 ```
 
-### 2. 自动化静默部署（推荐）
+### 2. sbbox-tuned 自动化部署
 ```bash
-sudo env AUTO=1 \
-  REALITY_DOMAIN="reality.example.com" \
-  CDN_DOMAIN="cdn.example.com" \
-  NODE_TAG="my-vps" \
-  bash <(curl -fsSL https://raw.githubusercontent.com/shjzzzz/xray-tuned/main/dist/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/shjzzzz/sbbox-tuned/main/sbbox.sh) hyp=1 anyp=1 nvp=1 tup=1 alns=1 sub=1 sbrel=pre ym=reality.yourdomain.com
+```
+
+### 3. 交互式部署
+```bash
+bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download/install.sh)
 ```
 > **前置要求**：准备 2 个解析到 VPS 的域名（直连域名灰云仅 DNS，CDN 域名黄云开启代理）。
 
