@@ -33,18 +33,25 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
 
 ---
 
-## 📡 Core Node Matrix
+## 📡 10 Core Node Matrix
 
-| # | Node Name | Protocol | Port / Transport | Obfuscation | Recommended Use Case |
+| # | Node Name | Protocol & Transport | Port / Mode | Obfuscation / Cipher | Recommended Use Case |
 | :---: | :--- | :--- | :--- | :--- | :--- |
-| **1** | `VLESS-XHTTP-CDN-H2` | VLESS + XHTTP | 443 (CF CDN) / h2 | xpadding obfs | Censorship-resilient IP masking fallback |
-| **2** | `VLESS-XHTTP-CDN-H3` | VLESS + XHTTP | 443 (CF CDN) / h3 | QUIC (H3) 0-RTT | Packet-loss resistant CDN acceleration |
-| **3** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP | 8446 / h3 (UDP) | Native QUIC (H3) | Cross-ocean low-latency high throughput |
-| **4** | `VLESS-XHTTP-Direct-H2` | VLESS + XHTTP | 8445 / h2 (TCP) | TLS 1.3 direct | Reliable direct connection when UDP is blocked |
-| **5** | `Hysteria2-H3-Direct` | Hysteria2 | 33385 / UDP | BBRv3 / standard H3 | Max throughput & fast recovery from packet loss |
-| **6** | `Hysteria2-Obfs-Direct` | Hysteria2 | 37987 / UDP | Salamander obfs | ISP UDP QoS / active-probing evasion |
-| **7** | `VLESS-Reality-Vision-Direct` | VLESS + Reality | 443 / TCP (RAW) | xtls-rprx-vision | **Recommended Daily Driver**; lowest latency & zero-copy |
-| **8** | `VLESS-Reality-PQ-Vision` | VLESS + Reality | 8447 / TCP (RAW) | mlkem768x25519plus | Post-Quantum encryption forward secrecy |
+| **1** | `VLESS-TLS+PQ+XHTTP+CDN` | VLESS + XHTTP (H2) | 443 (Cloudflare CDN) | ML-KEM-768 Post-Quantum + TLS 1.3 | **Daily Driver**: Universal CDN acceleration, quantum-resistant forward secrecy |
+| **2** | `VLESS-TLS+PQ+Vision+XHTTP+CDN` | VLESS + XHTTP (H2) | 443 (Cloudflare CDN) | ML-KEM-768 + Vision dynamic flow | Eliminates TLS-in-TLS fingerprinting, QoS-evasive |
+| **3** | `VLESS-REALITY+PQ+Vision（自域名）` | VLESS + REALITY (RAW) | 8447 / TCP (Direct) | ML-KEM-768 + Vision (0.05ms local gateway) | **High-Speed Direct**: Linux kernel `splice()` zero-copy, line-rate Gigabit throughput |
+| **4** | `VLESS-XHTTP-CDN-H2` | VLESS + XHTTP (H2) | 443 (Cloudflare CDN) | TLS 1.3 / xpadding / 16 Concurrency | Standard CDN fallback, compatible with legacy Xray clients |
+| **5** | `VLESS-XHTTP-CDN-H3` | VLESS + XHTTP (H3) | 443 (Cloudflare CDN) | QUIC (H3) 0-RTT / 64MB window | Packet-loss resistant CDN acceleration on unstable mobile networks |
+| **6** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8446 / UDP (Direct) | Native QUIC (H3) / 64MB window | Direct low-latency cross-ocean high throughput |
+| **7** | `Hysteria2-H3-Direct` | Hysteria2 | UDP Dynamic Port (e.g., 19142) | BBRv3 / Standard HTTP/3 | Gigabit line-rate throughput & instant recovery from packet loss |
+| **8** | `Hysteria2-TLS-BBR-Salamander` | Hysteria2 | UDP Dynamic Port (e.g., 38969) | Salamander Obfs + BBR + 64MB window | Extreme ISP UDP throttling & active-probing evasion |
+| **9** | `VLESS-Reality-Vision-Direct` | VLESS + REALITY (RAW) | 443 / TCP (Direct) | xtls-rprx-vision zero-copy | Standard port 443 direct connection enjoying highest carrier QoS |
+| **10** | `VLESS-Reality-XHTTP-Direct` | VLESS + REALITY (RAW) | 443 fallback to 8001 | XHTTP + vlessenc local fallback | Dual-layer fallback combining Reality camouflage with protocol routing |
+
+> [!NOTE]
+> - **Top 3 PQ Core Nodes** (1-3) implement NIST-standard Post-Quantum key exchange (ML-KEM-768) for quantum-resistant forward secrecy.
+> - **Hysteria2 Nodes** (7-8) operate over dynamic high UDP ports and declare 64MB stream / 128MB connection receive windows to eliminate BDP bottlenecks.
+> - **Optional Direct Node**: `VLESS-XHTTP-Direct-H2` (8445 TCP Direct) can be toggled on-demand via `xh h2direct on`.
 
 ---
 

@@ -32,18 +32,25 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
 
 ---
 
-## 📡 نودهای اصلی
+## 📡 ماتریس ۱۰ نود اصلی
+ 
+| ردیف | نام نود | پروتکل و انتقال | پورت / حالت | مبهم‌سازی / ویژگی | ویژگی و کاربرد پیشنهادی |
+| :---: | :--- | :--- | :--- | :--- | :--- |
+| **۱** | `VLESS-TLS+PQ+XHTTP+CDN` | VLESS + XHTTP (H2) | 443 (Cloudflare CDN) | رمزنگاری پساکوانتومی ML-KEM-768 + TLS 1.3 | **پیشنهاد اصلی روزمره**: شتاب امن جهانی CDN و مقاومت در برابر رمزگشایی کوانتومی |
+| **۲** | `VLESS-TLS+PQ+Vision+XHTTP+CDN` | VLESS + XHTTP (H2) | 443 (Cloudflare CDN) | جریان پویا Vision + ML-KEM-768 | حذف ردپای TLS-in-TLS و عبور از اختلالات شدید ساعات اوج |
+| **۳** | `VLESS-REALITY+PQ+Vision（自域名）` | VLESS + REALITY (RAW) | 8447 / TCP (مستقیم) | ML-KEM-768 + Vision (پوشش 0.05ms) | **حداکثر سرعت مستقیم**: فناوری Zero-Copy و سرعت گیگابیتی با کمترین پینگ |
+| **۴** | `VLESS-XHTTP-CDN-H2` | VLESS + XHTTP (H2) | 443 (Cloudflare CDN) | TLS 1.3 / xpadding / ۱۶ اتصال همزمان | ضد فیلتر و مخفی‌سازی کامل IP سرور با پشتیبانی از کلاینت‌های قدیمی |
+| **۵** | `VLESS-XHTTP-CDN-H3` | VLESS + XHTTP (H3) | 443 (Cloudflare CDN) | شتاب CDN همراه با QUIC 0-RTT بافر ۶۴MB | بهترین شتاب روی اینترنت‌های موبایل و دارای پکت‌لاس |
+| **۶** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8446 / UDP (مستقیم) | اتصال مستقیم QUIC / بافر ۶۴MB | اتصال مستقیم با تاخیر کم و پایداری بالا |
+| **۷** | `Hysteria2-H3-Direct` | Hysteria2 | UDP پورت تصادفی (مثلا 19142) | BBRv3 / استاندارد HTTP/3 | حداکثر سرعت دانلود و بازیابی آنی بسته‌های از دست رفته |
+| **۸** | `Hysteria2-TLS-BBR-Salamander` | Hysteria2 | UDP پورت تصادفی (مثلا 38969) | مبهم‌سازی Salamander + بافر ۶۴MB | عبور تضمینی از شدیدترین اختلالات و فیلترینگ ترافیک UDP |
+| **۹** | `VLESS-Reality-Vision-Direct` | VLESS + REALITY (RAW) | 443 / TCP (پورت استاندارد) | اتصال مستقیم xtls-rprx-vision | پورت مستقیم ۴۴۳ با بالاترین اولویت شبکه |
+| **۱۰** | `VLESS-Reality-XHTTP-Direct` | VLESS + REALITY (RAW) | 443 بازگشت به 8001 | XHTTP + رمزگشایی داخلی vlessenc | نود رزرو با پوشش ترکیبی پورت ۴۴۳ |
 
-| ردیف | نام نود | پروتکل | پورت / انتقال | ویژگی و کاربرد |
-| :---: | :--- | :--- | :--- | :--- |
-| **۱** | `VLESS-XHTTP-CDN-H2` | VLESS + XHTTP | 443 (CF CDN) / h2 | ضد فیلتر و مخفی‌سازی کامل IP سرور |
-| **۲** | `VLESS-XHTTP-CDN-H3` | VLESS + XHTTP | 443 (CF CDN) / h3 | شتاب CDN همراه با QUIC 0-RTT |
-| **۳** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP | 8446 / h3 (UDP) | سرعت بالا و تاخیر کم مستقیم QUIC |
-| **۴** | `VLESS-XHTTP-Direct-H2` | VLESS + XHTTP | 8445 / h2 (TCP) | اتصال مستقیم TCP برای زمان مسدودی UDP |
-| **۵** | `Hysteria2-H3-Direct` | Hysteria2 | 33385 / UDP | حداکثر سرعت و بازیابی عالی در شبکه‌های با پکت‌لاس |
-| **۶** | `Hysteria2-Obfs-Direct` | Hysteria2 | 37987 / UDP | مبهم‌سازی Salamander برای دور زدن فیلترینگ شدید |
-| **۷** | `VLESS-Reality-Vision-Direct` | VLESS + Reality | 443 / TCP (RAW) | **پیشنهاد اصلی**؛ کمترین تاخیر و فناوری Zero-Copy |
-| **۸** | `VLESS-Reality-PQ-Vision` | VLESS + Reality | 8447 / TCP (RAW) | رمزنگاری پساکوانتومی امن در برابر محاسبات کوانتومی |
+> [!NOTE]
+> - نودهای ردیف ۱ تا ۳ مجهز به استاندارد NIST پساکوانتومی (ML-KEM-768) هستند.
+> - نودهای هستریا (ردیف ۷ و ۸) با بافر ۶۴ مگابایت جریان و ۱۲۸ مگابایت اتصال بهینه‌سازی شده‌اند.
+> - نود رزرو `VLESS-XHTTP-Direct-H2` (پورت 8445 TCP) در صورت نیاز با دستور `xh h2direct on` قابل فعال‌سازی است.
 
 ---
 

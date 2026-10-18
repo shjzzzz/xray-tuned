@@ -572,3 +572,19 @@
      - 更新 `12-subscription.sh`、`13-manage-cli.sh` 及 `/usr/local/bin/xh` 的小火箭专属订阅正则表达式（加入 `Hysteria2-TLS-BBR-Salamander`），确保剔除 `fm` 复杂参数后正常下发；
      - 更新 `backup_node_sync_files` 节点同步逻辑，双向兼容 `Hysteria2-TLS-BBR-Salamander` 与历史名称。
 
+## 30. 四核心节点参数深度调优与 10 大核心节点矩阵文档规范纠错 (2026-10-18)
+- **指令背景**：
+  - 用户要求针对四大核心节点（`VLESS-TLS+PQ+XHTTP+CDN`、`VLESS-TLS+PQ+Vision+XHTTP+CDN`、`VLESS-REALITY+PQ+Vision（自域名）`、`Hysteria2-TLS-BBR-Salamander`）进行参数极致调优，并对多语言 README 文档中的 10 节点说明进行系统性纠错与对齐。
+- **参数调优细节**：
+  1. **XHTTP PQ 节点并发与复用调优**：
+     - 在 `extra.xmux` 参数中显式注入 `"maxConcurrency":"16-32"`，结合已有 `"maxConnections":16`，充分发挥 ARM 4 物理核心并发能力，解决短时大量并行请求排队问题；
+     - 保持 `scMinPostsIntervalMs: 30` 与长生命周期 `hMaxReusableSecs: "1800-3000"`，避免高频切片断流。
+  2. **Hysteria2-TLS-BBR-Salamander 跨洋千兆窗口调优**：
+     - 在客户端 `fm.quicParams` 注入大接收窗口参数：`"initStreamReceiveWindow":8388608`、`"maxStreamReceiveWindow":67108864`（64MB 流窗口）、`"initConnectionReceiveWindow":16777216`、`"maxConnectionReceiveWindow":134217728`（128MB 连接窗口）；
+     - 彻底消除跨洋高 BDP（带宽时延积）链路下的协议栈接收瓶颈，实现千兆跑满能力。
+  3. **README 10 核心节点说明系统纠错**：
+     - 纠正历史版本中仅列出 8 个节点的缺陷，扩充为生产环境交付的完整 **10 大核心节点矩阵**；
+     - 纠正老旧节点名称与误导性的硬编码端口，清晰划分为“三大 PQ 后量子核心”、“四大 XHTTP 双栈”、“两大 Hysteria2 极速抗丢包”、“两大 Reality 标口零拷贝直连”；
+     - 同步纠错更新中文、英文及波斯语（`README.md`、`README.en.md`、`README.fa.md`）版本。
+
+
