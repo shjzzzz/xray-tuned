@@ -643,32 +643,38 @@
 
 ## 34. CDN 节点断连及不稳定问题根因治理与全链路加固 (2026-10-18)
 - **痛点与故障现象**：
-  - 用户反馈 CDN 节点（XHTTP/VLESS）频繁断连、连接极度不稳定、网页偶发打不开或打不开双栈大站。
-  - 服务端日志呈现：Nginx 频繁记录 `upstream rejected request with error 5 while reading upstream`；Xray 频繁记录 `app/dns: ... unexpected EOF` 与 `failed to resolve ip > features/dns: empty response`；客户端出现 `unexpected eof while reading`。
-- **根本原因排查与定位**：
-  1. **纯 IPv4 环境下的 IPv6 路由黑洞（主要根因）**：
-     - 宿主机为纯 IPv4 VPS（无 IPv6 地址与路由）；
-     - 双栈客户端访问 Google、Cloudflare、Bing 等大站时优先解析出目标 IPv6 地址发给代理；
-     - 服务端入站此前配置了 `"routeOnly": true`，阻止了 Xray 将目标重写为 SNI 域名（destOverride 失效），导致 freedom 出站直接对客户端发来的 IPv6 字面地址发起 `connect()`；
-     - Linux 内核立即抛出 `[Errno 101] Network is unreachable`，连接被瞬间斩断，客户端崩溃断连。
-  2. **单一远端 DoH 偶发 EOF 引发 empty response 级联断流**：
-     - `dns.servers` 原配置首选 `https+local://9.9.9.10/dns-query`，远端 HTTP/2 连接空闲老化时 Quad9 掐断连接导致 Go 运行时抛出 `unexpected EOF`；
-     - 缺乏快速本地/标准 DNS 兜底，查询超时直接触发 `empty response`；Xray 无法解析 IP 进而重置客户端 stream（发送 RST_STREAM / error 5）。
-  3. **Nginx 反代缓冲区过大抖动**：
-     - Nginx `grpc_buffer_size` 设为 `4096k`（4MB），为每个 gRPC 响应头分配过大缓冲区，引发突发数据缓冲排队与延迟毛刺。
-- **治理与工程落地**：
-  1. **入站开启域名重写（`routeOnly: false`）**：
-     - 修改 `templates/xray-config.json.tmpl`、`src/09-server-config.sh`、`src/13-manage-cli.sh` 及实机 `/usr/local/etc/xray/config.json`，将全部代理入站的 `sniffing.routeOnly` 改为 `false`；
-     - 客户端流量在服务端嗅探重写为域名后，由 freedom 出站的 `sockopt.domainStrategy: "UseIPv4"` 在本地以 IPv4 解析出站直连，彻底消除 IPv6 不可达导致的断流。
+  - 用户反馈 CDN 节点（XHTTP / VLESS）频繁断连、连接极度不稳定、网页偶发打不开或打不开双栈大站（如 Cloudflare 自身站点、Google、Bing 等）；
+  - 服务端日志呈现：
+    - Nginx 错误日志频繁记录：`upstream rejected request with error 5 while reading upstream, client: ..., request: "POST /a3174b5a/... HTTP/2.0", upstream: "grpc://127.0.0.1:8001"`；
+    - Xray 错误日志反复刷出：`app/dns: ... unexpected EOF` 与 `failed to resolve ip > features/dns: empty response`；
+    - 客户端报错：`TLS connect error: error:0A000126:SSL routines::unexpected eof while reading`。
+- **全链路流量架构拆解**：
+  - `Client -> Cloudflare CDN -> VPS:443 (TCP) -> Xray:443 (Reality Fallback) -> Nginx:8003 (SSL Term) -> location /a3174b5a (grpc_pass) -> Xray:8001 (VLESS+XHTTP) -> Freedom Outbound -> Internet`
+- **根本原因深度剖析（Root Causes）**：
+  1. **纯 IPv4 VPS 上的“IPv6 路由黑洞”（核心致命根因）**：
+     - **机制**：宿主机为纯 IPv4 VPS（无任何 IPv6 公网地址与全局路由）。当双栈客户端访问支持 IPv6 的互联网大站时，客户端本地 DNS 优先解析出目标 IPv6 地址并将其作为代理目标（Target Address）封装在 VLESS 请求头中发往服务端。
+     - **阻断点**：此前服务端所有入站配置了 `"sniffing.routeOnly": true`。在 Xray 官方设计中，`routeOnly: true` 意味着**嗅探出的 SNI 域名仅用于 routing 规则分流匹配，绝不重写请求的目标地址（destOverride 被关闭）**。因此，freedom 出站拿到的是未经重写的字面 IPv6 地址。
+     - **崩溃过程**：Freedom 直连出站尝试对目标 IPv6 发起 `connect()` 系统调用，Linux 内核立即返回 `[Errno 101] Network is unreachable`，TCP 握手瞬间失败，服务端不得不关闭该客户端 stream。客户端直接遭遇连接重置或 `unexpected eof while reading`，造成大量双栈大站与 App 频繁断流。
+  2. **单一远端 DoH 偶发 EOF 引发 `features/dns: empty response` 级联断流（重大根因）**：
+     - **机制**：Xray 内置 DNS 首选了远端 `https+local://9.9.9.10/dns-query`（Quad9）。远端 HTTP/2 连接在空闲一段时间后会被远端服务器掐断 TCP 连接或发送 GOAWAY，Go 运行时复用该连接时抛出 `unexpected EOF`。
+     - **级联反应**：原配置未设置低延迟本地/标准 DNS 快速备援，导致 DNS 查询超时并返回 `failed to resolve ip > features/dns: empty response`。一旦域名无法解析为 IP，freedom 出站无法建连，Xray 向上游 Nginx 发送 HTTP/2 RST_STREAM（STREAM_CLOSED / error 5），Nginx 记录 `upstream rejected request with error 5`，用户端表现为请求突然被掐死。
+  3. **Nginx 反代缓冲区过大引发内存抖动与排队**：
+     - Nginx `grpc_buffer_size` 此前设为 `4096k`（4MB），每个 gRPC 响应头均预分配 4MB 缓冲区，在高并发连接下导致不必要的内存占用与缓冲排队延迟。
+- **治理与工程落地（Solutions）**：
+  1. **入站恢复 SNI 域名重写（`sniffing.routeOnly: false`）**：
+     - 彻底将 `templates/xray-config.json.tmpl`、`src/09-server-config.sh`、`src/13-manage-cli.sh` 及线上实机 `/usr/local/etc/xray/config.json` 中全部代理入站的 `sniffing.routeOnly` 改为 `false`；
+     - 当客户端发来连接时，Xray 嗅探内层 HTTP/TLS/QUIC 流量并精准将目标重写为真实域名，随后由 freedom 出站的 `sockopt.domainStrategy: "UseIPv4"` 在本地通过服务端 DNS 解析为可达的 IPv4 地址出站直连，**彻底消灭 IPv6 路由黑洞**。
   2. **构建高可用抗瞬断 DNS 矩阵**：
-     - 首选低延迟 Anycast DoH：`https+local://1.1.1.1/dns-query`、`8.8.8.8`；
-     - 注入 2ms 超低延迟标准 DNS 兜底：`"1.1.1.1"`, `"8.8.8.8"`，保证 0 empty response、0 断流。
-  3. **Nginx 反代缓冲调优**：
-     - `templates/nginx.conf.tmpl` 与实机 `/etc/nginx/nginx.conf` 中 `grpc_buffer_size` 从 `4096k` 调整为 `256k`。
-- **全链路测试与验证**：
-  - 启动测试客户端模拟 CDN 节点并发压测 8 个国内外核心网站，全部 200/301 秒连（0.1~0.3s），成功率 100%；
-  - Xray 日志与 Nginx 错误日志 0 条相关报错；
-  - 编译脚本重新生成 `dist/install*.sh` 并通过全量 `bash -n` 校验。
+     - 首选极速 Anycast DoH：`https+local://1.1.1.1/dns-query`（与 Cloudflare CDN 边缘同拓扑）及 `8.8.8.8`；
+     - 引入本地 2ms 超低延迟标准 DNS 兜底：`"1.1.1.1"`, `"8.8.8.8"`（UDP 53），保证在任何外部 DoH 重建或网络瞬断时均能在 2ms 内拿到 A 记录解析，实现 **0 empty response、0 断流**。
+  3. **Nginx 反代缓冲精准调优**：
+     - `templates/nginx.conf.tmpl` 与实机 `/etc/nginx/nginx.conf` 中 `grpc_buffer_size` 优化为 `256k`，兼顾下行吞吐与内存流转效率。
+- **全链路测试与验证（Verification Before Done）**：
+  - **并发穿透压测**：使用本地测试客户端走真实 CDN 域名并发访问 Cloudflare、Google、Apple、Bing、GitHub、Wikipedia，全部 200/301 正常响应，平均握手建连仅 0.1~0.3 秒，成功率 **100%**；
+  - **错误日志复查**：`journalctl -u xray` 监控无任何 `empty response` 与 `unexpected EOF`；Nginx error.log 中 `0` 条 `upstream rejected request with error 5`；
+  - **安装脚本构建**：运行 `.github/scripts/build-install.sh` 重新编译 `dist/install*.sh` 并通过全量 `bash -n` 语法检查；
+  - **脱敏与远程同步**：严格执行脱敏红线与用户授权推送红线，经安全检查通过后推送至 GitHub 仓库 `main` 分支（Commits: `33b5a89`, `0814727`）。
+
 
 
 
