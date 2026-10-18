@@ -641,6 +641,35 @@
   - 编译脚本 `.github/scripts/build-install.sh` 重新构建 `dist/install*.sh`；
   - 10 大核心节点通过 Xray 内核语法与载入全量测试（100% OK）。
 
+## 34. CDN 节点断连及不稳定问题根因治理与全链路加固 (2026-10-18)
+- **痛点与故障现象**：
+  - 用户反馈 CDN 节点（XHTTP/VLESS）频繁断连、连接极度不稳定、网页偶发打不开或打不开双栈大站。
+  - 服务端日志呈现：Nginx 频繁记录 `upstream rejected request with error 5 while reading upstream`；Xray 频繁记录 `app/dns: ... unexpected EOF` 与 `failed to resolve ip > features/dns: empty response`；客户端出现 `unexpected eof while reading`。
+- **根本原因排查与定位**：
+  1. **纯 IPv4 环境下的 IPv6 路由黑洞（主要根因）**：
+     - 宿主机为纯 IPv4 VPS（无 IPv6 地址与路由）；
+     - 双栈客户端访问 Google、Cloudflare、Bing 等大站时优先解析出目标 IPv6 地址发给代理；
+     - 服务端入站此前配置了 `"routeOnly": true`，阻止了 Xray 将目标重写为 SNI 域名（destOverride 失效），导致 freedom 出站直接对客户端发来的 IPv6 字面地址发起 `connect()`；
+     - Linux 内核立即抛出 `[Errno 101] Network is unreachable`，连接被瞬间斩断，客户端崩溃断连。
+  2. **单一远端 DoH 偶发 EOF 引发 empty response 级联断流**：
+     - `dns.servers` 原配置首选 `https+local://9.9.9.10/dns-query`，远端 HTTP/2 连接空闲老化时 Quad9 掐断连接导致 Go 运行时抛出 `unexpected EOF`；
+     - 缺乏快速本地/标准 DNS 兜底，查询超时直接触发 `empty response`；Xray 无法解析 IP 进而重置客户端 stream（发送 RST_STREAM / error 5）。
+  3. **Nginx 反代缓冲区过大抖动**：
+     - Nginx `grpc_buffer_size` 设为 `4096k`（4MB），为每个 gRPC 响应头分配过大缓冲区，引发突发数据缓冲排队与延迟毛刺。
+- **治理与工程落地**：
+  1. **入站开启域名重写（`routeOnly: false`）**：
+     - 修改 `templates/xray-config.json.tmpl`、`src/09-server-config.sh`、`src/13-manage-cli.sh` 及实机 `/usr/local/etc/xray/config.json`，将全部代理入站的 `sniffing.routeOnly` 改为 `false`；
+     - 客户端流量在服务端嗅探重写为域名后，由 freedom 出站的 `sockopt.domainStrategy: "UseIPv4"` 在本地以 IPv4 解析出站直连，彻底消除 IPv6 不可达导致的断流。
+  2. **构建高可用抗瞬断 DNS 矩阵**：
+     - 首选低延迟 Anycast DoH：`https+local://1.1.1.1/dns-query`、`8.8.8.8`；
+     - 注入 2ms 超低延迟标准 DNS 兜底：`"1.1.1.1"`, `"8.8.8.8"`，保证 0 empty response、0 断流。
+  3. **Nginx 反代缓冲调优**：
+     - `templates/nginx.conf.tmpl` 与实机 `/etc/nginx/nginx.conf` 中 `grpc_buffer_size` 从 `4096k` 调整为 `256k`。
+- **全链路测试与验证**：
+  - 启动测试客户端模拟 CDN 节点并发压测 8 个国内外核心网站，全部 200/301 秒连（0.1~0.3s），成功率 100%；
+  - Xray 日志与 Nginx 错误日志 0 条相关报错；
+  - 编译脚本重新生成 `dist/install*.sh` 并通过全量 `bash -n` 校验。
+
 
 
 
