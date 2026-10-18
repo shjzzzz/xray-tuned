@@ -58,7 +58,8 @@ http {
         default \$http_cf_connecting_ip;
         ""      \$remote_addr;
     }
-    real_ip_header        X-Real-IP;
+    real_ip_header        CF-Connecting-IP;
+    real_ip_recursive     on;
 
     sendfile              on;
     open_file_cache       max=10000 inactive=60s;

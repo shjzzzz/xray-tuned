@@ -625,6 +625,23 @@
   - 经由 `/root/bin/sanitize-check.sh` 脱敏检查 100% 通过（Author: `shjzzzz`，无明文公网 IP/真实域名/密钥泄露）；
   - 成功将全部本地提交推送到 `https://github.com/shjzzzz/xray-tuned.git` 的 `main` 分支。
 
+## 33. 全面落实 Ponytail-Audit 7 项架构与质量优化 (2026-10-18)
+- **优化背景**：
+  - 响应用户对 `/ponytail-audit` 全库审计 7 项建议的全面采纳指令（同时遵循本机为纯 IPv4 环境的实际边界）。
+- **优化落地明细**：
+  1. **iptables 规则清理与重定向防黑洞**：在 `src/06-tuning-lib.sh` 与 `/usr/local/bin/xh` 中增加旧端口映射规则循环清理逻辑，消除历史端口（如 33385/37987）堆叠截断问题，并已即时修复宿主机活动规则。
+  2. **双栈动态入站监听**：`src/09-server-config.sh` 与 `templates/xray-config.json.tmpl` 引入 `XRAY_LISTEN` 变量（IPv4 绑定 `0.0.0.0`，IPv6 绑定 `::`），在兼顾单栈 IPv6 兼容性的同时确保 IPv4 机器 100% 稳定运行。
+  3. **Nginx 真实 IP 还原**：将 `templates/nginx.conf.tmpl` 与实机 `/etc/nginx/nginx.conf` 中的 `real_ip_header` 由 `X-Real-IP` 纠正为 `CF-Connecting-IP` 并开启 `real_ip_recursive on`，解决经过 Cloudflare 后的真实客户端 IP 丢失问题。
+  4. **代码极简化瘦身（Lean）**：彻底剔除冗余重叠的 `tools/ubuntu_vps_optimize.sh`（净删减 -857 行），统一收敛至 `tools/vps-tune.sh`。
+  5. **acme.sh 幂等检测**：在 `src/07-acme-cert.sh` 增加本地文件存在性检查，避免重复拉取外网安装脚本。
+  6. **TUN 模式优选 CDN 直连补齐**：在 `templates/xray-tun-gen.py.tmpl`、`src/12-subscription.sh` 及 `/usr/local/bin/xh` 中动态收敛所有节点域名/IP，并将 `bestcf` 优选域名自动纳入 TUN 直连白名单。
+  7. **显示文本统一**：将 `src/14-final-output.sh` 节点提示标签统一纠正为 `Hysteria2-TLS-BBR-Salamander`。
+- **全量测试与验证**：
+  - `nginx -t` 测试通过，Nginx 成功 reload；
+  - 编译脚本 `.github/scripts/build-install.sh` 重新构建 `dist/install*.sh`；
+  - 10 大核心节点通过 Xray 内核语法与载入全量测试（100% OK）。
+
+
 
 
 

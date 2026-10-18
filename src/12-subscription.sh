@@ -39,7 +39,7 @@ mihomo_tun_variants() {
 xray_tun_variants() {
   local src="$1" outdir="$2"
   [[ -s "$src" ]] || return 0
-  python3 - "$src" "$outdir" "${REALITY_DOMAIN:-}" "${CDN_DOMAIN:-}" "${VPS_IP:-}" <<'XTUNPY' || warn "Xray TUN 配置生成失败（不影响其它订阅）"
+  python3 - "$src" "$outdir" "${REALITY_DOMAIN:-}" "${CDN_DOMAIN:-}" "${VPS_IP:-}" "${BESTCF_DOMAIN:-}" <<'XTUNPY' || warn "Xray TUN 配置生成失败（不影响其它订阅）"
 @@include templates/xray-tun-gen.py.tmpl
 XTUNPY
 }

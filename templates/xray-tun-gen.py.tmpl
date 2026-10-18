@@ -93,10 +93,20 @@ if not outbounds:
     sys.stderr.write("没有可用的 vless:// 节点，未生成 Xray TUN 配置\n")
     sys.exit(2)
 
-direct_domains = ["full:" + d for d in (reality_domain, cdn_domain) if d]
 direct_ips = ["geoip:private"]
 if vps_ip:
     direct_ips.append(vps_ip)
+
+node_hosts = set(filter(None, [reality_domain, cdn_domain] + sys.argv[6:]))
+for ob in outbounds:
+    addr = ob.get("settings", {}).get("vnext", [{}])[0].get("address")
+    if addr:
+        if addr.replace(".", "").isdigit() or ":" in addr:
+            if addr not in direct_ips:
+                direct_ips.append(addr)
+        else:
+            node_hosts.add(addr)
+direct_domains = ["full:" + d for d in sorted(node_hosts)]
 
 # TUN 入站按系统区别：只写该系统确实支持、且有意义的字段
 TUN = {

@@ -15,8 +15,10 @@ fi
 # 每次伪装探测都白白多一次超时。这里按出网协议族关掉对应的解析。
 if [[ "$IP_CHOICE" == "2" ]]; then
   NGINX_RESOLVER_IPV6="ipv4=off"
+  XRAY_LISTEN="::"
 else
   NGINX_RESOLVER_IPV6="ipv6=off"
+  XRAY_LISTEN="0.0.0.0"
 fi
 
 nginx_fallback_config() {
@@ -233,7 +235,7 @@ if [[ "$FEATURE_H3_DIRECT" == true ]]; then
   XRAY_H3_DIRECT_INBOUND=$(cat <<H3EOF
 ,
         {
-            "listen": "0.0.0.0",
+            "listen": "${XRAY_LISTEN}",
             "port": ${H3_PORT},
             "protocol": "vless",
             "settings": {
@@ -292,7 +294,7 @@ xray_h2_direct_inbound() {
   cat <<H2EOF
 ,
         {
-            "listen": "0.0.0.0",
+            "listen": "${XRAY_LISTEN}",
             "port": ${H2_PORT},
             "protocol": "vless",
             "settings": {
@@ -349,7 +351,7 @@ xray_hy2_obfs_inbound() {
   cat <<HY2EOF
 ,
         {
-            "listen": "0.0.0.0",
+            "listen": "${XRAY_LISTEN}",
             "port": ${HY2_PORT},
             "protocol": "hysteria",
             "settings": {
@@ -446,7 +448,7 @@ xray_hy2_h3_inbound() {
   cat <<HY2H3EOF
 ,
         {
-            "listen": "0.0.0.0",
+            "listen": "${XRAY_LISTEN}",
             "tag": "hy2-h3",
             "port": ${HY2_H3_PORT},
             "protocol": "hysteria",
@@ -530,7 +532,7 @@ xray_masque_inbound() {
   cat <<MASQUEEOF
 ,
         {
-            "listen": "0.0.0.0",
+            "listen": "${XRAY_LISTEN}",
             "port": ${MASQUE_PORT},
             "protocol": "masque",
             "settings": {

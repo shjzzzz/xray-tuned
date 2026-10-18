@@ -4,7 +4,9 @@
 
 info "[2/7] 申请 / 复用 SSL 证书"
 
-curl https://get.acme.sh | sh
+if [[ ! -x /root/.acme.sh/acme.sh ]] && ! command -v acme.sh >/dev/null 2>&1; then
+  curl -fsSL https://get.acme.sh | sh
+fi
 ln -sf /root/.acme.sh/acme.sh /usr/local/bin/acme.sh
 
 acme.sh --set-default-ca --server letsencrypt

@@ -145,16 +145,24 @@ if [[ -n "$def_dev" ]]; then
       "$ipt" -t mangle -A OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
   done
   # 中国移动高端口 UDP QoS 旁路（UDP 443 -> HY2_H3_PORT，UDP 8443 -> HY2_PORT）
-  if [[ -f "/etc/xhttp-cdn/node.env" ]]; then
+  if [[ -f "/etc/xhttp-cdn/node.env" ]] && command -v iptables >/dev/null 2>&1; then
     _hy2_h3=$(grep -E '^HY2_H3_PORT=' /etc/xhttp-cdn/node.env 2>/dev/null | cut -d= -f2 | tr -d "'\"")
     _hy2_obfs=$(grep -E '^HY2_PORT=' /etc/xhttp-cdn/node.env 2>/dev/null | cut -d= -f2 | tr -d "'\"")
-    if [[ -n "$_hy2_h3" && "$_hy2_h3" != "443" ]] && command -v iptables >/dev/null 2>&1; then
-      iptables -t nat -C PREROUTING -p udp --dport 443 -j REDIRECT --to-ports "$_hy2_h3" 2>/dev/null || \
-        iptables -t nat -A PREROUTING -p udp --dport 443 -j REDIRECT --to-ports "$_hy2_h3" 2>/dev/null || true
+    if [[ -n "$_hy2_h3" && "$_hy2_h3" != "443" ]]; then
+      # 清理旧的 UDP 443 重定向规则，防止端口变更后残留旧端口黑洞
+      iptables-save -t nat 2>/dev/null | grep -E '^-[AI] PREROUTING.*--dport 443.*REDIRECT' | while read -r _r; do
+        _ra="${_r#-A PREROUTING }"; _ra="${_ra#-I PREROUTING }"
+        iptables -t nat -D PREROUTING $_ra 2>/dev/null || true
+      done
+      iptables -t nat -A PREROUTING -p udp --dport 443 -j REDIRECT --to-ports "$_hy2_h3" 2>/dev/null || true
     fi
-    if [[ -n "$_hy2_obfs" && "$_hy2_obfs" != "8443" ]] && command -v iptables >/dev/null 2>&1; then
-      iptables -t nat -C PREROUTING -p udp --dport 8443 -j REDIRECT --to-ports "$_hy2_obfs" 2>/dev/null || \
-        iptables -t nat -A PREROUTING -p udp --dport 8443 -j REDIRECT --to-ports "$_hy2_obfs" 2>/dev/null || true
+    if [[ -n "$_hy2_obfs" && "$_hy2_obfs" != "8443" ]]; then
+      # 清理旧的 UDP 8443 重定向规则
+      iptables-save -t nat 2>/dev/null | grep -E '^-[AI] PREROUTING.*--dport 8443.*REDIRECT' | while read -r _r; do
+        _ra="${_r#-A PREROUTING }"; _ra="${_ra#-I PREROUTING }"
+        iptables -t nat -D PREROUTING $_ra 2>/dev/null || true
+      done
+      iptables -t nat -A PREROUTING -p udp --dport 8443 -j REDIRECT --to-ports "$_hy2_obfs" 2>/dev/null || true
     fi
   fi
   command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save >/dev/null 2>&1

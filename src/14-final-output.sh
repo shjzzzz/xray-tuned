@@ -42,7 +42,7 @@ if [[ "$FEATURE_HY2" == true ]]; then
     echo "  认证密码:     ${HY2_PASSWORD}"
   fi
   if [[ "${FEATURE_HY2_OBFS:-false}" == true ]]; then
-    echo "Hysteria2-obfs: UDP ${HY2_PORT}（同一认证密码）"
+    echo "Hysteria2-TLS-BBR-Salamander: UDP ${HY2_PORT}（同一认证密码）"
     echo "  混淆:         salamander（Xray finalmask）"
     echo "  混淆密码:     ${OBFS_PASSWORD}"
     echo "  ※ 两个密码是独立的值，客户端 password 与 obfs-password 都要填对"
