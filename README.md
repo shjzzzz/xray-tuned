@@ -20,10 +20,6 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
   FEATURE_XHTTP_VLESSENC=true
 ```
 
-### 2. sbbox-tuned 自动化部署
-```bash
-bash <(curl -Ls https://raw.githubusercontent.com/shjzzzz/sbbox-tuned/main/sbbox.sh) hyp=1 anyp=1 nvp=1 tup=1 alns=1 sub=1 sbrel=pre ym=reality.yourdomain.com
-```
 
 ### 3. 交互式部署
 ```bash
