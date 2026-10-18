@@ -577,7 +577,7 @@
   - 用户要求针对四大核心节点（`VLESS-TLS+PQ+XHTTP+CDN`、`VLESS-TLS+PQ+Vision+XHTTP+CDN`、`VLESS-REALITY+PQ+Vision（自域名）`、`Hysteria2-TLS-BBR-Salamander`）进行参数极致调优，并对多语言 README 文档中的 10 节点说明进行系统性纠错与对齐。
 - **参数调优细节**：
   1. **XHTTP PQ 节点并发与复用调优**：
-     - 在 `extra.xmux` 参数中显式注入 `"maxConcurrency":"16-32"`，结合已有 `"maxConnections":16`，充分发挥 ARM 4 物理核心并发能力，解决短时大量并行请求排队问题；
+     - CDN 节点保持 `maxConnections: 16` 多物理连接突破单流限速；直连节点保持 `maxConcurrency: "16-32"` 多路复用；
      - 保持 `scMinPostsIntervalMs: 30` 与长生命周期 `hMaxReusableSecs: "1800-3000"`，避免高频切片断流。
   2. **Hysteria2-TLS-BBR-Salamander 跨洋千兆窗口调优**：
      - 在客户端 `fm.quicParams` 注入大接收窗口参数：`"initStreamReceiveWindow":8388608`、`"maxStreamReceiveWindow":67108864`（64MB 流窗口）、`"initConnectionReceiveWindow":16777216`、`"maxConnectionReceiveWindow":134217728`（128MB 连接窗口）；
@@ -601,6 +601,16 @@
 | **8** | `Hysteria2-TLS-BBR-Salamander` | Hysteria2 | UDP 随机高端口 (如 38969) | Salamander 混淆 + BBR + 64MB 窗口 | 运营商严苛封锁 UDP 重灾区专用穿透与防主动探测 |
 | **9** | `VLESS-Reality-Vision-Direct` | VLESS + REALITY (RAW) | 443 / TCP (直连标口) | xtls-rprx-vision 零拷贝直通 | 标口 443 直连，免额外端口，享受骨干网最高 QoS |
 | **10** | `VLESS-Reality-XHTTP-Direct` | VLESS + REALITY (RAW) | 443 回落至本地 8001 | XHTTP + vlessenc 本地解密 | 标口回落备用，兼具 Reality 伪装与分流兼容性 |
+
+## 31. 修复 XHTTP PQ CDN 节点 xmux 参数互斥导致 v2rayN 内核运行失败 (2026-10-18)
+- **故障原因**：
+  - 在针对 CDN PQ 节点调优时，在已包含 `"maxConnections":16` 的 `extra.xmux` 中额外添加了 `"maxConcurrency":"16-32"`。
+  - Xray 规范中 `maxConnections` 与 `maxConcurrency` 属于互斥参数，同时出现会导致 Xray 初始化 outbound 报错 `infra/conf: maxConnections cannot be specified together with maxConcurrency`，引发 v2rayN 客户端“运行内核失败”。
+- **修复方案与验证**：
+  - 移除 CDN PQ 节点 `extra_enc` 中多余的 `maxConcurrency`，保持纯正的 `maxConnections: 16`；
+  - 同步更新 `src/13-manage-cli.sh`、`/usr/local/bin/xh`、`dist/install*.sh`、`/home/ubuntu/client-config.txt` 与分发订阅；
+  - 运行自检脚本调用 `/usr/local/bin/xray -test -config`，10 个核心节点解析测试 100% 全部通过。
+
 
 
 
