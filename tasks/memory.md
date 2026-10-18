@@ -611,6 +611,21 @@
   - 同步更新 `src/13-manage-cli.sh`、`/usr/local/bin/xh`、`dist/install*.sh`、`/home/ubuntu/client-config.txt` 与分发订阅；
   - 运行自检脚本调用 `/usr/local/bin/xray -test -config`，10 个核心节点解析测试 100% 全部通过。
 
+## 32. Ponytail 插件生态集成与 GitHub 远程仓库全量同步 (2026-10-18)
+- **Ponytail 插件与工作流安装**：
+  - 源码与市场源：`https://github.com/shjzzzz/ponytail`；
+  - Antigravity CLI：执行 `agy plugin install https://github.com/shjzzzz/ponytail`，加载 6 个 Skills 与 Slash Commands（`/ponytail`, `/ponytail-review`, `/ponytail-audit`, `/ponytail-debt`, `/ponytail-gain`, `/ponytail-help`），版本 5.3.2；
+  - Claude Code：添加插件市场源 `shjzzzz/ponytail` 并执行 `claude plugin install ponytail@ponytail`，启用为用户全局级插件；
+  - 本地源码库检出于 `/root/ponytail`，并将全局工作流规则、任务管理与 Ponytail 核心准则固化于 `/root/AGENTS.md`、`/root/CLAUDE.md`、`/root/GEMINI.md`。
+- **全量节点自动化测试与验证**：
+  - 构建针对当前生产环境 `/home/ubuntu/client-config.txt` 的 10 核心节点测试套件，通过 `/usr/local/bin/xray -test -config` 模拟客户端 outbound 完整 JSON 结构，验证全部 10 个节点 100% 语法与内核加载正常。
+- **GitHub 远程同步与红线执行**：
+  - 在用户明确回复授权（“允许”）后执行远程推送；
+  - 平滑 rebase 远端 `991279d`（README 中移除 sbbox-tuned 部署说明）最新变更；
+  - 经由 `/root/bin/sanitize-check.sh` 脱敏检查 100% 通过（Author: `shjzzzz`，无明文公网 IP/真实域名/密钥泄露）；
+  - 成功将全部本地提交推送到 `https://github.com/shjzzzz/xray-tuned.git` 的 `main` 分支。
+
+
 
 
 
