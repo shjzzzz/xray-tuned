@@ -278,7 +278,7 @@ if [[ "$FEATURE_H3_DIRECT" == true ]]; then
                 "enabled": true,
                 "destOverride": ["http", "tls", "quic"],
                 "metadataOnly": false,
-                "routeOnly": true
+                "routeOnly": false
             }
         }
 H3EOF
@@ -334,7 +334,7 @@ xray_h2_direct_inbound() {
                 "enabled": true,
                 "destOverride": ["http", "tls", "quic"],
                 "metadataOnly": false,
-                "routeOnly": true
+                "routeOnly": false
             }
         }
 H2EOF
@@ -424,7 +424,7 @@ fi)
                 "enabled": true,
                 "destOverride": ["http", "tls", "quic"],
                 "metadataOnly": false,
-                "routeOnly": true
+                "routeOnly": false
             }
         }
 HY2EOF
@@ -515,7 +515,7 @@ fi)
                 "enabled": true,
                 "destOverride": ["http", "tls", "quic"],
                 "metadataOnly": false,
-                "routeOnly": true
+                "routeOnly": false
             }
         }
 HY2H3EOF
@@ -569,7 +569,7 @@ xray_masque_inbound() {
                 "enabled": true,
                 "destOverride": ["http", "tls", "quic"],
                 "metadataOnly": false,
-                "routeOnly": true
+                "routeOnly": false
             }
         }
 MASQUEEOF

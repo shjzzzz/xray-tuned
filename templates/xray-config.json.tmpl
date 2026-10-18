@@ -16,10 +16,13 @@
         // 原来服务器上的每条域名查询都以明文发给机房网络，能被云厂商/上游看到。IP 型 DoH 地址的证书对 IP 有效（curl 已校验）。
         // 本机实测（随机不存在子域，各 6 次中位数）：9.9.9.10 UDP 4.2ms → DoH 复用连接 6.6ms（新建连接约 14ms，只付一次）；
         // 1.1.1.1 4.3 → 7.1ms；8.8.8.8 13.7 → 14.9ms。顺序不变。抓包确认：服务器侧不再有发往 53 端口的明文包。
+        // 2026-10-18 优化：首选低延迟高可用的 1.1.1.1 与 8.8.8.8 DoH，并加入 1.1.1.1/8.8.8.8 兜底，
+        // 杜绝远端 HTTP/2 空闲连接断开引发 unexpected EOF 与 empty response 导致出站断流。
         "servers": [
-            "https+local://9.9.9.10/dns-query",
             "https+local://1.1.1.1/dns-query",
-            "https+local://8.8.8.8/dns-query"
+            "https+local://8.8.8.8/dns-query",
+            "1.1.1.1",
+            "8.8.8.8"
         ],
         "queryStrategy": "UseIPv4"
     },
@@ -86,7 +89,7 @@
                 "enabled": true,
                 "destOverride": ["http", "tls", "quic"],
                 "metadataOnly": false,
-                "routeOnly": true
+                "routeOnly": false
             }
         },
         {
@@ -117,7 +120,7 @@
                 "enabled": true,
                 "destOverride": ["http", "tls", "quic"],
                 "metadataOnly": false,
-                "routeOnly": true
+                "routeOnly": false
             }
         },
         {
@@ -163,7 +166,7 @@
                 "enabled": true,
                 "destOverride": ["http", "tls", "quic"],
                 "metadataOnly": false,
-                "routeOnly": true
+                "routeOnly": false
             }
         }${XRAY_H3_DIRECT_INBOUND}${XRAY_H2_DIRECT_INBOUND}${XRAY_HY2_INBOUND}${XRAY_HY2_H3_INBOUND}${XRAY_MASQUE_INBOUND}${XRAY_XDRIVE_INBOUND}
     ],

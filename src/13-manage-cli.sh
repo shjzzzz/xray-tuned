@@ -3510,7 +3510,7 @@ render_masque_inbound() {
                 "enabled": true,
                 "destOverride": ["http", "tls", "quic"],
                 "metadataOnly": false,
-                "routeOnly": true
+                "routeOnly": false
             }
         }
 MASQUEEOF
@@ -3893,7 +3893,7 @@ fi)
                 "enabled": true,
                 "destOverride": ["http", "tls", "quic"],
                 "metadataOnly": false,
-                "routeOnly": true
+                "routeOnly": false
             }
         }
 HY2EOF
@@ -3970,7 +3970,7 @@ fi)
                 "enabled": true,
                 "destOverride": ["http", "tls", "quic"],
                 "metadataOnly": false,
-                "routeOnly": true
+                "routeOnly": false
             }
         }
 HY2H3EOF
