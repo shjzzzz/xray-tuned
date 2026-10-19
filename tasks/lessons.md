@@ -26,4 +26,10 @@
 - **治理与防范规则**：
   1. 采用与 Anycast CDN 拓扑高度贴合的极速 Anycast DoH（如 `1.1.1.1`、`8.8.8.8`）；
   2. 必须包含标准公共 DNS 兜底（`"1.1.1.1"`, `"8.8.8.8"`），确保任何 DoH 重连/瞬断时均能在 2ms 内拿到 A 记录解析，保证 0 empty response。
-
+## 5. 多入站架构下的 Client 凭据与模板闭环红线 (2026-10-19)
+- **错误现象**：`VLESS-REALITY+PQ+Vision（自域名）`（TCP 8447）节点导入客户端后完全不通，连接握手无响应或被直接回落拦截。
+- **根本原因**：独立直连入站（`reality-pq-vision-in`）在历史注入时，`settings.clients` 数组为空（`"clients": []`），缺少 UUID1 与 `flow: xtls-rprx-vision` 的授权条目。导致任何客户端连接因无匹配用户被判定未授权并强制走 fallback。且源码模板未设立统一的入站插槽变量，导致模板缺乏该入站的自动生成逻辑。
+- **治理与防范规则**：
+  1. 任何新增的独立入站（如独立非标端口 REALITY/XHTTP）必须将配置模板抽象为函数与变量（如 `xray_reality_pq_vision_inbound` 与 `XRAY_REALITY_PQ_VISION_INBOUND`），统一由 `node.env` 的 Feature 开关控制，坚决杜绝脱离模板的实机裸写；
+  2. 严格核验客户端与服务端凭据对齐：客户端链接所用的 UUID 与 flow 必须 100% 存在于服务端对应的 `settings.clients` 列表中；
+  3. 完成前验证：必须运行本地模拟测试，针对真实端口发起握手验证。

@@ -156,6 +156,16 @@ check_udp_port_conflict() {
       FEATURE_H2_DIRECT=false
     fi
   fi
+
+  if [[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]] && ss -lntp 2>/dev/null | grep -qE ":8447\b"; then
+    local pq_holder
+    pq_holder=$(ss -lntpH 2>/dev/null | grep -E ":8447\b" | grep -oE 'users:\(\("[^"]+' | head -1 | sed 's/.*"//')
+    if [[ "$pq_holder" != "xray" ]]; then
+      warn "TCP 8447 已被 ${pq_holder:-未知进程} 占用，REALITY-PQ-Vision 节点已自动关闭"
+      warn "  腾出端口后重跑安装脚本即可启用；或用 FEATURE_REALITY_PQ_VISION=false 显式关闭本提示"
+      FEATURE_REALITY_PQ_VISION=false
+    fi
+  fi
 }
 
 install_xray() {

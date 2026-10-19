@@ -133,8 +133,8 @@ REALITY_MAX_TIME_DIFF=${REALITY_MAX_TIME_DIFF:-}
 FEATURE_REALITY_SPX=${FEATURE_REALITY_SPX:-true}
 
 # FEATURE_H2_DIRECT（v4.7.0 新增）：h3-direct 的 TCP 孪生体（监听 TCP 8445）。
-# v4.9.83 起默认开启（TCP 直连节点 Direct-H2，监听 TCP 8445）；不需要时 FEATURE_H2_DIRECT=false 或装好后 xh h2direct off。
-FEATURE_H2_DIRECT=${FEATURE_H2_DIRECT:-true}
+# 默认关闭（备用节点，核心 10 节点以 UDP H3 直连为主）；需要时 FEATURE_H2_DIRECT=true 或装好后 xh h2direct on。
+FEATURE_H2_DIRECT=${FEATURE_H2_DIRECT:-false}
 
 # FEATURE_REALITY_UP_CDN_DOWN（v4.9.64 起默认开启）：上下行分离节点
 # VLESS-Reality-Up-CDN-Down（上行 Reality 直连 443 / 下行 CDN H2 443）。
@@ -192,11 +192,14 @@ FEATURE_NOISE_EXP=${FEATURE_NOISE_EXP:-false}
 # FEATURE_NOISE_LINKS（v4.9.81，默认关闭）：客户端链接的 fm 里是否也带 noise 项。服务端入站的 noise 只是发送方行为，
 # 老客户端不受影响；但链接里的 noise.exp 在 Xray < 26.9.30 的客户端内核里无法解析，v2rayN 会报「运行内核失败」。
 # 确认所有客户端内核都 >= 26.9.30 后再开：xh noise links on。
-FEATURE_NOISE_LINKS=${FEATURE_NOISE_LINKS:-false}
+# 10 大核心节点之三大后量子 (ML-KEM-768) 节点开关（默认全部开启）
+FEATURE_TLS_PQ_XHTTP=${FEATURE_TLS_PQ_XHTTP:-true}
+FEATURE_TLS_PQ_VISION=${FEATURE_TLS_PQ_VISION:-true}
+FEATURE_REALITY_PQ_VISION=${FEATURE_REALITY_PQ_VISION:-true}
 
-# FEATURE_REALITY_VISION / FEATURE_REALITY_XHTTP（XHTTP 默认开启，Vision 默认关闭，与本机当前节点一致）：Reality 443 入站上的两个直连节点。
+# FEATURE_REALITY_VISION / FEATURE_REALITY_XHTTP（默认均开启，对应 10 大核心节点之 9 与 10）：Reality 443 入站上的两个直连节点。
 # 关闭 = 服务端去掉对应的 clients 项 / fallback 项并从订阅里移除节点；装好后用 xh reality vision|xhttp on|off 切换。
-FEATURE_REALITY_VISION=${FEATURE_REALITY_VISION:-false}
+FEATURE_REALITY_VISION=${FEATURE_REALITY_VISION:-true}
 FEATURE_REALITY_XHTTP=${FEATURE_REALITY_XHTTP:-true}
 NOISE_EXP_PACKET=${NOISE_EXP_PACKET:-"<b 16030100><r 32><t><c><rd 8>"}
 NOISE_EXP_DELAY=${NOISE_EXP_DELAY:-"10-50"}

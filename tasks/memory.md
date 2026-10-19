@@ -675,9 +675,48 @@
   - **安装脚本构建**：运行 `.github/scripts/build-install.sh` 重新编译 `dist/install*.sh` 并通过全量 `bash -n` 语法检查；
   - **脱敏与远程同步**：严格执行脱敏红线与用户授权推送红线，经安全检查通过后推送至 GitHub 仓库 `main` 分支（Commits: `33b5a89`, `0814727`）。
 
+## 35. VLESS-REALITY+PQ+Vision（自域名 8447）入站 Client 缺失修复与模板闭环 (2026-10-19)
+- **故障现象**：
+  - 用户反馈 10 大核心节点中的第 3 节点 `VLESS-REALITY+PQ+Vision（自域名）`（直连 TCP 8447）无法连通。
+- **根本原因排查与定位**：
+  - 实机 `/usr/local/etc/xray/config.json` 中，8447 端口入站（`tag: reality-pq-vision-in`）的 `settings.clients` 数组为空（`"clients": []`）；
+  - 客户端使用 UUID1（`<UUID1>`）及 `flow: xtls-rprx-vision` 连接时，服务端无任何匹配用户，握手直接被判定为未认证并强制回落到 8003 探测站，代理通道彻底瘫痪；
+  - 追溯模板发现，`templates/xray-config.json.tmpl` 与 `src/09-server-config.sh` 缺失 `XRAY_REALITY_PQ_VISION_INBOUND` 生成逻辑，属于模板与实机配置脱节遗留隐患。
+- **治理与工程落地**：
+  1. **实机配置即时修复**：
+     - 在 `/usr/local/etc/xray/config.json` 8447 入站中准确注入 UUID1 与 `flow: xtls-rprx-vision` 客户端条目；
+     - 平滑重载 `xray.service`。
+  2. **模板与源码标准化闭环**：
+     - 在 `src/09-server-config.sh` 增加 `xray_reality_pq_vision_inbound()` 函数与 `XRAY_REALITY_PQ_VISION_INBOUND` 变量逻辑，统一由 `FEATURE_REALITY_PQ_VISION` 开关控制；
+     - 在 `templates/xray-config.json.tmpl` 的 `inbounds` 列表中正式接入 `${XRAY_REALITY_PQ_VISION_INBOUND}` 插槽；
+     - 重新编译构建 `dist/install.sh` 与 `dist/install-xpadding.sh`，并通过全量 `bash -n` 校验。
+- **全链路测试与验证**：
+  - 编写本地模拟客户端配置，通过 `127.0.0.1:8447` 发起原生 VLESS-REALITY + ML-KEM-768 + Vision 代理握手，并发访问 Cloudflare、Google、Bing、1.1.1.1；
+  - 全部 200/301 正常秒连（耗时 0.05~0.25s），成功率 **100%**；
+  - `journalctl -u xray` 日志零报错，服务健康运行。
 
-
-
-
-
-
+## 36. 10 大核心节点矩阵固化为安装期默认配置与全端订阅闭环 (2026-10-19)
+- **指令背景**：
+  - 用户明确要求：“把当前节点作为默认安装的节点，并同步到github”。
+  - 将实机全面验证打通的权威 10 大核心节点矩阵固化为全新安装脚本（`install.sh`）的默认行为，确保在任意新 VPS 部署时默认全开启、全渲染并直接可用。
+- **配置与架构体系全量对齐**：
+  1. **功能开关与安装期默认值固化**：
+     - `src/01-env.sh` 与 `.github/scripts/build-install.sh`：
+       - 显式定义三大后量子特性变量：`FEATURE_TLS_PQ_XHTTP=true`、`FEATURE_TLS_PQ_VISION=true`、`FEATURE_REALITY_PQ_VISION=true`；
+       - 将标口直连节点 `FEATURE_REALITY_VISION` 默认值纠正为 `true`（使节点 9 默认开启）；
+       - 确保 `FEATURE_REALITY_XHTTP=true`（节点 10 默认开启）；
+       - 将备用 TCP 节点 `FEATURE_H2_DIRECT` 设为 `false`（保持 10 核心节点纯度，避免产生多余的 11 节点）；
+       - `FEATURE_CDN_H2`、`FEATURE_CDN_H3`、`FEATURE_H3_DIRECT`、`FEATURE_HY2`、`FEATURE_HY2_H3`、`FEATURE_HY2_OBFS` 均保持 `true`。
+  2. **服务端入站与环境持久化闭环**：
+     - `templates/xray-config.json.tmpl`：在本地 8001 XHTTP 入站中同时注册 UUID2（无 flow）与 UUID1（带 `flow: xtls-rprx-vision`），确保节点 1（`VLESS-TLS+PQ+XHTTP+CDN`）与节点 2（`VLESS-TLS+PQ+Vision+XHTTP+CDN`）经由 8001 回源时均被正常识别且互不排斥；
+     - `src/09-server-config.sh`：在写入 `/etc/xhttp-cdn/node.env` 时持久化保存三大后量子变量及 `FEATURE_REALITY_VISION=true`；
+     - `src/05-base-env.sh` 与 `src/06-tuning-lib.sh`：防火墙（iptables/ip6tables/ufw）与内核保留端口默认放行并保护 TCP 8447；`03-xray-install.sh` 增加 TCP 8447 端口占用冲突检测。
+  3. **客户端配置与全端订阅精准对齐**：
+     - `src/11-client-config.sh` 与 `templates/client-config.txt.tmpl`：新增并优先排列三大后量子节点链接（`TLS_PQ_XHTTP_NODE_LINE`、`TLS_PQ_VISION_NODE_LINE`、`REALITY_PQ_VISION_NODE_LINE`），生成严格符合权威 10 大核心节点矩阵的客户端明文清单；
+     - `src/13-manage-cli.sh`：`cmd_reality` 消除硬编码 `spx` 哈希，改为由 `UUID1+UUID2` 动态派生；`cmd_info` 增加 `REALITY-PQ-Vision` 端口与特性说明；
+     - `src/14-final-output.sh`：安全组放行提示补充 TCP 8447；
+     - 实机同步更新 `/etc/xhttp-cdn/node.env`，重新渲染 `/home/ubuntu/client-config.txt`，并通过 `xh resub` 刷新全量订阅分发。
+- **全链路测试与验证（Verification Before Done）**：
+  - **安装脚本构建与语法校验**：运行 `.github/scripts/build-install.sh` 编译 `dist/install.sh` 与 `dist/install-xpadding.sh`，`bash -n` 全量脚本语法校验 100% 通过；
+  - **全新安装流程模拟测试**：在隔离测试目录下完整执行客户端生成逻辑，实测生成输出严格包含 10 个节点，顺序与参数和 README 权威矩阵 100% 一致；
+  - **宿主机内核加载测试**：`/usr/local/bin/xray -test -config /usr/local/etc/xray/config.json` 校验通过，实机订阅刷新正常。

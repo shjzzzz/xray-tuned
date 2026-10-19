@@ -4393,15 +4393,18 @@ reality_toggle() {
 cmd_reality() {
   local what="${1:-show}" act="${2:-show}" v x u sid minv mtd
   local link1 link2 link3 bestcf
-  bestcf="${BESTCF_DOMAIN:-${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}}"
-  local extra_enc='%7B%22scMinPostsIntervalMs%22%3A30%2C%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D%7D'
+  local spx_q=""
+  if [[ "${FEATURE_REALITY_SPX:-true}" == true && -n "${UUID1:-}" && -n "${UUID2:-}" ]]; then
+    local spx="/$(printf '%s' "${UUID1}${UUID2}" | sha256sum | cut -c1-12)"
+    spx_q="&spx=$(rawurlencode "$spx")"
+  fi
   link1="vless://${UUID2}@${bestcf}:443?encryption=${VLESSENC_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${extra_enc}&packetEncoding=xudp#VLESS-TLS+PQ+XHTTP+CDN"
   link2="vless://${UUID1}@${bestcf}:443?encryption=${VLESSENC_ENCRYPTION}&flow=xtls-rprx-vision&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${extra_enc}&packetEncoding=xudp#VLESS-TLS+PQ+Vision+XHTTP+CDN"
-  link3="vless://${UUID1}@${VPS_IP_URI}:8447?encryption=${VLESSENC_ENCRYPTION}&flow=xtls-rprx-vision&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2,http/1.1&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&spx=%2Feda9889069e9&type=raw&headerType=none&packetEncoding=xudp#VLESS-REALITY+PQ+Vision（自域名）"
+  link3="vless://${UUID1}@${VPS_IP_URI}:8447?encryption=${VLESSENC_ENCRYPTION}&flow=xtls-rprx-vision&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2,http/1.1&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${spx_q}&type=raw&headerType=none&packetEncoding=xudp#VLESS-REALITY+PQ+Vision（自域名）"
 
   case "$what" in
     show|status|list|"")
-      v="${FEATURE_REALITY_VISION:-false}"; x="${FEATURE_REALITY_XHTTP:-true}"; u="${FEATURE_REALITY_UP_CDN_DOWN:-false}"
+      v="${FEATURE_REALITY_VISION:-true}"; x="${FEATURE_REALITY_XHTTP:-true}"; u="${FEATURE_REALITY_UP_CDN_DOWN:-false}"
       sid="${SHORT_ID:-}"; [[ -n "$sid" ]] && sid="${sid:0:2}$(printf '%*s' $(( ${#sid} > 2 ? ${#sid} - 2 : 0 )) '' | tr ' ' '*')"
       minv=$(grep -o '"minClientVer"[[:space:]]*:[[:space:]]*"[^"]*"' "$XRAY_CONF" 2>/dev/null | head -1 | sed -E 's/.*"([^"]*)"$/\1/')
       mtd=$(grep -o '"maxTimeDiff"[[:space:]]*:[[:space:]]*[0-9]*' "$XRAY_CONF" 2>/dev/null | head -1 | grep -o '[0-9]*$')

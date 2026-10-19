@@ -1,38 +1,28 @@
-# CDN 节点断连与不稳定问题根因治理与全链路加固
+# 任务清单与追踪：将权威 10 大核心节点固化为默认安装节点并同步 GitHub
 
 ## Goal
-彻底定位并解决用户报告的"cdn断连以及不稳定"问题，根除 DNS 解析失败、IPv6 黑洞、Nginx gRPC upstream RST 以及长流超时断连，恢复全量 CDN 节点的毫秒级低延迟与全天候高稳定性。
+将宿主机当前全面验证通过的权威 10 大核心节点矩阵完整固化为全新安装脚本（`install.sh`）的默认安装配置，确保任意全新 VPS 部署均默认开启并渲染 10 大节点，同时全量同步全端订阅与 GitHub 远程仓库。
 
-## Current State & Root Causes
-1. **Xray DNS DoH 崩溃与 empty response 级联断流**（主要根因）：
-   - `dns.servers` 首选 `https+local://9.9.9.10/dns-query`，由于远端 HTTP/2 空闲连接老化，频繁触发 `unexpected EOF`；
-   - Xray 遇到首选 EOF 后未平滑降级，直接报 `failed to resolve ip > features/dns: empty response`；
-   - 导致出站 freedom 连接建立失败，Xray 主动关闭客户端 stream，上游 Nginx 收到 RST_STREAM (error 5)，客户端瞬间断连。
-2. **纯 IPv4 环境下的 IPv6 解析与直连黑洞**：
-   - 本机无 IPv6 地址与路由；当客户端发起目标为 IPv6 的出站请求时，freedom 直连尝试 connect IPv6 报 `Network is unreachable` 导致流切断。
-3. **Nginx grpc_pass 与 XHTTP 协议与长流保持优化**：
-   - `grpc_buffer_size 4096k` 内存过大且容易引发流缓冲抖动；
-   - Nginx upstream 与 Xray 8001 长连接保活超时与 Cloudflare 100s 边缘超时协同不足。
-4. **节点 2 CDN + Vision 特征冲突**：
-   - CDN 会终结 TLS，Vision 在应用层 HTTP 反代下无法工作，产生流控制异常。
+## Root Cause & Scope
+- 此前安装脚本中三大后量子变量（`FEATURE_TLS_PQ_XHTTP`、`FEATURE_TLS_PQ_VISION`、`FEATURE_REALITY_PQ_VISION`）未在 `01-env.sh` 中显式初始化，且 `templates/client-config.txt.tmpl` 顶部未接入 PQ 链接；
+- `FEATURE_REALITY_VISION` 历史默认值为 `false`，导致全新安装时第 9 节点被裁减；
+- 本地 8001 入站模板此前仅包含 UUID2，缺少带 `flow: xtls-rprx-vision` 的 UUID1 客户端，导致 CDN Vision 节点（节点 2）回源时无法解密鉴权；
+- 需全面升级 `src/01-env.sh`、`src/03-xray-install.sh`、`src/05-base-env.sh`、`src/06-tuning-lib.sh`、`src/09-server-config.sh`、`src/10-service-check.sh`、`src/11-client-config.sh`、`src/13-manage-cli.sh`、`src/14-final-output.sh` 与两份核心模板，构建 `dist/install*.sh` 并脱敏推送到 GitHub。
 
 ## Tasks
-- [x] 1. 修复 Xray 服务端 DNS 配置：引入系统超低延迟本地/公共 DNS 备援机制，杜绝 DoH `unexpected EOF` 与 `empty response`
-- [x] 2. 纯 IPv4 环境出站与路由加固：将入站 sniffing `routeOnly: true` 修复为 `false`，SNI 域名重写使请求顺利走 IPv4 DNS 解析出站，彻底解决 IPv6 `Network is unreachable` 崩溃
-- [x] 3. 优化 Nginx 到 Xray 的 XHTTP 反代配置与缓冲区设置（`grpc_buffer_size 4096k -> 256k`）
-- [x] 4. 本地真实链路模拟验证：压测与长连接稳定性测试，验证 0 error 0 RST 0 断连
-- [x] 5. 同步更新 `pushrepo/` 源码、模板与线上 live 配置
-- [ ] 6. 汇报总结，准备提问用户获取 push 授权（严格遵守红线）
+- [x] 1. 固化功能开关默认值：在 `src/01-env.sh` 与 `build-install.sh` 中将三大 PQ 节点及 `FEATURE_REALITY_VISION` 设为 `true`，`FEATURE_H2_DIRECT` 设为 `false`
+- [x] 2. 补齐本地 8001 入站双客户端：在 `templates/xray-config.json.tmpl` 中注入 UUID1 (`flow: xtls-rprx-vision`)，支持 CDN Vision 节点
+- [x] 3. 补齐防火墙与端口保护：在 `05-base-env.sh`、`06-tuning-lib.sh`、`03-xray-install.sh` 中放行并保留 TCP 8447
+- [x] 4. 固化客户端 10 大核心节点生成与矩阵排序：在 `src/11-client-config.sh` 与 `templates/client-config.txt.tmpl` 中生成权威 10 节点
+- [x] 5. 消除管理命令硬编码：`src/13-manage-cli.sh` 中 `spx` 改为动态哈希派生，`src/14-final-output.sh` 提示补充 TCP 8447
+- [x] 6. 重新编译 `dist/install.sh` 与 `dist/install-xpadding.sh`，执行全量 `bash -n` 校验
+- [x] 7. 实机配置同步验证：在隔离测试环境与实机渲染验证 10 核心节点 100% 吻合，执行 `xh resub` 刷新订阅
+- [x] 8. 敏感信息脱敏审查（Sanitization Check）
+- [ ] 9. 向用户明确展示待推送仓库、分支及 commit 摘要，请求执行 `git push`（严格红线）
 
 ## Verification Results
-- V1: 本地模拟客户端通过真实 CDN 域名并发访问 Cloudflare、Google、Apple、Bing、GitHub、Wikipedia，全部 200/301 成功，耗时 0.1~0.3s。
-- V2: `journalctl -u xray` 验证 0 条 `empty response`，0 条 `unexpected EOF`。
-- V3: `tail /usr/local/nginx/logs/error.log` 验证 0 条 `upstream rejected request`。
-- V4: 纯 IPv4 出站顺利，双栈客户端发来的 IPv6 目标经服务端 SNI 嗅探重写为域名后，由服务端 DNS 顺利走 IPv4 出站，彻底消除 `[Errno 101] Network is unreachable`。
+- V1: 隔离环境模拟渲染实测输出 10 行有效节点链接，与 README 权威 10 节点矩阵严格 1:1 对齐。
+- V2: `bash -n` 验证 `dist/install*.sh` 与 `src/*.sh` 全部 100% 语法正确。
+- V3: `/usr/local/bin/xray -test -config /usr/local/etc/xray/config.json` 语法与流控校验全部 OK。
+- V4: 宿主机实机 `/home/ubuntu/client-config.txt` 成功同步为权威 10 节点，`xh resub` 成功更新全部订阅文件。
 
-## Review & Post-Mortem
-1. **两大核心根因闭环**：
-   - 根因一：`routeOnly: true` 阻止了 Xray 将目标重写为 SNI 域名，导致客户端发来的 IPv6 地址被直接送往不支持 IPv6 的 VPS 内核，造成 `Network is unreachable` 静默断流。修复为 `routeOnly: false` 后恢复正常。
-   - 根因二：单一外部 DoH (`9.9.9.10`) 偶发 HTTP/2 空闲连接重置抛出 `unexpected EOF`，引发 `empty response` 连环报错。加入高可用 Cloudflare/Google DoH 与标准 DNS 兜底后彻底解决。
-2. **零副作用与优雅精简**：
-   - 线上服务平滑重载，测试链路全绿通过。

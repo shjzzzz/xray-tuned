@@ -358,7 +358,7 @@ apply_system_tuning() {
   try_sysctl net.ipv4.tcp_max_syn_backlog "$NETDEV_BACKLOG"
   try_sysctl net.ipv4.tcp_max_tw_buckets 65536
   try_sysctl net.ipv4.ip_local_port_range "1024 65535"
-  try_sysctl net.ipv4.ip_local_reserved_ports "8001,8003,8443,8445,8446,10489,10800-10809,11801-11806,18793,23106,27295,28443"
+  try_sysctl net.ipv4.ip_local_reserved_ports "8001,8003,8443,8445,8446,8447,10489,10800-10809,11801-11806,18793,23106,27295,28443"
 
   # conntrack 仅在模块已加载时调整；未加载时写入会失败并留下无用告警。
   # 开机时 systemd-sysctl 早于 iptables / Docker 加载 nf_conntrack，键还不存在就被静默跳过，

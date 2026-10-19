@@ -1,11 +1,14 @@
+${TLS_PQ_XHTTP_NODE_LINE}
+${TLS_PQ_VISION_NODE_LINE}
+${REALITY_PQ_VISION_NODE_LINE}
 ${H2_CDN_NODE_LINE}
 ${H3_CDN_NODE_LINE}
 ${H3_DIRECT_NODE_LINE}
-${H2_DIRECT_NODE_LINE}
 ${HY2_H3_NODE_LINE}
 ${HY2_NODE_LINE}
 vless://${UUID1}@${VPS_IP_URI}:443?encryption=none&flow=${VISION_FLOW}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2,http/1.1&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=raw&headerType=none&packetEncoding=xudp#VLESS-Reality-Vision-Direct${NODE_SUFFIX}
 vless://${UUID2}@${VPS_IP_URI}:443?encryption=${XHTTP_ENCRYPTION}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=xhttp&path=${XHTTP_PATH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}#VLESS-Reality-XHTTP-Direct${NODE_SUFFIX}
+${H2_DIRECT_NODE_LINE}
 ${REALITY_UP_CDN_DOWN_NODE_LINE}
 ${CDN_UP_REALITY_DOWN_NODE_LINE}
 ${MASQUE_NODE_LINE}

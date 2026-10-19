@@ -216,6 +216,59 @@ if [[ "${FEATURE_REALITY_XHTTP:-true}" == true ]]; then
   REALITY_XHTTP_FALLBACK_JSON=$'\n        // >>xh:realityxhttp\n                    {\n                        "dest": "127.0.0.1:8001",\n                        "xver": 0\n                    }\n        // <<xh:realityxhttp'
 fi
 
+# REALITY-PQ-Vision 直连节点（TCP 8447，核心节点 3）
+xray_reality_pq_vision_inbound() {
+  cat <<PQEOF
+,
+        // >>xh:reality-pq-vision
+        {
+            "tag": "reality-pq-vision-in",
+            "listen": "${XRAY_LISTEN}",
+            "port": 8447,
+            "protocol": "vless",
+            "settings": {
+                "clients": [
+                    {
+                        "id": "${UUID1}",
+                        "level": 0,
+                        "flow": "xtls-rprx-vision"
+                    }
+                ],
+                "decryption": "${VLESSENC_DECRYPTION}"
+            },
+            "streamSettings": {
+                "network": "raw",
+                "security": "reality",
+                "realitySettings": {
+                    "show": false,
+                    "target": "127.0.0.1:8003",
+                    "xver": 0,
+                    "serverNames": [
+                        "${REALITY_DOMAIN}",
+                        "${CDN_DOMAIN}"
+                    ],
+                    "privateKey": "${PRIVATE_KEY}",
+                    "shortIds": [
+                        "${SHORT_ID}"
+                    ]\${REALITY_MAX_TIME_DIFF_JSON}\${REALITY_MIN_CLIENT_VER_JSON}
+                }\${REALITY_SOCKOPT_JSON}
+            },
+            "sniffing": {
+                "enabled": true,
+                "destOverride": ["http", "tls", "quic"],
+                "metadataOnly": false,
+                "routeOnly": false
+            }
+        }
+        // <<xh:reality-pq-vision
+PQEOF
+}
+
+XRAY_REALITY_PQ_VISION_INBOUND=""
+if [[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
+  XRAY_REALITY_PQ_VISION_INBOUND="$(xray_reality_pq_vision_inbound)"
+fi
+
 XRAY_H3_DIRECT_INBOUND=""
 XRAY_H2_DIRECT_INBOUND=""
 XRAY_HY2_INBOUND=""
@@ -718,8 +771,11 @@ info "写入 ${NODE_ENV_FILE} ..."
   printf 'XDRIVE_REFRESH_TOKEN=%q\n'   "${XDRIVE_REFRESH_TOKEN:-}"
   printf 'FEATURE_NOISE_EXP=%q\n'      "${FEATURE_NOISE_EXP:-false}"
   printf 'FEATURE_NOISE_LINKS=%q\n'    "${FEATURE_NOISE_LINKS:-false}"
-  printf 'FEATURE_REALITY_VISION=%q\n'  "${FEATURE_REALITY_VISION:-false}"
+  printf 'FEATURE_REALITY_VISION=%q\n'  "${FEATURE_REALITY_VISION:-true}"
   printf 'FEATURE_REALITY_XHTTP=%q\n'   "${FEATURE_REALITY_XHTTP:-true}"
+  printf 'FEATURE_TLS_PQ_XHTTP=%q\n'    "${FEATURE_TLS_PQ_XHTTP:-true}"
+  printf 'FEATURE_TLS_PQ_VISION=%q\n'   "${FEATURE_TLS_PQ_VISION:-true}"
+  printf 'FEATURE_REALITY_PQ_VISION=%q\n' "${FEATURE_REALITY_PQ_VISION:-true}"
   printf 'XRAY_CHANNEL=%q\n'   "${XRAY_CHANNEL:-stable}"
   printf 'NOISE_EXP_PACKET=%q\n'       "${NOISE_EXP_PACKET:-<b 16030100><r 32><t><c><rd 8>}"
   printf 'NOISE_EXP_DELAY=%q\n'        "${NOISE_EXP_DELAY:-10-50}"

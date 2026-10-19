@@ -103,6 +103,7 @@ if _listening tcp 443; then
 else
   warn "监听自检：TCP 443 没有在监听，Reality 节点会不通。查看：journalctl -u xray -n 40 --no-pager；ss -ltnup | grep -E ':443 |xray'"
 fi
+[[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]] && { _listening tcp 8447 || warn "监听自检：TCP 8447（REALITY-PQ-Vision）没有在监听"; }
 [[ "${FEATURE_H3_DIRECT:-false}" == true ]] && { _listening udp "$H3_PORT" || warn "监听自检：UDP ${H3_PORT}（XHTTP-Direct-H3）没有在监听"; }
 [[ "${FEATURE_HY2_H3:-false}" == true ]] && { _listening udp "${HY2_H3_PORT:-443}" || warn "监听自检：UDP ${HY2_H3_PORT:-443}（Hysteria2-H3）没有在监听"; }
 [[ "${FEATURE_HY2_OBFS:-false}" == true ]] && { _listening udp "$HY2_PORT" || warn "监听自检：UDP ${HY2_PORT}（Hysteria2-Obfs）没有在监听"; }

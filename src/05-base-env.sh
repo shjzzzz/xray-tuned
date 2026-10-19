@@ -106,7 +106,7 @@ export PATH="/usr/local/bin:$PATH"
 ensure_firewall_ports() {
   local port
   if command -v iptables >/dev/null 2>&1; then
-    for port in 80 443 8443 8445 8446; do
+    for port in 80 443 8443 8445 8446 8447; do
       iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
       iptables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || true
     done
@@ -128,7 +128,7 @@ ensure_firewall_ports() {
     fi
   fi
   if command -v ip6tables >/dev/null 2>&1; then
-    for port in 80 443 8443 8445 8446; do
+    for port in 80 443 8443 8445 8446 8447; do
       ip6tables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || ip6tables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
       ip6tables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || ip6tables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || true
     done
@@ -157,6 +157,7 @@ ensure_firewall_ports() {
     ufw allow 8443/udp >/dev/null 2>&1 || true
     ufw allow 8445/tcp >/dev/null 2>&1 || true
     ufw allow 8446/udp >/dev/null 2>&1 || true
+    ufw allow 8447/tcp >/dev/null 2>&1 || true
   fi
   if command -v netfilter-persistent >/dev/null 2>&1; then
     netfilter-persistent save >/dev/null 2>&1 || true
@@ -237,7 +238,7 @@ get_random_port() {
   local proto="${1:-udp}" port
   while true; do
     port=$(shuf -i 10000-65000 -n 1 2>/dev/null || awk 'BEGIN{srand(); print int(rand()*(65000-10000)+10000)}')
-    [[ "$port" != "8443" && "$port" != "8445" && "$port" != "8446" && "$port" != "443" && "$port" != "80" ]] || continue
+    [[ "$port" != "8443" && "$port" != "8445" && "$port" != "8446" && "$port" != "8447" && "$port" != "443" && "$port" != "80" ]] || continue
     [[ "$port" != "${H3_PORT:-}" && "$port" != "${H2_PORT:-}" && "$port" != "${HY2_H3_PORT:-}" && "$port" != "${HY2_PORT:-}" && "$port" != "${MASQUE_PORT:-}" ]] || continue
     if [[ "$proto" == "tcp" ]]; then
       ss -Hltn "sport = :$port" 2>/dev/null | grep -q . && continue

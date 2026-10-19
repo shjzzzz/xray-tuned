@@ -285,6 +285,25 @@ fi
 # 服务端 8001 入站保持 mode=auto：它同时接 nginx 回源（CDN 腿）与 Reality 回落，auto 什么上传模式都收。
 # 写成 stream-up 会拒绝 auto / packet-up 的上传（实测这两种客户端全部不通），用户把链接改回 auto 就会断。
 # 直连入站只收 stream-up。
+# 10 大核心节点之三大后量子 (ML-KEM-768) 节点（默认开启）
+if [[ "${FEATURE_TLS_PQ_XHTTP:-true}" == true && -n "${VLESSENC_ENCRYPTION:-}" ]]; then
+  TLS_PQ_XHTTP_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=${VLESSENC_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=%7B%22scMinPostsIntervalMs%22%3A30%2C%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D%7D&packetEncoding=xudp#VLESS-TLS+PQ+XHTTP+CDN"
+else
+  TLS_PQ_XHTTP_NODE_LINE=""
+fi
+
+if [[ "${FEATURE_TLS_PQ_VISION:-true}" == true && -n "${VLESSENC_ENCRYPTION:-}" ]]; then
+  TLS_PQ_VISION_NODE_LINE="vless://${UUID1}@${CDN_CONNECT_ADDR}:443?encryption=${VLESSENC_ENCRYPTION}&flow=${VISION_FLOW:-xtls-rprx-vision}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=%7B%22scMinPostsIntervalMs%22%3A30%2C%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D%7D&packetEncoding=xudp#VLESS-TLS+PQ+Vision+XHTTP+CDN"
+else
+  TLS_PQ_VISION_NODE_LINE=""
+fi
+
+if [[ "${FEATURE_REALITY_PQ_VISION:-true}" == true && -n "${VLESSENC_ENCRYPTION:-}" ]]; then
+  REALITY_PQ_VISION_NODE_LINE="vless://${UUID1}@${VPS_IP_URI}:8447?encryption=${VLESSENC_ENCRYPTION}&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2,http/1.1&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=raw&headerType=none&packetEncoding=xudp#VLESS-REALITY+PQ+Vision（自域名）"
+else
+  REALITY_PQ_VISION_NODE_LINE=""
+fi
+
 if [[ "$FEATURE_H3_DIRECT" == true ]]; then
   H3_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H3_PORT}?encryption=${VLESSENC_ENCRYPTION}&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h3&insecure=0&allowInsecure=0&type=xhttp&path=${XHTTP_PATH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}${XH3_FM_PARAM}#VLESS-XHTTP-Direct-H3${NODE_SUFFIX}"
 else
@@ -495,6 +514,7 @@ mkdir -p /etc/xhttp-cdn/all.new
 if (
   set -e
   USER_HOME=/etc/xhttp-cdn/all.new
+  FEATURE_TLS_PQ_XHTTP=true FEATURE_TLS_PQ_VISION=true FEATURE_REALITY_PQ_VISION=true
   FEATURE_H3_DIRECT=true FEATURE_H2_DIRECT=true FEATURE_HY2=true FEATURE_HY2_H3=true FEATURE_HY2_OBFS=true
   FEATURE_CDN_H2=true FEATURE_CDN_H3=true FEATURE_PORT_HOPPING=false
   FEATURE_REALITY_UP_CDN_DOWN=true FEATURE_UP_CDN_DOWN_MIHOMO=true FEATURE_CDN_UP_REALITY_DOWN=true FEATURE_REALITY_VISION=true FEATURE_REALITY_XHTTP=true
@@ -502,8 +522,8 @@ if (
   info() { :; }; warn() { :; }
   render_client_configs
 ) >"${STATE_DIR}/all-render.log" 2>&1 \
-  && for _n in VLESS-XHTTP-CDN-H2 VLESS-XHTTP-CDN-H3 VLESS-XHTTP-Direct-H2 Hysteria2-H3-Direct Hysteria2-TLS-BBR-Salamander VLESS-Reality-Up-CDN-Down VLESS-CDN-Up-Reality-Down MASQUE-CONNECT-IP; do
-       grep -q "#${_n}" /etc/xhttp-cdn/all.new/client-config.txt || { echo "备用节点库缺少 ${_n}" >> "${STATE_DIR}/all-render.log"; false; }
+  && for _n in VLESS-TLS+PQ+XHTTP+CDN VLESS-TLS+PQ+Vision+XHTTP+CDN VLESS-REALITY+PQ+Vision VLESS-XHTTP-CDN-H2 VLESS-XHTTP-CDN-H3 VLESS-XHTTP-Direct-H2 Hysteria2-H3-Direct Hysteria2-TLS-BBR-Salamander VLESS-Reality-Vision-Direct VLESS-Reality-XHTTP-Direct VLESS-Reality-Up-CDN-Down VLESS-CDN-Up-Reality-Down MASQUE-CONNECT-IP; do
+       grep -q "${_n}" /etc/xhttp-cdn/all.new/client-config.txt || { echo "备用节点库缺少 ${_n}" >> "${STATE_DIR}/all-render.log"; false; }
      done; then
   # 保留旧库里的服务端入站文本（由 09 写入），换入新渲染的客户端文件
   cp -a /etc/xhttp-cdn/all/inbound-*.json /etc/xhttp-cdn/all.new/ 2>/dev/null || true
