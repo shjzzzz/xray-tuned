@@ -6,6 +6,7 @@
 **语言：** **简体中文** · [English](./README.en.md) · [فارسی](./README.fa.md)
 
 ---
+先申请证书：bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/acme-yg/main/acme.sh)
 
 ## ⚡ 快速一键部署
 
