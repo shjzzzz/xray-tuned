@@ -48,7 +48,7 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
 > [!NOTE]
 > - **前三大 PQ 核心节点**（1-3）采用 NIST 推荐标准后量子密钥协商套件（ML-KEM-768），提供面向未来的抗量子破解前向安全性。
 > - **Hysteria2 节点**（7-8）直连 UDP 采用随机高端口监听并全面启用 BBRv3，客户端配置声明 64MB 流窗口与 128MB 连接窗口，规避跨境长肥管道瓶颈。
-> - **可选备用节点**：如需开启 `VLESS-XHTTP-Direct-H2`（8445 TCP 直连），可通过 `xh h2direct on` 随时按需启用。
+> - **默认节点集**：默认安装 8 条精选节点（后量子 CDN/REALITY、Direct H3/H2、Hysteria2 双节点、标口 Reality 双节点），覆盖 TCP 与 UDP 最佳全协议栈。备用节点如 CDN-H2、CDN-H3 可随时通过 `xh cdnh2 on` / `xh cdnh3 on` 开启。
 
 ---
 

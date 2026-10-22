@@ -33,7 +33,7 @@ fi
 # ==================================================
 
 PROJECT_NAME="xray-xhttp"
-PROJECT_VERSION="5.1.0"
+PROJECT_VERSION="5.1.1"
 PROJECT_REPO="shjzzzz/xray-tuned"
 # 默认推荐的 Xray-core 版本：升级至最新稳定/前沿版 v26.9.30（具备 XDRIVE 云盘代理、MASQUE、Finalmask Noise exp、WFP 防泄露等特性）。
 XRAY_DEFAULT_VERSION="26.9.30"
@@ -84,16 +84,17 @@ fi
 AUTO=${AUTO:-0}
 
 # ==================================================
-# 节点集：默认 7 条节点（与本机当前一致），全部由 Xray 单核心提供
+# 节点集：默认 8 条核心节点（与实机当前一致），全部由 Xray 单核心提供
 # ==================================================
-#   1. VLESS-XHTTP-CDN-H2    经 CDN，h2/TCP
-#   2. VLESS-XHTTP-CDN-H3    经 CDN，h3/QUIC
-#   3. VLESS-XHTTP-Direct-H2 直连 TCP，h2
-#   4. VLESS-XHTTP-Direct-H3 直连 UDP，h3/QUIC
-#   5. Hysteria2-H3-Direct   直连随机高 UDP 端口，标准 HTTP/3
-#   6. Hysteria2-Obfs-Direct 直连随机高 UDP 端口，salamander 混淆
-#   7. VLESS-Reality-XHTTP-Direct  直连 TCP 443，XHTTP 上下行不分离
-# 备用（默认关闭）：Reality-Vision（xh reality vision on）及 README 里列出的其它节点。
+#   1. VLESS-TLS+后量子+XHTTP+CDN     经 CDN，TLS 1.3 + ML-KEM-768
+#   2. VLESS-REALITY+后量子+Vision    直连 TCP 443，REALITY + ML-KEM-768
+#   3. VLESS-XHTTP-Direct-H3         直连 UDP 8446，QUIC/h3
+#   4. VLESS-XHTTP-Direct-H2         直连 TCP 8445，h2
+#   5. Hysteria2-H3-Direct           直连 UDP 随机高端口，标准 HTTP/3
+#   6. Hysteria2-TLS-BBR-Salamander  直连 UDP 随机高端口，salamander 混淆
+#   7. VLESS-Reality-Vision-Direct   直连 TCP 443，xtls-rprx-vision 零拷贝直通
+#   8. VLESS-Reality-XHTTP-Direct    直连 TCP 443，XHTTP 上下行不分离
+# 备用（默认关闭）：CDN-H2、CDN-H3、上下行分离、MASQUE 等。
 #
 FEATURE_H3_DIRECT=${FEATURE_H3_DIRECT:-true}
 # v4.9.78 起 Hysteria2 重新默认安装（与本机当前节点集一致）；不需要时 FEATURE_HY2=false，或装好后 xh hy2 off。
@@ -131,8 +132,8 @@ REALITY_MAX_TIME_DIFF=${REALITY_MAX_TIME_DIFF:-}
 FEATURE_REALITY_SPX=${FEATURE_REALITY_SPX:-true}
 
 # FEATURE_H2_DIRECT（v4.7.0 新增）：h3-direct 的 TCP 孪生体（监听 TCP 8445）。
-# 默认关闭（备用节点，核心 10 节点以 UDP H3 直连为主）；需要时 FEATURE_H2_DIRECT=true 或装好后 xh h2direct on。
-FEATURE_H2_DIRECT=${FEATURE_H2_DIRECT:-false}
+# 默认开启（与实机当前节点集一致）；不需要时 FEATURE_H2_DIRECT=false 或装好后 xh h2direct off。
+FEATURE_H2_DIRECT=${FEATURE_H2_DIRECT:-true}
 
 # FEATURE_REALITY_UP_CDN_DOWN（v4.9.64 起默认开启）：上下行分离节点
 # VLESS-Reality-Up-CDN-Down（上行 Reality 直连 443 / 下行 CDN H2 443）。
