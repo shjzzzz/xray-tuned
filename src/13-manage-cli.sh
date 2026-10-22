@@ -4512,9 +4512,9 @@ cmd_reality() {
     local spx="/$(printf '%s' "${UUID1}${UUID2}" | sha256sum | cut -c1-12)"
     spx_q="&spx=$(rawurlencode "$spx")"
   fi
-  link1="vless://${UUID2}@${bestcf}:443?encryption=${VLESSENC_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${extra_enc}&packetEncoding=xudp#VLESS-TLS+PQ+XHTTP+CDN"
-  link2="vless://${UUID1}@${bestcf}:443?encryption=${VLESSENC_ENCRYPTION}&flow=xtls-rprx-vision&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${extra_enc}&packetEncoding=xudp#VLESS-TLS+PQ+Vision+XHTTP+CDN"
-  link3="vless://${UUID1}@${VPS_IP_URI}:8447?encryption=${VLESSENC_ENCRYPTION}&flow=xtls-rprx-vision&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2,http/1.1&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${spx_q}&type=raw&headerType=none&packetEncoding=xudp#VLESS-REALITY+PQ+Vision（自域名）"
+  link1="vless://${UUID2}@${bestcf}:443?encryption=${VLESSENC_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${extra_enc}&packetEncoding=xudp#VLESS-TLS+后量子+XHTTP+CDN"
+  link2="vless://${UUID1}@${bestcf}:443?encryption=${VLESSENC_ENCRYPTION}&flow=xtls-rprx-vision&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${extra_enc}&packetEncoding=xudp#VLESS-TLS+后量子+Vision+XHTTP+CDN"
+  link3="vless://${UUID1}@${VPS_IP_URI}:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2,http/1.1&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${spx_q}&type=raw&headerType=none&packetEncoding=xudp#VLESS-REALITY+后量子+Vision"
 
   case "$what" in
     show|status|list|"")
@@ -4524,18 +4524,18 @@ cmd_reality() {
       mtd=$(grep -o '"maxTimeDiff"[[:space:]]*:[[:space:]]*[0-9]*' "$XRAY_CONF" 2>/dev/null | head -1 | grep -o '[0-9]*$')
       echo ""
       echo -e "${CYAN}=== Reality 与后量子精选核心节点 (最佳本机配置) ===${NC}"
-      printf '  %-40s %s\n' "1) VLESS-TLS+PQ+XHTTP+CDN" "$([[ "${FEATURE_TLS_PQ_XHTTP:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  CF CDN(443)  TLS+ML-KEM+XHTTP(16流)"
-      printf '  %-40s %s\n' "2) VLESS-TLS+PQ+Vision+XHTTP+CDN" "$([[ "${FEATURE_TLS_PQ_VISION:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  CF CDN(443)  TLS+ML-KEM+Vision+XHTTP"
-      printf '  %-40s %s\n' "3) VLESS-REALITY+PQ+Vision(自域名)" "$([[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  直连(8447)   REALITY+ML-KEM+Vision(BBR)"
+      printf '  %-40s %s\n' "1) VLESS-TLS+后量子+XHTTP+CDN" "$([[ "${FEATURE_TLS_PQ_XHTTP:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  CF CDN(443)  TLS+ML-KEM+XHTTP(16流)"
+      printf '  %-40s %s\n' "2) VLESS-TLS+后量子+Vision+XHTTP+CDN" "$([[ "${FEATURE_TLS_PQ_VISION:-false}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  CF CDN(443)  TLS+ML-KEM+Vision+XHTTP"
+      printf '  %-40s %s\n' "3) VLESS-REALITY+后量子+Vision" "$([[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  直连(443)    REALITY+ML-KEM+Vision(BBR)"
       echo ""
       echo -e "${CYAN}--- 核心节点链接 (可直接导入客户端) ---${NC}"
-      echo -e "  ${YELLOW}[1] VLESS-TLS+PQ+XHTTP+CDN:${NC}"
+      echo -e "  ${YELLOW}[1] VLESS-TLS+后量子+XHTTP+CDN:${NC}"
       echo -e "  ${link1}"
       echo ""
-      echo -e "  ${YELLOW}[2] VLESS-TLS+PQ+Vision+XHTTP+CDN:${NC}"
+      echo -e "  ${YELLOW}[2] VLESS-TLS+后量子+Vision+XHTTP+CDN:${NC}"
       echo -e "  ${link2}"
       echo ""
-      echo -e "  ${YELLOW}[3] VLESS-REALITY+PQ+Vision（自域名）:${NC}"
+      echo -e "  ${YELLOW}[3] VLESS-REALITY+后量子+Vision:${NC}"
       echo -e "  ${link3}"
       echo ""
       echo -e "  伪装目标 target:   127.0.0.1:8003（本机 Nginx，证书域名 ${REALITY_DOMAIN:-?}）"

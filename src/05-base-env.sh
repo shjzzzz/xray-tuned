@@ -18,6 +18,7 @@ command -v wget    >/dev/null 2>&1 || pkg_install wget
 command -v tar     >/dev/null 2>&1 || pkg_install tar
 command -v openssl >/dev/null 2>&1 || pkg_install openssl
 command -v python3 >/dev/null 2>&1 || pkg_install python3 || warn "python3 安装失败，部分 xh 管理命令将不可用"
+python3 -c "import yaml" >/dev/null 2>&1 || pkg_install python3-yaml || pkg_install python3-pyyaml || true
 command -v file    >/dev/null 2>&1 || pkg_install file
 
 # ---------- 平台识别（v4.9.56）：ARM / AMD(x86_64) 与云厂商、内存档位自动选默认 ----------

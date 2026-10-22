@@ -243,6 +243,21 @@ $(nginx_fallback_config "$REALITY_DOMAIN" "$REALITY_FALLBACK_ORIGIN" "$REALITY_F
             log_not_found off;
         }
 
+        location ^~ /sub/ {
+            root /usr/local/nginx/html;
+            try_files \$uri =404;
+            autoindex off;
+            limit_req zone=sub_limit burst=10 nodelay;
+            types {
+                text/plain txt ps1 sh;
+                application/yaml yaml yml;
+            }
+            default_type text/plain;
+            add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
+            add_header Profile-Update-Interval "24" always;
+            add_header Alt-Svc 'h3=":443"; ma=86400' always;
+        }
+
         location / {
 $(nginx_fallback_config "$CDN_DOMAIN" "$CDN_FALLBACK_ORIGIN" "$CDN_FALLBACK_HOST")
         }

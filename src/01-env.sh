@@ -33,7 +33,7 @@ fi
 # ==================================================
 
 PROJECT_NAME="xray-xhttp"
-PROJECT_VERSION="5.0.9"
+PROJECT_VERSION="5.1.0"
 PROJECT_REPO="shjzzzz/xray-tuned"
 # 默认推荐的 Xray-core 版本：升级至最新稳定/前沿版 v26.9.30（具备 XDRIVE 云盘代理、MASQUE、Finalmask Noise exp、WFP 防泄露等特性）。
 XRAY_DEFAULT_VERSION="26.9.30"
@@ -111,13 +111,11 @@ FEATURE_HY2_OBFS=${FEATURE_HY2_OBFS:-true}
 HY2_H3_PORT=${HY2_H3_PORT:-}
 HY2_PORT=${HY2_PORT:-}
 
-# FEATURE_CDN_H2：是否生成经 CDN 的 TCP(h2) 节点 VLESS-XHTTP-CDN-H2。
-# 默认开启（与本机当前节点一致，TCP 443 经 CDN）；不需要时 FEATURE_CDN_H2=false 或装好后 xh cdnh2 off。
-FEATURE_CDN_H2=${FEATURE_CDN_H2:-true}
+# FEATURE_CDN_H2：是否生成经 CDN 的 TCP(h2) 节点 VLESS-XHTTP-CDN-H2（默认关闭；需要时 FEATURE_CDN_H2=true 或装好后 xh cdnh2 on）。
+FEATURE_CDN_H2=${FEATURE_CDN_H2:-false}
 
-# FEATURE_CDN_H3：是否生成经 CDN 的 QUIC(h3) 节点 VLESS-XHTTP-CDN-H3。
-# 默认开启（与本机当前节点一致，UDP 443 经 CDN）；不需要时 FEATURE_CDN_H3=false 或装好后 xh cdnh3 off。
-FEATURE_CDN_H3=${FEATURE_CDN_H3:-true}
+# FEATURE_CDN_H3：是否生成经 CDN 的 QUIC(h3) 节点 VLESS-XHTTP-CDN-H3（默认关闭；需要时 FEATURE_CDN_H3=true 或装好后 xh cdnh3 on）。
+FEATURE_CDN_H3=${FEATURE_CDN_H3:-false}
 
 # FEATURE_BLOCK_CN / FEATURE_BLOCK_ADS（v4.9.53，默认关闭）：出站屏蔽回国 IP（geoip:cn）/ 广告域名
 # （geosite:category-ads-all），参考 zxcvos/Xray-script 的可选规则。运行期用 xh block cn|ads on|off 切换。
@@ -194,7 +192,7 @@ FEATURE_NOISE_EXP=${FEATURE_NOISE_EXP:-false}
 # 确认所有客户端内核都 >= 26.9.30 后再开：xh noise links on。
 # 10 大核心节点之三大后量子 (ML-KEM-768) 节点开关（默认全部开启）
 FEATURE_TLS_PQ_XHTTP=${FEATURE_TLS_PQ_XHTTP:-true}
-FEATURE_TLS_PQ_VISION=${FEATURE_TLS_PQ_VISION:-true}
+FEATURE_TLS_PQ_VISION=${FEATURE_TLS_PQ_VISION:-false}
 FEATURE_REALITY_PQ_VISION=${FEATURE_REALITY_PQ_VISION:-true}
 
 # FEATURE_REALITY_VISION / FEATURE_REALITY_XHTTP（默认均开启，对应 10 大核心节点之 9 与 10）：Reality 443 入站上的两个直连节点。

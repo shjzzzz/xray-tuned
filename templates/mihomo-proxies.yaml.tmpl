@@ -3,6 +3,57 @@
 # 第 1 条经 CDN 走 TCP(h2)，第 2 条 QUIC/h3 直连，第 3 条是它的 TCP 孪生体（v4.7.0），
 # 第 4 条 Hysteria2，后两条是 Reality TCP 直连兜底。
 proxies:
+  #<<FEATURE_TLS_PQ_XHTTP
+  - name: VLESS-TLS+后量子+XHTTP+CDN${NODE_SUFFIX}
+    type: vless
+    server: ${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}
+    port: 443
+    uuid: ${UUID2}
+    udp: true
+    flow: ""
+    tls: true
+    tfo: true
+    packet-encoding: xudp
+    network: xhttp
+    alpn:
+      - h2
+    servername: ${CDN_DOMAIN}
+    client-fingerprint: chrome
+    encryption: ${XHTTP_ENCRYPTION}${MIHOMO_ECH_PROXY_BLOCK}
+    xhttp-opts:
+      host: ${CDN_DOMAIN}
+      path: ${XHTTP_PATH}
+      mode: stream-up${MIHOMO_XPADDING_XHTTP_BLOCK}${MIHOMO_SC_MIN_POSTS_BLOCK}
+      reuse-settings:
+        max-concurrency: "16-32"
+        c-max-reuse-times: "0"
+        h-max-request-times: "600-900"
+        h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
+  #>>FEATURE_TLS_PQ_XHTTP
+
+  #<<FEATURE_REALITY_PQ_VISION
+  - name: VLESS-REALITY+后量子+Vision${NODE_SUFFIX}
+    type: vless
+    server: ${VPS_IP}
+    port: 443
+    uuid: ${UUID1}
+    udp: true
+    flow: ${VISION_FLOW}
+    tls: true
+    tfo: true
+    packet-encoding: xudp
+    network: tcp
+    alpn:
+      - h2
+      - http/1.1
+    servername: ${REALITY_DOMAIN}
+    client-fingerprint: chrome
+    encryption: none
+    reality-opts:
+      public-key: ${PUBLIC_KEY}
+      short-id: ${SHORT_ID}
+  #>>FEATURE_REALITY_PQ_VISION
+
   #<<FEATURE_CDN_H2
   # ---------- 经 CDN / QUIC 直连 ----------
   # 1. 经 CDN：走 TCP（h2）。最稳健的 CDN 节点，不受运营商 UDP 443 限速/丢包影响。
