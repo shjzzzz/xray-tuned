@@ -286,7 +286,7 @@ fi
 [[ "$FEATURE_HY2" == true ]] || FEATURE_HY2_H3=false
 
 if [[ "$FEATURE_H3_DIRECT" == true ]]; then
-  XRAY_H3_DIRECT_INBOUND=$(cat <<H3EOF
+  XRAY_H3_DIRECT_INBOUND="$(cat <<H3EOF
 ,
         {
             "listen": "${XRAY_LISTEN}",
