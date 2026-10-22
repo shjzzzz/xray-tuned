@@ -772,4 +772,18 @@
       - `pushrepo` (xray-tuned): `3213f5d..d715d3f`
       - `sbrepo` (sbbox-tuned): `700f77a..2cd37b8`
 
+## 38. xh 菜单精简与 Cloudflare 优选 IP 链路阻断修复记录 (2026-10-22)
+- **xh 交互菜单精简**：
+  - 依照用户指令从 `xh` 主交互菜单中剔除 MASQUE 隧道（原 22）、XDRIVE 网盘代理（原 23）及 Finalmask Noise（原 24），保留底层 CLI 兼容调用，菜单后续选项统一顺延重排（22 至 30 项）。
+- **Cloudflare CDN 优选不通排查与修复**：
+  - **故障现象**：国内客户端测速或连接基于优选域名的 CDN 节点（如 `VLESS-TLS+PQ+XHTTP+CDN`）时超时不通。
+  - **根因剖析**：
+    1. 优选解析此前被锁定在 `104.16.x.x`；该 Anycast 网段在国内三大运营商网络受 GFW 严重干扰（TCP SYN 丢包 / RST 阻断）。
+    2. 后台健康检测服务部署在境外美西 VPS，向本地同机房的 104.16 节点握手仅需 15ms，误判其“极度健康”并持续锁定解析，导致国内盲区。
+  - **处置与工程落地**：
+    1. 调用 `xh bestcf set` 将优选域名解析立即切换并锁定为经实测国内三网连通率最高且 XHTTP 真实隧道探测通过的优质 Clean Anycast IP 段（`162.159.x.x`）；
+    2. 重构 `/root/cf-bestip/dns_updater.py` 与 `src/13-manage-cli.sh`，将优质 Clean Anycast IP（`162.159.*`、`104.18.*` 等）前置纳入候选池，彻底消除单一段盲区死锁隐患；
+    3. 重新构建 `dist/install.sh` 并热更新宿主机 `/usr/local/bin/xh`。
+
+
 
