@@ -196,8 +196,8 @@ PRIVATE_KEY=$(echo "$KEY_OUTPUT" | awk 'tolower($0) ~ /private/ { print $NF; exi
 PUBLIC_KEY=$(echo "$KEY_OUTPUT"  | awk 'tolower($0) ~ /public/  { print $NF; exit }')
 [[ -z "$PRIVATE_KEY" ]] && error "未能提取 Private Key，xray x25519 输出: $KEY_OUTPUT"
 [[ -z "$PUBLIC_KEY" ]] && error "未能提取 Public Key，xray x25519 输出: $KEY_OUTPUT"
-SHORT_ID=$(echo "$UUID1" | tr -d '-' | cut -c1-8)
-XHTTP_PATH="/$(echo "$UUID2" | tr -d '-' | cut -c1-8)"
+SHORT_ID="${SHORT_ID:-$(openssl rand -hex 4 2>/dev/null || echo "$UUID1" | tr -d '-' | cut -c1-8)}"
+XHTTP_PATH="${XHTTP_PATH:-/$(openssl rand -hex 4 2>/dev/null || echo "$UUID2" | tr -d '-' | cut -c1-8)}"
 
 XHTTP_PADDING_PLACEMENT="queryInHeader"
 XHTTP_PADDING_METHOD="tokenish"
