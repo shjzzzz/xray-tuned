@@ -65,4 +65,38 @@ xh restart            # راه‌اندازی مجدد سرویس‌های Xray 
 xh log xray           # بررسی لاگ زندهٔ اتصالات
 xh tuning on|off      # فعال‌سازی یا لغو بهینه‌سازی سیستمی BBRv3
 xh update             # به‌روزرسانی هستهٔ Xray (نسخهٔ رسمی و پایدار)
+xh cert show|dnscf    # بررسی گواهی SSL یا تنظیم تمدید خودکار Cloudflare DNS-01
+xh argo status|update # وضعیت تونل Cloudflare Argo و به‌روزرسانی هسته cloudflared
+xh warp status|update # وضعیت خروجی Cloudflare WARP و دریافت مجدد کلید WireGuard
 ```
+
+---
+
+## 🔒 مدیریت گواهی SSL/TLS با Cloudflare
+
+این پروژه امکان صدور خودکار و بهینهٔ گواهی SSL را با دو روش استاندارد فراهم می‌کند:
+
+### روش ۱: صدور خودکار با Cloudflare DNS-01 API Token (پیشنهادی)
+با استفاده از چالش DNS کلودفلر، **بدون نیاز به باز بودن پورت ۸۰ یا رفع فیلتر شبکه**، گواهی معتبر Let's Encrypt صادر و ماهانه به‌طور خودکار تمدید می‌شود:
+```bash
+CF_Token="کد_توکن_کلودفلر" xh cert dnscf
+```
+
+### روش ۲: گواهی Cloudflare Origin CA (اعتبار ۱۵ ساله)
+در صورتی که دامنهٔ شما از پروکسی کلودفلر (ابر روشن) عبور می‌کند، می‌توانید از Origin CA استفاده کنید:
+۱. از داشبورد کلودفلر به بخش **SSL/TLS -> Origin Server** رفته و یک گواهی ۱۵ ساله ایجاد کنید؛
+۲. گواهی را در `/etc/nginx/certs/fullchain.cer` و کلید خصوصی را در `/etc/nginx/certs/cert.key` ذخیره کنید؛
+۳. با دستور `xh restart` سرویس را ریلود کرده و حالت رمزنگاری را روی **Full (Strict)** قرار دهید.
+
+---
+
+## ☁️ مدیریت تونل Cloudflare Argo و WARP
+
+- **تونل Cloudflare Argo (`cloudflared`)**:
+  - `xh argo status`: بررسی نسخه هسته `cloudflared` و وضعیت اجرای سرویس؛
+  - `xh argo update`: دانلود و به‌روزرسانی آخرین نسخه رسمی `cloudflared` (نسخه **`2026.10.3`**)؛
+  - `xh argo on <token>`: تنظیم توکن تونل Zero Trust و راه‌اندازی خودکار سرویس؛
+  - `xh argo off`: غیرفعال‌سازی و توقف سرویس تونل.
+- **خروجی Cloudflare WARP**:
+  - `xh warp status`: بررسی وضعیت IPv6 و گواهی WireGuard خروجی؛
+  - `xh warp update`: تولید یا تمدید کلیدهای رسمی WireGuard جهت رفع تحریم و بازگشایی سرویس‌های OpenAI، ChatGPT، Claude و Netflix.

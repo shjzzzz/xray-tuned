@@ -68,7 +68,76 @@ xh restart            # Gracefully restart Xray and Nginx services
 xh log xray           # Follow live Xray connection logs
 xh tuning on|off      # Enable / rollback system-level tuning (BBRv3 / Buffers / TFO)
 xh update             # Update Xray-core (stable channel with automated rollback)
+xh cert show|dnscf    # View cert status or switch to Cloudflare DNS-01 auto-renewal
+xh argo status|update # Cloudflare Argo Tunnel (cloudflared) status and 1-click kernel update
+xh warp status|update # Cloudflare WARP outbound status and dynamic credential rotation
 ```
+
+---
+
+## 🔒 Cloudflare SSL/TLS Certificate Management
+
+This project provides an automated, production-grade certificate management pipeline with two best-practice options:
+
+### Method A: Cloudflare DNS-01 API Token Auto-Issuance (Recommended)
+Requests Let's Encrypt certificates via Cloudflare DNS challenge, **completely bypassing port 80 ISP blocks and public firewalls**, with automatic renewal:
+1. Log in to [Cloudflare Dashboard](https://dash.cloudflare.com/) -> **My Profile** -> **API Tokens** -> **Create Token**;
+2. Choose **Edit zone DNS** template, include your zone under "Zone Resources", and create the token;
+3. Execute the one-click command on your VPS:
+   ```bash
+   CF_Token="your_cloudflare_api_token" xh cert dnscf
+   ```
+4. The script automatically invokes `acme.sh` for DNS-01 validation, issues authoritative certs, configures Nginx, and sets up automated monthly renewal.
+
+### Method B: Cloudflare Origin CA Certificate (15-Year Validity)
+If your direct or CDN domains are proxied through Cloudflare, the official Origin CA certificate is recommended:
+1. Cloudflare Dashboard -> Select domain -> **SSL/TLS** -> **Origin Server** -> **Create Certificate**;
+2. Select 15-year validity, generate and copy the **Origin Certificate** and **Private Key**;
+3. Save the certificate to `/etc/nginx/certs/fullchain.cer` and private key to `/etc/nginx/certs/cert.key`;
+4. Run `xh restart` to reload Nginx; set Cloudflare SSL/TLS encryption mode to **Full (Strict)** for end-to-end encryption.
+
+### Check Certificate Status
+Inspect your current certificate status anytime:
+```bash
+xh cert show
+```
+
+---
+
+## ☁️ Cloudflare WARP & Argo Tunnel Management
+
+Native integration with official Cloudflare outbound and tunneling infrastructure:
+
+* **Cloudflare Argo Tunnel (`cloudflared`)**:
+  - `xh argo status`: Check installed `cloudflared` kernel version and systemd status;
+  - `xh argo update`: One-click update to the latest official release (built-in latest **`2026.10.3`**, supporting AMD64 & ARM64);
+  - `xh argo on <token>`: Configure Zero Trust Tunnel Token and enable auto-start systemd service;
+  - `xh argo off`: Stop and disable Argo Tunnel.
+* **Cloudflare WARP Outbound & Streaming Unlock**:
+  - `xh warp status`: Check WireGuard credentials and assigned Cloudflare IPv6 outbound;
+  - `xh warp update`: Fetch/rotate fresh official WireGuard credentials to unlock OpenAI/ChatGPT/Claude/Netflix streaming and AI services.
+
+---
+
+## 🛡️ Security Audit & Hardening Highlights
+
+On 2026-10-22, a full-repository security audit was executed via `security-audit` skill (11 vulnerabilities across high and medium severity resolved and verified):
+
+1. **Injection Immunization**:
+   - `src/04-input.sh`: Strict hostname/port regex in `normalize_proxy_origin`, eliminating Nginx config CRLF and semicolon injection;
+   - `src/11-client-config.sh`: `apply_node_names` converted from Perl `/e` evaluation to safe environment variable passing, preventing arbitrary code execution during client rendering;
+   - `src/05-base-env.sh`: Strict regex on `ip.sb` external responses to prevent Python code injection under network tampering;
+   - `src/13-manage-cli.sh`: Safe atomic temporary file and `%q` shell quoting replace unescaped `sed -i` in `update_node_env`.
+2. **Credential Protection & Boundary Isolation**:
+   - Installer prevents unauthorized downgrading of `USER_HOME` to normal users (UID 1000), protecting node private keys and Google Drive OAuth tokens;
+   - Client configs enforced with `chmod 600` permissions.
+3. **Protocol & Rate-Limiting Defenses**:
+   - Nginx fallback layer validates `CF-Ray` edge headers and valid IP regex to block spoofed `CF-Connecting-IP` bypassing `/sub/` rate limits;
+   - Dynamic Xray decryption parameter wired to strict post-quantum cipher suites.
+4. **Supply Chain & Distribution Integrity**:
+   - Initial Nginx source compilation runs in isolated `mktemp -d` sandbox with official PGP signature verification (`nginx_verify_pgp`);
+   - Benchmark test suite binds SOCKS5 strictly to `127.0.0.1`, closing open public proxy risks;
+   - TCP Brutal installer strips unverified pipe-to-bash and verifies Release SHA256 tarball checksum.
 
 ---
 
