@@ -54,9 +54,19 @@ http {
     set_real_ip_from 127.0.0.1;
     set_real_ip_from ::1;
 
-    map \$http_cf_connecting_ip \$real_client_ip {
-        default \$http_cf_connecting_ip;
-        ""      \$remote_addr;
+    # 校验 Cloudflare 专有边缘标识，防止直连 443 回落伪造 CF-Connecting-IP 绕过限速与审计
+    map \$http_cf_ray \$is_cf_traffic {
+        default 0;
+        ~.+     1;
+    }
+    map \$is_cf_traffic \$trusted_cf_connecting_ip {
+        1       \$http_cf_connecting_ip;
+        default "";
+    }
+    map \$trusted_cf_connecting_ip \$real_client_ip {
+        ~^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\$ \$trusted_cf_connecting_ip;
+        ~^[0-9a-fA-F:]+\$                                    \$trusted_cf_connecting_ip;
+        default                                            \$remote_addr;
     }
     real_ip_header        CF-Connecting-IP;
     real_ip_recursive     on;

@@ -1011,12 +1011,25 @@ install_tcp_brutal_module() {
     return 1
   fi
 
-  local tmp_tar
-  tmp_tar=$(mktemp --suffix=.tar.gz)
-  if curl -fsSL https://github.com/HyNetworks/tcp-brutal/releases/latest/download/tcp-brutal.dkms.tar.gz -o "$tmp_tar" 2>/dev/null; then
+  local tmp_dir tmp_tar tmp_sha
+  tmp_dir=$(mktemp -d)
+  tmp_tar="${tmp_dir}/tcp-brutal.dkms.tar.gz"
+  tmp_sha="${tmp_dir}/checksums.txt"
+
+  if curl -fsSL --max-time 60 https://github.com/HyNetworks/tcp-brutal/releases/latest/download/tcp-brutal.dkms.tar.gz -o "$tmp_tar" 2>/dev/null; then
+    # 校验 GitHub release SHA256 摘要（若提供 checksums.txt）
+    if curl -fsSL --max-time 15 https://github.com/HyNetworks/tcp-brutal/releases/latest/download/checksums.txt -o "$tmp_sha" 2>/dev/null; then
+      local expected_hash actual_hash
+      expected_hash=$(grep "tcp-brutal.dkms.tar.gz" "$tmp_sha" 2>/dev/null | awk '{print $1}')
+      actual_hash=$(sha256sum "$tmp_tar" 2>/dev/null | awk '{print $1}')
+      if [[ -n "$expected_hash" && "$expected_hash" != "$actual_hash" ]]; then
+        warn "tcp-brutal 归档 SHA256 校验失败，已放弃加载"
+        rm -rf "$tmp_dir"
+        return 1
+      fi
+    fi
+
     # 先 ldtarball 把源码摊到 /usr/src，打完新内核 ABI 补丁再编译。
-    # 直接 dkms install <tarball> 会「解包+编译」一步完成，插不进补丁，
-    # 在 7.1+ 内核上必然编译失败。
     if dkms ldtarball "$tmp_tar" >/dev/null 2>&1; then
       patch_tcp_brutal_tso_segs
       local _bv
@@ -1025,12 +1038,10 @@ install_tcp_brutal_module() {
     else
       dkms install "$tmp_tar" 2>/dev/null || true
     fi
-    rm -f "$tmp_tar"
   fi
+  rm -rf "$tmp_dir"
 
   if ! command -v brutalctl >/dev/null 2>&1; then
-    bash <(curl -fsSL https://tcp.hy2.sh/) install 2>/dev/null || true
-    # 官方脚本同样不带新内核 ABI 补丁，补一次再重编。
     patch_tcp_brutal_tso_segs
     dkms autoinstall 2>/dev/null || true
   fi
@@ -1140,12 +1151,8 @@ with open(cfg, 'r', encoding='utf-8') as f:
 s = re.sub(r'(\"sockopt\"\s*:\s*\{)(?![^}]*\"tcpcongestion\")', r'\1\n                    \"tcpcongestion\": \"brutal\",', text)
 # 2. 对已存在 tcpcongestion 的块替换为 brutal
 s = re.sub(r'\"tcpcongestion\"\s*:\s*\"[^\"]*\"', '\"tcpcongestion\": \"brutal\"', s)
-# 3. 对 Reality 入站 (network: raw) 若尚无 sockopt 则注入
-if '\"network\": \"raw\"' in s:
-    idx = s.find('\"network\": \"raw\"')
-    sub = s[idx:idx+400]
-    if '\"sockopt\"' not in sub:
-        s = re.sub(r'(\"realitySettings\"\s*:\s*\{[\s\S]*?\n\s*\})', r'\1,\n                \"sockopt\": {\n                    \"tcpcongestion\": \"brutal\"\n                }', s, count=1)
+# 3. 对 Reality 入站 (network: raw) 若尚无 sockopt 则注入（避免 realitySettings 超 400 字符时重复注入）
+s = re.sub(r'(\"realitySettings\"\s*:\s*\{[\s\S]*?\n\s*\})(?!\s*,\s*\"sockopt\")', r'\1,\n                \"sockopt\": {\n                    \"tcpcongestion\": \"brutal\"\n                }', s)
 # 4. 严格保护 freedom 直连出站：严禁出站使用 brutal，始终维持 bbr
 s = re.sub(r'(\"protocol\"\s*:\s*\"freedom\"[\s\S]*?\"sockopt\"\s*:\s*\{[\s\S]*?\"tcpcongestion\"\s*:\s*)\"brutal\"', r'\g<1>\"bbr\"', s)
 

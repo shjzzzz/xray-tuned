@@ -490,7 +490,7 @@ apply_node_names() {
     # 变成乱码（-CSD 会把它当 latin-1 解一遍再编回去）。
     perl -pi -e "s/\Q${old}\E/${enc}/g" "$USER_HOME/client-config.txt"
     for f in "$MIHOMO_FULL_FILE" "$MIHOMO_NODES_FILE"; do
-      perl -pi -e "s/\Q${old}\E/${new}/g" "$f"
+      OLD_VAL="$old" NEW_VAL="$new" perl -pi -e 'my $o = $ENV{OLD_VAL}; my $n = $ENV{NEW_VAL}; s/\Q$o\E/$n/g;' "$f"
     done
   done <<< "$map"
 }
@@ -501,7 +501,13 @@ chown "$(stat -c '%u:%g' "$USER_HOME")" \
   "$USER_HOME/client-config.txt" \
   "$V2RAYN_TUN_FILE" \
   "$MIHOMO_FULL_FILE" \
-  "$MIHOMO_NODES_FILE"
+  "$MIHOMO_NODES_FILE" 2>/dev/null || true
+
+chmod 600 \
+  "$USER_HOME/client-config.txt" \
+  "$V2RAYN_TUN_FILE" \
+  "$MIHOMO_FULL_FILE" \
+  "$MIHOMO_NODES_FILE" 2>/dev/null || true
 }
 # xh-render-end
 

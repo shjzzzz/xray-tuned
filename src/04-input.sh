@@ -7,7 +7,7 @@ info "检测到系统: $PRETTY_NAME"
 if [[ -n "$SUDO_USER" && "$SUDO_USER" != "root" ]]; then
   USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
 else
-  USER_HOME=$(getent passwd 1000 2>/dev/null | cut -d: -f6 || true)
+  USER_HOME="/root"
 fi
 [[ -z "$USER_HOME" || ! -d "$USER_HOME" ]] && USER_HOME="/root"
 
@@ -71,7 +71,7 @@ IP_CHOICE=${IP_CHOICE:-1}
 normalize_proxy_origin() {
   local url="$1"
   [[ "$url" =~ ^https?:// ]] || url="https://${url}"
-  [[ "$url" =~ ^(https?)://([^/?#]+) ]] || return 1
+  [[ "$url" =~ ^(https?)://([a-zA-Z0-9.-]+(:[0-9]+)?)$ ]] || return 1
   printf '%s://%s' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
 }
 

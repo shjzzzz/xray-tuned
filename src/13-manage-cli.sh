@@ -95,11 +95,10 @@ svc_active() {
 update_node_env() {
   local key="$1" val="$2"
   [[ -f "$NODE_ENV_FILE" ]] || return 0
-  if grep -q "^${key}=" "$NODE_ENV_FILE"; then
-    sed -i -E "s|^${key}=.*|${key}='${val}'|" "$NODE_ENV_FILE"
-  else
-    printf '%s=%q\n' "$key" "$val" >> "$NODE_ENV_FILE"
-  fi
+  local tmp="${NODE_ENV_FILE}.tmp$$"
+  grep -v "^${key}=" "$NODE_ENV_FILE" > "$tmp" || true
+  printf "%s=%q\n" "$key" "$val" >> "$tmp"
+  mv -f "$tmp" "$NODE_ENV_FILE"
 }
 
 # ---------------- 子命令 ----------------
@@ -283,7 +282,7 @@ cmd_sub() {
 xray_tun_variants() {
   local src="$1" outdir="$2"
   [[ -s "$src" ]] || return 0
-  python3 - "$src" "$outdir" "${REALITY_DOMAIN:-}" "${CDN_DOMAIN:-}" "${VPS_IP:-}" <<'XTUNPY' || warn "Xray TUN 配置生成失败（不影响其它订阅）"
+  python3 - "$src" "$outdir" "${REALITY_DOMAIN:-}" "${CDN_DOMAIN:-}" "${VPS_IP:-}" "${BESTCF_DOMAIN:-}" <<'XTUNPY' || warn "Xray TUN 配置生成失败（不影响其它订阅）"
 @@include templates/xray-tun-gen.py.tmpl
 XTUNPY
 }
@@ -2973,6 +2972,121 @@ TMREOF
   esac
 }
 
+# ---------- Cloudflare Argo 隧道管理 (cloudflared) ----------
+ARGO_BIN="/usr/local/bin/cloudflared"
+ARGO_SERVICE="cloudflared"
+
+cmd_argo_update() {
+  local arch
+  arch=$(uname -m)
+  case "$arch" in
+    x86_64|amd64) arch="amd64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    armv7l|armhf) arch="arm" ;;
+    *) warn "暂不支持当前 CPU 架构: $(uname -m)"; return 1 ;;
+  esac
+  info "正在检测并下载 Cloudflare 官方最新 cloudflared (linux-$arch) 内核……"
+  local tmp
+  tmp=$(mktemp)
+  if curl -fsSL --max-time 120 "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}" -o "$tmp"; then
+    chmod +x "$tmp"
+    if "$tmp" --version >/dev/null 2>&1; then
+      mv -f "$tmp" "$ARGO_BIN"
+      chmod +x "$ARGO_BIN"
+      info "Cloudflare Argo 隧道 (cloudflared) 已成功更新至最新版：$($ARGO_BIN --version 2>/dev/null | head -1)"
+      systemctl is-active "$ARGO_SERVICE" >/dev/null 2>&1 && systemctl restart "$ARGO_SERVICE"
+      return 0
+    else
+      rm -f "$tmp"
+      warn "下载的 cloudflared 二进制校验失败"
+      return 1
+    fi
+  else
+    rm -f "$tmp"
+    warn "从 Cloudflare 官方 GitHub 下载 cloudflared 失败"
+    return 1
+  fi
+}
+
+cmd_argo() {
+  local action="${1:-status}"
+  shift || true
+  case "$action" in
+    status)
+      echo ""
+      echo -e "${CYAN}=== Cloudflare Argo 隧道 (cloudflared) 状态 ===${NC}"
+      if [[ -x "$ARGO_BIN" ]]; then
+        echo -e "  内核版本:     ${GREEN}$($ARGO_BIN --version 2>/dev/null | head -1)${NC}"
+      else
+        echo -e "  内核版本:     ${YELLOW}未安装 (运行 ${MANAGE_CMD} argo update 即可一键自动安装)${NC}"
+      fi
+      if systemctl is-active "$ARGO_SERVICE" >/dev/null 2>&1; then
+        echo -e "  隧道服务:     ${GREEN}运行中 (active)${NC}"
+      else
+        echo -e "  隧道服务:     ${YELLOW}未运行 (inactive)${NC}"
+      fi
+      ;;
+    update|up)
+      cmd_argo_update
+      ;;
+    token|run|on)
+      local token="${1:-}"
+      if [[ -z "$token" ]]; then
+        read -rp "请输入 Cloudflare Zero Trust Tunnel Token: " token
+      fi
+      [[ -n "$token" ]] || { warn "Token 不能为空"; return 1; }
+      [[ -x "$ARGO_BIN" ]] || cmd_argo_update || return 1
+      info "正在配置并启动 Cloudflare Argo 隧道服务……"
+      "$ARGO_BIN" service install "$token" 2>/dev/null || true
+      systemctl daemon-reload
+      systemctl enable --now "$ARGO_SERVICE" 2>/dev/null || true
+      info "Cloudflare Argo 隧道服务已启动并设为开机自启！"
+      ;;
+    off|stop|disable)
+      info "正在停止并卸载 Cloudflare Argo 隧道服务……"
+      systemctl stop "$ARGO_SERVICE" 2>/dev/null || true
+      systemctl disable "$ARGO_SERVICE" 2>/dev/null || true
+      [[ -x "$ARGO_BIN" ]] && "$ARGO_BIN" service uninstall 2>/dev/null || true
+      info "Cloudflare Argo 隧道已停止"
+      ;;
+    *)
+      echo "用法: ${MANAGE_CMD} argo [status|update|on [token]|off]"
+      ;;
+  esac
+}
+
+# ---------- Cloudflare WARP 出站状态与更新 ----------
+cmd_warp() {
+  local action="${1:-status}"
+  shift || true
+  local warp_conf="/root/sbbox/warp.json"
+  case "$action" in
+    status)
+      echo ""
+      echo -e "${CYAN}=== Cloudflare WARP 状态 ===${NC}"
+      if [[ -s "$warp_conf" ]]; then
+        local warp_v6
+        warp_v6=$(python3 -c "import json; print(json.load(open('$warp_conf')).get('v6',''))" 2>/dev/null)
+        echo -e "  WARP 凭证:    ${GREEN}已就绪 ($warp_conf)${NC}"
+        echo -e "  专属 IPv6:    ${CYAN}${warp_v6}${NC}"
+      else
+        echo -e "  WARP 凭据:    ${YELLOW}未生成 (可运行 ${MANAGE_CMD} warp update 动态申请)${NC}"
+      fi
+      ;;
+    update|up|rotate)
+      info "正在通过 Cloudflare 官方 API 动态申请与更新专属 WARP 账户凭证……"
+      if command -v sbbox >/dev/null 2>&1; then
+        sbbox warp rotate
+      else
+        warn "未检测到 sbbox 命令"
+      fi
+      ;;
+    *)
+      echo "用法: ${MANAGE_CMD} warp [status|update]"
+      ;;
+  esac
+}
+
 cmd_uninstall() {
   echo -e "${RED}[!] 将删除 Xray / Nginx / ACME / Hysteria2 及本项目的配置、证书、订阅文件${NC}"
   read -rp "确认卸载？输入 yes 继续: " reply
@@ -4535,7 +4649,8 @@ cmd_menu() {
     echo " 29) Nginx 版本检查与升级 (nginx: show / check / update)"
     echo " 30) Reality 节点管理 (show / vision on|off / xhttp on|off / updown on|off)"
     echo " 31) Cloudflare CDN 优选 IP (bestcf: 锁定当前IP / 自主控制 / 定时轮换)"
-    echo " 32) 卸载"
+    echo " 32) Cloudflare Argo 隧道与 WARP (argo / warp: status / update / on / off)"
+    echo " 33) 卸载"
     echo "  0) 退出"
     read -rp "请选择: " choice
     case "$choice" in
@@ -4648,7 +4763,25 @@ cmd_menu() {
           *)          cmd_bestcf "${a:-show}" ;;
         esac
         ;;
-      32) cmd_uninstall; break ;;
+      32)
+        echo ""
+        echo -e "${CYAN}--- Cloudflare 隧道与出站选择 ---${NC}"
+        echo "  1) 查看 Argo 隧道状态 (argo status)"
+        echo "  2) 更新 Cloudflare 官方 cloudflared 内核 (argo update)"
+        echo "  3) 开启/配置 Argo 隧道 (argo on)"
+        echo "  4) 关闭 Argo 隧道 (argo off)"
+        echo "  5) WARP 出站状态与更新 (warp status / update)"
+        read -rp "请选择 [1-5，直接回车查看状态]: " a
+        case "$a" in
+          1|status|"") cmd_argo status ;;
+          2|update|up) cmd_argo update ;;
+          3|on)        cmd_argo on ;;
+          4|off)       cmd_argo off ;;
+          5|warp)      read -rp "  status / update: " w_act; cmd_warp "${w_act:-status}" ;;
+          *)           cmd_argo "${a:-status}" ;;
+        esac
+        ;;
+      33) cmd_uninstall; break ;;
       0) break ;;
       *) warn "无效选择" ;;
     esac
@@ -4752,6 +4885,8 @@ case "${1:-menu}" in
   split)      shift; cmd_split "$@" ;;
   reality)    shift; cmd_reality "$@" ;;
   bestcf)     shift; cmd_bestcf "$@" ;;
+  argo)       shift; cmd_argo "$@" ;;
+  warp)       shift; cmd_warp "$@" ;;
   tuning|tune) shift; cmd_tuning "$@" ;;   # tune 为常见误打，一并接受
   brutal)     shift; cmd_brutal "$@" ;;
   keepalive)  shift; cmd_keepalive "$@" ;;

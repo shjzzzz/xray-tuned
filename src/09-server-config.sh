@@ -250,8 +250,8 @@ xray_reality_pq_vision_inbound() {
                     "privateKey": "${PRIVATE_KEY}",
                     "shortIds": [
                         "${SHORT_ID}"
-                    ]\${REALITY_MAX_TIME_DIFF_JSON}\${REALITY_MIN_CLIENT_VER_JSON}
-                }\${REALITY_SOCKOPT_JSON}
+                    ]${REALITY_MAX_TIME_DIFF_JSON}${REALITY_MIN_CLIENT_VER_JSON}
+                }${REALITY_SOCKOPT_JSON}
             },
             "sniffing": {
                 "enabled": true,

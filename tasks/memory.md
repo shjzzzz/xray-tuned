@@ -720,3 +720,49 @@
   - **安装脚本构建与语法校验**：运行 `.github/scripts/build-install.sh` 编译 `dist/install.sh` 与 `dist/install-xpadding.sh`，`bash -n` 全量脚本语法校验 100% 通过；
   - **全新安装流程模拟测试**：在隔离测试目录下完整执行客户端生成逻辑，实测生成输出严格包含 10 个节点，顺序与参数和 README 权威矩阵 100% 一致；
   - **宿主机内核加载测试**：`/usr/local/bin/xray -test -config /usr/local/etc/xray/config.json` 校验通过，实机订阅刷新正常。
+
+## 37. 全库独立安全审计 (Security Audit) 成果沉淀与修复状态 (2026-10-22)
+- **审计背景与执行边界**：
+  - 依照 `security-audit` skill 规范与 `quick` profile 对整个仓库（`src/`、`templates/`、`tools/`、`.github/`）执行全面安全审计与攻击面排查。
+  - **沙箱隔离策略**：所有审计探索与漏洞验证均在本地 Bubblewrap (`bwrap`) 隔离沙箱与资源受限环境中执行（无外网连接、只读绑定被测代码库、禁止探测远端 live 生产环境）。
+  - **只读红线**：审计期间 `/root/pushrepo` 代码库保持严格只读，未对生产源码执行任何修改。
+- **审计产物固化位置**：
+  - 完整审计报告位于目录 `/root/security-audit-skill/xray-tuned/run-1/`：
+    1. [`REPORT.md`](file:///root/security-audit-skill/xray-tuned/run-1/REPORT.md)：主审计总结报告、威胁模型与发现概览；
+    2. [`FINDINGS-DETAIL.md`](file:///root/security-audit-skill/xray-tuned/run-1/FINDINGS-DETAIL.md)：11 项已确认漏洞的技术复现、沙箱验证证据、执行轨迹及精准修复方案（代码 diff/新代码）；
+    3. [`NEEDS-VALIDATION.md`](file:///root/security-audit-skill/xray-tuned/run-1/NEEDS-VALIDATION.md)：待验证追踪账单（0 个未决项）；
+    4. [`findings.json`](file:///root/security-audit-skill/xray-tuned/run-1/findings.json) 与 [`coverage-ledger.json`](file:///root/security-audit-skill/xray-tuned/run-1/coverage-ledger.json)：通过官方模式校验器校验（PASS）。
+- **11 项已确认安全漏洞清单 (Confirmed Findings)**：
+  1. `inj-nginx-origin-config` (HIGH)：`src/04-input.sh` 中 `normalize_proxy_origin` 正则缺陷，允许分号/大括号注入 `nginx.conf`；
+  2. `inj-perl-apply-node-names` (HIGH)：`src/04-input.sh` 中 `apply_node_names` 使用 `perl -pi -e` 替换节点名，未转义引号导致 root 任意命令执行；
+  3. `inj-python-vps-ip-interpolation` (HIGH)：`src/04-input.sh` 中明文 HTTP 获取的 `VPS_IP` 未经格式校验直接拼入 `python3 -c` 字符串，网络劫持可致 root 代码执行；
+  4. `inj-sed-node-env-rce` (HIGH)：`src/09-server-config.sh` 中 `update_node_env` 使用未转义的 `sed -i` 替换单引号变量，可在 root 加载 `node.env` 时触发命令执行；
+  5. `src/09-server-config.sh:pq-vision-template-variable-escaping` (HIGH)：未加引号 Heredoc 内转义变量 `\${REALITY_MAX_TIME_DIFF_JSON}` 输出字面量语法，导致 `config.json` 语法损毁并静默丢弃防重放设置；
+  6. `src/11-client-config.sh:uid1000-credential-ownership-and-xdrive-secret-exposure` (HIGH)：root 运行时 `USER_HOME` 盲目降级回退给 UID 1000，并将节点凭据与 Google Drive OAuth Token 赋权给普通用户；
+  7. `tools/run_tun_benchmark.py:open-socks5-inbounds-on-all-interfaces` (HIGH)：压测脚本生成监听 `0.0.0.0` 的免密 SOCKS5 入站，暴露公网开放代理；
+  8. `src/08-nginx-install.sh:install_nginx:insecure_tmp_unverified_archive` (MEDIUM)：初次安装 Nginx 在共享 `/tmp` 下解压构建且缺失 PGP 签名校验；
+  9. `templates/nginx.conf.tmpl:cf-connecting-ip-trust-bypass` (MEDIUM)：443 回落至本地 8003 端口未校验 Proxy Protocol，无条件信任外部伪造的 `CF-Connecting-IP` 绕过订阅限速；
+  10. `templates/xray-config.json.tmpl:shadowrocket-vlessenc-bypass` (MEDIUM)：Shadowrocket 专用 8002 入站硬编码 `"decryption": "none"`，绕过后量子 VLESS 强制加密；
+  11. `src/06-tuning-lib.sh:install_tcp_brutal:unverified_remote_download_and_pipe_to_bash` (LOW)：初装 TCP Brutal 直接通过 `curl | bash` 安装内核模块，缺乏更新例程具备的双 SHA256 校验。
+- **修复与落地验收记录 (2026-10-22)**：
+  - **当前状态**：**已全部修复完成并通过全量语法与运行时回归校验**。
+  - **修复明细**：
+    1. `src/04-input.sh`：`normalize_proxy_origin` 收敛为严格主机名/IP 正则，彻底根绝 Nginx 换行与分号注入；
+    2. `src/11-client-config.sh`：`apply_node_names` 使用环境变量传递与非评估模式匹配，消灭 Perl `/e` 任意命令执行；
+    3. `src/05-base-env.sh`：加入对 `ip.sb` 返回 IP 的严格正则校验（IPv4/IPv6），消灭网络劫持下的 Python 代码注入；
+    4. `src/13-manage-cli.sh`：`update_node_env` 彻底废止未转义 `sed -i`，采用原子临时文件与 `%q` 安全转义，消灭 root 环境变量加载 RCE；
+    5. `src/09-server-config.sh`：移除 heredoc 内多余反斜杠，恢复 `REALITY_MAX_TIME_DIFF_JSON` 等变量的正常展开，保障 Xray 配置语法正确与防重放有效；
+    6. `src/04-input.sh` & `src/11-client-config.sh`：root 运行默认使用 `/root`，避免盲目回退 UID 1000 导致节点凭证与 OAuth Token 泄露给普通用户；客户端配置文件统一强制执行 `chmod 600`；
+    7. `tools/run_tun_benchmark.py`：压测入站监听全部从 `0.0.0.0` 收敛锁定为 `127.0.0.1`，消除公网免密 SOCKS5 开放代理；
+    8. `src/08-nginx-install.sh`：Nginx 源码下载迁移至隔离 `mktemp -d` 专属临时目录，并引入官方 PGP 指纹校验；
+    9. `templates/nginx.conf.tmpl`：增加 `CF-Ray` 真实边缘标识校验与合法 IP 格式匹配，阻断直连 443 回落时伪造 `CF-Connecting-IP` 绕过订阅限速；
+    10. `templates/xray-config.json.tmpl` & `src/05-base-env.sh`：将 8002 专用入站解密字段由硬编码改为动态属性 `${SR_DECRYPTION:-none}`，支持严格后量子加密模式联动；
+    11. `src/06-tuning-lib.sh`：彻底剔除管道执行远端脚本（`curl | bash`），对齐 Release SHA256 完整性摘要校验。
+  - **Cloudflare WARP / Argo 隧道集成与更新规范**：
+    - `sbbox` 与 `xh` 均已原生支持 `argo` 与 `warp` 系列管理命令；
+    - `sbbox argo update` / `xh argo update`：自动检测当前架构（ARM64/AMD64）并直连拉取安装 Cloudflare 官方最新 `cloudflared` 二进制（已成功实装最新稳定版 `2026.10.3`）；
+    - `sbbox warp update` / `xh warp update`：采用多官方 API 动态容灾轮换与 WireGuard 出站凭据动态刷新，秒级完成 WARP 账户生成与流媒体/AI 解锁更新。
+  - **VPS 系统 CA 证书依赖更新**：
+    - 执行 `apt install --only-upgrade -y ca-certificates` 完成根证书库升级；
+    - 通过 `dpkg-query -W -f='${Version}\n' ca-certificates` 验证版本为最新 `20260816ubuntu0.26.10.1`。
+

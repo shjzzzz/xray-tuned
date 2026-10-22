@@ -149,7 +149,7 @@ xray_cfg = {
 }
 
 for tag, ob, port in xray_nodes:
-    xray_cfg["inbounds"].append({"tag": "in-" + tag, "listen": "0.0.0.0", "port": port, "protocol": "socks", "settings": {"udp": True}})
+    xray_cfg["inbounds"].append({"tag": "in-" + tag, "listen": "127.0.0.1", "port": port, "protocol": "socks", "settings": {"udp": True}})
     out = dict(ob)
     out["tag"] = tag
     xray_cfg["outbounds"].append(out)
@@ -161,7 +161,7 @@ with open(f"{SCRATCH}/test_tun_xray.json", "w") as f:
 # Sing-box for Xray Node 3: Hysteria2
 sb_hy2_cfg = {
     "log": {"level": "warn"},
-    "inbounds": [{"type": "socks", "tag": "in-n3-hy2", "listen": "0.0.0.0", "listen_port": 10803}],
+    "inbounds": [{"type": "socks", "tag": "in-n3-hy2", "listen": "127.0.0.1", "listen_port": 10803}],
     "outbounds": [
         {
             "type": "hysteria2",
@@ -200,7 +200,7 @@ if os.path.isfile(sbbox_client_file):
             sb_diag_cfg["inbounds"].append({
                 "type": "socks",
                 "tag": in_tag,
-                "listen": "0.0.0.0",
+                "listen": "127.0.0.1",
                 "listen_port": sbbox_ports[tag]
             })
             sb_diag_cfg["route"]["rules"].append({

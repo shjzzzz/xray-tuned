@@ -4,15 +4,49 @@
 
 info "[3/7] 编译安装 Nginx"
 NGINX_VER="1.31.6"
+NGINX_PGP_KEYS="${NGINX_PGP_KEYS:-pluknet arut thresh sb}"
+NGINX_PGP_FPRS="${NGINX_PGP_FPRS:-D6786CE303D9A9022998DC6CC8464D549AF75C0A 43387825DDB1BB97EC36BA5D007C8D7C15D87369 13C82A63B603576156E30A4EA0EA981B66B0D967 7338973069ED3F443F4D37DFA64FD5B17ADB39A8}"
+
+nginx_verify_pgp() {
+  local tgz="$1" asc="$2" gh k fpr ok=1
+  command -v gpg >/dev/null 2>&1 || { warn "未安装 gpg，无法校验 nginx 签名"; return 1; }
+  gh=$(mktemp -d) && chmod 700 "$gh"
+  for k in $NGINX_PGP_KEYS; do
+    curl -fsSL --max-time 20 "https://nginx.org/keys/${k}.key" 2>/dev/null | GNUPGHOME="$gh" gpg -q --batch --import 2>/dev/null
+  done
+  fpr=$(GNUPGHOME="$gh" gpg --batch --status-fd 1 --verify "$asc" "$tgz" 2>/dev/null | awk '$2=="VALIDSIG"{print $NF}')
+  rm -rf "$gh"
+  if [[ -n "$fpr" ]] && [[ " $NGINX_PGP_FPRS " == *" $fpr "* ]]; then
+    info "nginx 源码 PGP 签名校验通过（签名者主指纹 ${fpr}）"; ok=0
+  else
+    warn "nginx 源码 PGP 签名校验失败（签名者：${fpr:-无有效签名}），拒绝使用"
+  fi
+  return $ok
+}
 
 install_nginx() {
   info "安装编译依赖..."
   install_build_deps
+  command -v gpg >/dev/null 2>&1 || pkg_install gnupg >/dev/null 2>&1 || true
 
-  cd /tmp
-  wget -q "https://nginx.org/download/nginx-${NGINX_VER}.tar.gz"
-  tar -xf "nginx-${NGINX_VER}.tar.gz"
-  cd "nginx-${NGINX_VER}"
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  chmod 700 "$tmpdir"
+
+  info "下载 Nginx ${NGINX_VER} 源码与 PGP 签名..."
+  if ! curl -fsSL --max-time 120 "https://nginx.org/download/nginx-${NGINX_VER}.tar.gz" -o "$tmpdir/nginx.tar.gz" || \
+     ! curl -fsSL --max-time 30 "https://nginx.org/download/nginx-${NGINX_VER}.tar.gz.asc" -o "$tmpdir/nginx.tar.gz.asc"; then
+    rm -rf "$tmpdir"
+    error "下载 Nginx 源码包或签名失败"
+  fi
+
+  if ! nginx_verify_pgp "$tmpdir/nginx.tar.gz" "$tmpdir/nginx.tar.gz.asc"; then
+    rm -rf "$tmpdir"
+    error "Nginx 源码 PGP 签名验证失败，已中止安装"
+  fi
+
+  tar -xf "$tmpdir/nginx.tar.gz" -C "$tmpdir"
+  cd "$tmpdir/nginx-${NGINX_VER}"
 
   info "编译 Nginx ${NGINX_VER} ..."
   ./configure \
@@ -33,7 +67,8 @@ install_nginx() {
   make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
   make install
 
-  cd /tmp && rm -rf "nginx-${NGINX_VER}" "nginx-${NGINX_VER}.tar.gz"
+  cd /root
+  rm -rf "$tmpdir"
   mkdir -p /var/log/nginx
 
   info "创建 ${SERVICE_TYPE} 服务..."

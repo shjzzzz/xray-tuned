@@ -329,13 +329,17 @@ if [[ "${FEATURE_XHTTP_VLESSENC:-true}" == true ]]; then
 else
   XHTTP_ENCRYPTION="none"; XHTTP_DECRYPTION="none"
 fi
+SR_DECRYPTION="${SR_DECRYPTION:-none}"
+[[ "${FEATURE_XHTTP_VLESSENC_STRICT:-false}" == true ]] && SR_DECRYPTION="$XHTTP_DECRYPTION"
 if [[ "$IP_CHOICE" == "2" ]]; then
   VPS_IP=$(curl -6 -s --max-time 5 ip.sb)
   [[ -z "$VPS_IP" ]] && error "无法获取 IPv6 地址"
+  [[ "$VPS_IP" =~ ^[0-9a-fA-F:]+$ ]] || error "获取到的 IPv6 地址格式无效"
   VPS_IP_URI="[${VPS_IP}]"
 else
   VPS_IP=$(curl -4 -s --max-time 5 ip.sb)
   [[ -z "$VPS_IP" ]] && error "无法获取 IPv4 地址"
+  [[ "$VPS_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || error "获取到的 IPv4 地址格式无效"
   VPS_IP_URI="${VPS_IP}"
 fi
 
