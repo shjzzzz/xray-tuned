@@ -765,4 +765,11 @@
   - **VPS 系统 CA 证书依赖更新**：
     - 执行 `apt install --only-upgrade -y ca-certificates` 完成根证书库升级；
     - 通过 `dpkg-query -W -f='${Version}\n' ca-certificates` 验证版本为最新 `20260816ubuntu0.26.10.1`。
+  - **文档更新与远程推送 (2026-10-22)**：
+    - 根据用户明确授权（“允许推送，readme增加cloudflare证书申请，修复细节”），完整更新 `pushrepo`（中、英、波斯语）与 `sbrepo`（中、英语）的 README 文档，全面补充 Cloudflare 证书指南（DNS-01 API Token 与 Origin CA 15 年证书方案）、Argo 与 WARP 管理更新规范、以及 11 项安全审计修复细节；
+    - 两大代码库均通过 `/root/bin/sanitize-check.sh` 敏感信息脱敏与防关联检查（PASS）；
+    - 成功向远端 GitHub `origin/main` 完成安全推送：
+      - `pushrepo` (xray-tuned): `3213f5d..d715d3f`
+      - `sbrepo` (sbbox-tuned): `700f77a..2cd37b8`
+
 
