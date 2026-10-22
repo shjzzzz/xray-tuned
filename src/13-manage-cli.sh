@@ -3406,7 +3406,7 @@ else:
         sys.exit(1)
     while pos > 0 and s[pos - 1] in ' \t\r\n':
         pos -= 1
-    s = s[:pos] + '\n' + begin + '\n' + text + '\n' + end + s[pos:]
+    s = s[:pos] + '\n' + begin + '\n' + text + '\n' + end + '\n' + s[pos:]
 open(dst, 'w', encoding='utf-8').write(s)
 INBPY
   rc=$?
@@ -4167,7 +4167,7 @@ for key in ['hy2h3', 'hy2obfs']:
         a = s.index('\n' + begin)
         b = s.index(end, a) + len(end)
         text = open(sf, encoding='utf-8').read().rstrip('\n')
-        s = s[:a] + '\n' + begin + '\n' + text + '\n' + end + s[b:]
+        s = s[:a] + '\n' + begin + '\n' + text + '\n' + end + '\n' + s[b:]
         changed = True
 
 if not changed:
@@ -4433,7 +4433,7 @@ else:
         sys.exit(3)
     if inner.strip():
         sys.stderr.write('%s 数组里已有其他内容，不自动插入\n' % arr); sys.exit(1)
-    inner2 = '\n' + begin + '\n' + obj + '\n' + end + inner
+    inner2 = '\n' + begin + '\n' + obj + '\n' + end + '\n' + inner
 s = s[:lb + 1] + inner2 + s[rb:]
 open(dst, 'w', encoding='utf-8').write(s)
 RSPY
@@ -4512,8 +4512,8 @@ cmd_reality() {
     local spx="/$(printf '%s' "${UUID1}${UUID2}" | sha256sum | cut -c1-12)"
     spx_q="&spx=$(rawurlencode "$spx")"
   fi
-  link1="vless://${UUID2}@${bestcf}:443?encryption=${VLESSENC_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${extra_enc}&packetEncoding=xudp#VLESS-TLS+后量子+XHTTP+CDN"
-  link2="vless://${UUID1}@${bestcf}:443?encryption=${VLESSENC_ENCRYPTION}&flow=xtls-rprx-vision&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${extra_enc}&packetEncoding=xudp#VLESS-TLS+后量子+Vision+XHTTP+CDN"
+  link1="vless://${UUID2}@${bestcf}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${extra_enc}&packetEncoding=xudp#VLESS-TLS+后量子+XHTTP+CDN"
+  link2="vless://${UUID1}@${bestcf}:443?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${extra_enc}&packetEncoding=xudp#VLESS-TLS+后量子+Vision+XHTTP+CDN"
   link3="vless://${UUID1}@${VPS_IP_URI}:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2,http/1.1&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${spx_q}&type=raw&headerType=none&packetEncoding=xudp#VLESS-REALITY+后量子+Vision"
 
   case "$what" in

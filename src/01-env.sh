@@ -33,7 +33,7 @@ fi
 # ==================================================
 
 PROJECT_NAME="xray-xhttp"
-PROJECT_VERSION="5.1.1"
+PROJECT_VERSION="5.1.2"
 PROJECT_REPO="shjzzzz/xray-tuned"
 # 默认推荐的 Xray-core 版本：升级至最新稳定/前沿版 v26.9.30（具备 XDRIVE 云盘代理、MASQUE、Finalmask Noise exp、WFP 防泄露等特性）。
 XRAY_DEFAULT_VERSION="26.9.30"
@@ -147,12 +147,8 @@ FEATURE_UP_CDN_DOWN_MIHOMO=${FEATURE_UP_CDN_DOWN_MIHOMO:-${FEATURE_REALITY_UP_CD
 # 默认关闭保持核心节点精简，需要时可通过 FEATURE_CDN_UP_REALITY_DOWN=true 开启。
 FEATURE_CDN_UP_REALITY_DOWN=${FEATURE_CDN_UP_REALITY_DOWN:-false}
 
-# FEATURE_XHTTP_VLESSENC（v4.9.29）：8001 XHTTP 入站启用 VLESS Encryption（默认开启）。
-# 8001 是唯一经过 CDN 的入站，Cloudflare 边缘会解开外层 TLS，不加 vlessenc 时
-# VLESS 头和明文载荷对 CDN 可见。Reality-Vision 直连（443 主入站）不需要，保持 none。
-# 代价：小火箭不支持 vlessenc，开启后它的专属订阅不再附带 VLESS-XHTTP-CDN-H2。
-# 置为 false 回到 v4.9.21 的行为（8001 decryption none）。
-FEATURE_XHTTP_VLESSENC=${FEATURE_XHTTP_VLESSENC:-true}
+# FEATURE_XHTTP_VLESSENC（v4.9.29）：8001 XHTTP 入站启用 VLESS Encryption（默认关闭设为 none，杜绝客户端 -1 报错）。
+FEATURE_XHTTP_VLESSENC=${FEATURE_XHTTP_VLESSENC:-false}
 
 # FEATURE_PORT_HOPPING：UDP 端口跳跃（默认关闭）。
 # 避免客户端在服务端未配置 nat/iptables 端口段重定向时握手失败，或劫持同机其他 UDP 服务。

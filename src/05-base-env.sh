@@ -16,10 +16,13 @@ command -v sudo    >/dev/null 2>&1 || pkg_install sudo
 command -v socat   >/dev/null 2>&1 || pkg_install socat
 command -v wget    >/dev/null 2>&1 || pkg_install wget
 command -v tar     >/dev/null 2>&1 || pkg_install tar
+command -v curl    >/dev/null 2>&1 || pkg_install curl
 command -v openssl >/dev/null 2>&1 || pkg_install openssl
 command -v python3 >/dev/null 2>&1 || pkg_install python3 || warn "python3 安装失败，部分 xh 管理命令将不可用"
 python3 -c "import yaml" >/dev/null 2>&1 || pkg_install python3-yaml || pkg_install python3-pyyaml || true
 command -v file    >/dev/null 2>&1 || pkg_install file
+command -v iptables >/dev/null 2>&1 || pkg_install iptables || true
+command -v ip6tables >/dev/null 2>&1 || pkg_install iptables || true
 
 # ---------- 平台识别（v4.9.56）：ARM / AMD(x86_64) 与云厂商、内存档位自动选默认 ----------
 # 云厂商：读 DMI（无需联网、无需凭据）；识别不了就是 other。
@@ -107,18 +110,32 @@ export PATH="/usr/local/bin:$PATH"
 
 ensure_firewall_ports() {
   local port
+  local default_ports=(80 443 8443 8445 8446 8447 10489 18793 23106 27295 28443)
+  [[ -n "${H3_PORT:-}" ]] && default_ports+=("$H3_PORT")
+  [[ -n "${H2_PORT:-}" ]] && default_ports+=("$H2_PORT")
+  [[ -n "${HY2_H3_PORT:-}" ]] && default_ports+=("$HY2_H3_PORT")
+  [[ -n "${HY2_PORT:-}" ]] && default_ports+=("$HY2_PORT")
+  [[ -n "${MASQUE_PORT:-}" ]] && default_ports+=("$MASQUE_PORT")
+
   if command -v iptables >/dev/null 2>&1; then
-    for port in 80 443 8443 8445 8446 8447; do
-      iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
-      iptables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || true
+    for port in "${default_ports[@]}"; do
+      iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
+      iptables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p udp --dport "$port" -j ACCEPT 2>/dev/null || true
     done
-    # QDoS (QUIC Denial of Service / UDP Flooding) 防护: 针对 Hysteria2 端口 (8443)
-    iptables -C INPUT -p udp --dport 8443 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
-      iptables -I INPUT 1 -p udp --dport 8443 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
-    iptables -C INPUT -p udp --dport 8443 -m conntrack --ctstate INVALID -j DROP 2>/dev/null || \
-      iptables -I INPUT 2 -p udp --dport 8443 -m conntrack --ctstate INVALID -j DROP 2>/dev/null || true
-    iptables -C INPUT -p udp --dport 8443 -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name hy_qdos_8443 -j DROP 2>/dev/null || \
-      iptables -I INPUT 3 -p udp --dport 8443 -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name hy_qdos_8443 -j DROP 2>/dev/null || true
+    for port in 10800:10809 11801:11806; do
+      iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
+      iptables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p udp --dport "$port" -j ACCEPT 2>/dev/null || true
+    done
+    # QDoS (QUIC Denial of Service / UDP Flooding) 防护: 针对 Hysteria2 端口 (8443 及动态端口)
+    for port in 8443 "${HY2_PORT:-}" "${HY2_H3_PORT:-}"; do
+      [[ -n "$port" ]] || continue
+      iptables -C INPUT -p udp --dport "$port" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+        iptables -I INPUT 1 -p udp --dport "$port" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+      iptables -C INPUT -p udp --dport "$port" -m conntrack --ctstate INVALID -j DROP 2>/dev/null || \
+        iptables -I INPUT 2 -p udp --dport "$port" -m conntrack --ctstate INVALID -j DROP 2>/dev/null || true
+      iptables -C INPUT -p udp --dport "$port" -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name "hy_qdos_${port}" -j DROP 2>/dev/null || \
+        iptables -I INPUT 3 -p udp --dport "$port" -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name "hy_qdos_${port}" -j DROP 2>/dev/null || true
+    done
     # Hysteria2-H3（UDP 443）不加 salamander，未认证者可以完成 QUIC 握手，同样套上握手限速
     if [[ "${FEATURE_HY2_H3:-false}" == true ]]; then
       iptables -C INPUT -p udp --dport 443 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
@@ -130,18 +147,23 @@ ensure_firewall_ports() {
     fi
   fi
   if command -v ip6tables >/dev/null 2>&1; then
-    for port in 80 443 8443 8445 8446 8447; do
-      ip6tables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || ip6tables -I INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
-      ip6tables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || ip6tables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || true
+    for port in "${default_ports[@]}"; do
+      ip6tables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || ip6tables -I INPUT 1 -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
+      ip6tables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || ip6tables -I INPUT 1 -p udp --dport "$port" -j ACCEPT 2>/dev/null || true
     done
-    # QDoS (QUIC Denial of Service / UDP Flooding) 防护: 针对 Hysteria2 端口 (8443)
-    ip6tables -C INPUT -p udp --dport 8443 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
-      ip6tables -I INPUT 1 -p udp --dport 8443 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
-    ip6tables -C INPUT -p udp --dport 8443 -m conntrack --ctstate INVALID -j DROP 2>/dev/null || \
-      ip6tables -I INPUT 2 -p udp --dport 8443 -m conntrack --ctstate INVALID -j DROP 2>/dev/null || true
-    ip6tables -C INPUT -p udp --dport 8443 -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name hy6_qdos_8443 -j DROP 2>/dev/null || \
-      ip6tables -I INPUT 3 -p udp --dport 8443 -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name hy6_qdos_8443 -j DROP 2>/dev/null || true
-    # Hysteria2-H3（UDP 443）不加 salamander，未认证者可以完成 QUIC 握手，同样套上握手限速
+    for port in 10800:10809 11801:11806; do
+      ip6tables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || ip6tables -I INPUT 1 -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
+      ip6tables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || ip6tables -I INPUT 1 -p udp --dport "$port" -j ACCEPT 2>/dev/null || true
+    done
+    for port in 8443 "${HY2_PORT:-}" "${HY2_H3_PORT:-}"; do
+      [[ -n "$port" ]] || continue
+      ip6tables -C INPUT -p udp --dport "$port" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+        ip6tables -I INPUT 1 -p udp --dport "$port" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+      ip6tables -C INPUT -p udp --dport "$port" -m conntrack --ctstate INVALID -j DROP 2>/dev/null || \
+        ip6tables -I INPUT 2 -p udp --dport "$port" -m conntrack --ctstate INVALID -j DROP 2>/dev/null || true
+      ip6tables -C INPUT -p udp --dport "$port" -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name "hy6_qdos_${port}" -j DROP 2>/dev/null || \
+        ip6tables -I INPUT 3 -p udp --dport "$port" -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name "hy6_qdos_${port}" -j DROP 2>/dev/null || true
+    done
     if [[ "${FEATURE_HY2_H3:-false}" == true ]]; then
       ip6tables -C INPUT -p udp --dport 443 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
         ip6tables -I INPUT 1 -p udp --dport 443 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
@@ -152,14 +174,14 @@ ensure_firewall_ports() {
     fi
   fi
   if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qw "active"; then
-    ufw allow 80/tcp >/dev/null 2>&1 || true
-    ufw allow 443/tcp >/dev/null 2>&1 || true
-    ufw allow 443/udp >/dev/null 2>&1 || true
-    ufw allow 8443/tcp >/dev/null 2>&1 || true
-    ufw allow 8443/udp >/dev/null 2>&1 || true
-    ufw allow 8445/tcp >/dev/null 2>&1 || true
-    ufw allow 8446/udp >/dev/null 2>&1 || true
-    ufw allow 8447/tcp >/dev/null 2>&1 || true
+    for port in "${default_ports[@]}"; do
+      ufw allow "$port/tcp" >/dev/null 2>&1 || true
+      ufw allow "$port/udp" >/dev/null 2>&1 || true
+    done
+    for port in "10800:10809" "11801:11806"; do
+      ufw allow "$port/tcp" >/dev/null 2>&1 || true
+      ufw allow "$port/udp" >/dev/null 2>&1 || true
+    done
   fi
   if command -v netfilter-persistent >/dev/null 2>&1; then
     netfilter-persistent save >/dev/null 2>&1 || true
@@ -289,6 +311,7 @@ fi
 require_xray_version_for_udp
 migrate_legacy_udp_components
 check_udp_port_conflict
+ensure_firewall_ports
 
 if [[ "$XRAY_DEFAULTS" == true ]]; then
   XRAY_XHTTP_PADDING_JSON=""   # 官方默认：xPaddingBytes 100-1000、scStreamUpServerSecs 20-80 均不写
@@ -317,19 +340,20 @@ if [[ "$CDN_ECH_ENABLED" == true ]]; then
   CDN_ECH_QUERY_ENC=$(echo "$CDN_ECH_QUERY" | sed -e 's/%/%25/g' -e 's/+/%2B/g' -e 's/:/%3A/g' -e 's/\//%2F/g')
 fi
 
-info "生成 VLESS Encryption 密钥 (X25519 认证，临时密钥交换保持后量子 ML-KEM-768，保证 URL 与客户端全兼容)..."
-if ! VLESSENC_OUTPUT=$(xray vlessenc 2>&1) || ! grep -qi "encryption" <<< "$VLESSENC_OUTPUT"; then
-  error "VLESS Encryption 密钥生成失败，请确保 Xray 版本支持 vlessenc。输出: $VLESSENC_OUTPUT"
-fi
-VLESSENC_ENCRYPTION=$(echo "$VLESSENC_OUTPUT" | awk -F'"' '/Authentication: X25519/{found=1} found && /"encryption"/{print $4; exit}')
-VLESSENC_DECRYPTION=$(echo "$VLESSENC_OUTPUT" | awk -F'"' '/Authentication: X25519/{found=1} found && /"decryption"/{print $4; exit}')
-[[ -z "$VLESSENC_ENCRYPTION" ]] && error "未能提取 VLESS Encryption Key，xray vlessenc 输出: $VLESSENC_OUTPUT"
-[[ -z "$VLESSENC_DECRYPTION" ]] && error "未能提取 VLESS Decryption Key，xray vlessenc 输出: $VLESSENC_OUTPUT"
-# 8001 XHTTP 入站（所有经 CDN / Reality 回落的 XHTTP 节点共用）用的一对值
-if [[ "${FEATURE_XHTTP_VLESSENC:-true}" == true ]]; then
-  XHTTP_ENCRYPTION="$VLESSENC_ENCRYPTION"; XHTTP_DECRYPTION="$VLESSENC_DECRYPTION"
+if [[ "${FEATURE_XHTTP_VLESSENC:-false}" == true ]]; then
+  info "生成 VLESS Encryption 密钥 (X25519 认证，临时密钥交换保持后量子 ML-KEM-768)..."
+  if VLESSENC_OUTPUT=$(xray vlessenc 2>&1) && grep -qi "encryption" <<< "$VLESSENC_OUTPUT"; then
+    VLESSENC_ENCRYPTION=$(echo "$VLESSENC_OUTPUT" | awk -F'"' '/Authentication: X25519/{found=1} found && /"encryption"/{print $4; exit}')
+    VLESSENC_DECRYPTION=$(echo "$VLESSENC_OUTPUT" | awk -F'"' '/Authentication: X25519/{found=1} found && /"decryption"/{print $4; exit}')
+  fi
+  XHTTP_ENCRYPTION="${VLESSENC_ENCRYPTION:-none}"
+  XHTTP_DECRYPTION="${VLESSENC_DECRYPTION:-none}"
 else
-  XHTTP_ENCRYPTION="none"; XHTTP_DECRYPTION="none"
+  info "配置 VLESS Encryption (设为 none，保证客户端全平台防 -1 兼容)..."
+  VLESSENC_ENCRYPTION="none"
+  VLESSENC_DECRYPTION="none"
+  XHTTP_ENCRYPTION="none"
+  XHTTP_DECRYPTION="none"
 fi
 SR_DECRYPTION="${SR_DECRYPTION:-none}"
 [[ "${FEATURE_XHTTP_VLESSENC_STRICT:-false}" == true ]] && SR_DECRYPTION="$XHTTP_DECRYPTION"

@@ -19,7 +19,7 @@ proxies:
       - h2
     servername: ${CDN_DOMAIN}
     client-fingerprint: chrome
-    encryption: ${XHTTP_ENCRYPTION}${MIHOMO_ECH_PROXY_BLOCK}
+    encryption: none${MIHOMO_ECH_PROXY_BLOCK}
     xhttp-opts:
       host: ${CDN_DOMAIN}
       path: ${XHTTP_PATH}
@@ -73,7 +73,7 @@ proxies:
       - h3
     servername: ${CDN_DOMAIN}
     client-fingerprint: chrome
-    encryption: ${XHTTP_ENCRYPTION}${MIHOMO_ECH_PROXY_BLOCK}
+    encryption: none${MIHOMO_ECH_PROXY_BLOCK}
     xhttp-opts:
       host: ${CDN_DOMAIN}
       path: ${XHTTP_PATH}
@@ -103,7 +103,7 @@ proxies:
       - h3
     servername: ${CDN_DOMAIN}
     client-fingerprint: chrome
-    encryption: ${XHTTP_ENCRYPTION}${MIHOMO_ECH_PROXY_BLOCK}
+    encryption: none${MIHOMO_ECH_PROXY_BLOCK}
     xhttp-opts:
       host: ${CDN_DOMAIN}
       path: ${XHTTP_PATH}
@@ -131,7 +131,7 @@ proxies:
       - h3
     servername: ${REALITY_DOMAIN}
     client-fingerprint: chrome
-    encryption: ${VLESSENC_ENCRYPTION}
+    encryption: none
     xhttp-opts:
       path: ${XHTTP_PATH}
       mode: stream-up${MIHOMO_XPADDING_XHTTP_BLOCK}${MIHOMO_SC_MIN_POSTS_BLOCK}
@@ -162,7 +162,7 @@ proxies:
       - h2
     servername: ${REALITY_DOMAIN}
     client-fingerprint: chrome
-    encryption: ${VLESSENC_ENCRYPTION}
+    encryption: none
     xhttp-opts:
       path: ${XHTTP_PATH}
       mode: stream-up${MIHOMO_XPADDING_XHTTP_BLOCK}${MIHOMO_SC_MIN_POSTS_BLOCK}
@@ -237,7 +237,7 @@ proxies:
     tls: true
     tfo: true
     packet-encoding: xudp
-    encryption: ${XHTTP_ENCRYPTION}
+    encryption: none
     network: xhttp
     alpn:
       - h2
@@ -267,7 +267,7 @@ proxies:
     tls: true
     tfo: true
     packet-encoding: xudp
-    encryption: ${XHTTP_ENCRYPTION}
+    encryption: none
     network: xhttp
     alpn:
       - h2
@@ -316,7 +316,7 @@ proxies:
     udp: true
     flow: ""
     tls: true
-    encryption: ${XHTTP_ENCRYPTION}
+    encryption: none
     network: xhttp
     # 上行腿 h3（v4.9.30 实测上行 11 → 102 Mbps）；mihomo 只在 alpn 恰好为 h3 时才走 HTTP/3
     alpn:

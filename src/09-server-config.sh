@@ -210,10 +210,10 @@ fi
 REALITY_VISION_CLIENT_JSON=""
 REALITY_XHTTP_FALLBACK_JSON=""
 if [[ "${FEATURE_REALITY_VISION:-false}" == true ]]; then
-  printf -v REALITY_VISION_CLIENT_JSON '\n        // >>xh:realityvision\n                    {\n                        "id": "%s",\n                        "level": 0,\n                        "flow": "%s"\n                    }\n        // <<xh:realityvision' "${UUID1}" "${VISION_FLOW:-xtls-rprx-vision}"
+  printf -v REALITY_VISION_CLIENT_JSON '\n        // >>xh:realityvision\n                    {\n                        "id": "%s",\n                        "level": 0,\n                        "flow": "%s"\n                    }\n        // <<xh:realityvision\n' "${UUID1}" "${VISION_FLOW:-xtls-rprx-vision}"
 fi
 if [[ "${FEATURE_REALITY_XHTTP:-true}" == true ]]; then
-  REALITY_XHTTP_FALLBACK_JSON=$'\n        // >>xh:realityxhttp\n                    {\n                        "dest": "127.0.0.1:8001",\n                        "xver": 0\n                    }\n        // <<xh:realityxhttp'
+  REALITY_XHTTP_FALLBACK_JSON=$'\n        // >>xh:realityxhttp\n                    {\n                        "dest": "127.0.0.1:8001",\n                        "xver": 0\n                    }\n        // <<xh:realityxhttp\n'
 fi
 
 # REALITY-PQ-Vision 直连节点（TCP 8447，核心节点 3）
@@ -234,7 +234,7 @@ xray_reality_pq_vision_inbound() {
                         "flow": "xtls-rprx-vision"
                     }
                 ],
-                "decryption": "${VLESSENC_DECRYPTION}"
+                "decryption": "${VLESSENC_DECRYPTION:-none}"
             },
             "streamSettings": {
                 "network": "raw",
@@ -261,12 +261,13 @@ xray_reality_pq_vision_inbound() {
             }
         }
         // <<xh:reality-pq-vision
+
 PQEOF
 }
 
 XRAY_REALITY_PQ_VISION_INBOUND=""
 if [[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
-  XRAY_REALITY_PQ_VISION_INBOUND="$(xray_reality_pq_vision_inbound)"
+  XRAY_REALITY_PQ_VISION_INBOUND="$(xray_reality_pq_vision_inbound)"$'\n'
 fi
 
 XRAY_H3_DIRECT_INBOUND=""
@@ -298,7 +299,7 @@ if [[ "$FEATURE_H3_DIRECT" == true ]]; then
                         "level": 0
                     }
                 ],
-                "decryption": "${VLESSENC_DECRYPTION}"
+                "decryption": "${VLESSENC_DECRYPTION:-none}"
             },
             "streamSettings": {
                 "network": "xhttp",
@@ -335,7 +336,7 @@ if [[ "$FEATURE_H3_DIRECT" == true ]]; then
             }
         }
 H3EOF
-)
+)"$'\n'
   info "已启用 h3-direct 直连节点: UDP ${H3_PORT}"
 fi
 
@@ -347,6 +348,7 @@ xray_h2_direct_inbound() {
   cat <<H2EOF
 ,
         {
+            "tag": "h2-direct",
             "listen": "${XRAY_LISTEN}",
             "port": ${H2_PORT},
             "protocol": "vless",
@@ -357,7 +359,7 @@ xray_h2_direct_inbound() {
                         "level": 0
                     }
                 ],
-                "decryption": "${VLESSENC_DECRYPTION}"
+                "decryption": "${VLESSENC_DECRYPTION:-none}"
             },
             "streamSettings": {
                 "network": "xhttp",
@@ -395,7 +397,7 @@ H2EOF
 
 if [[ "$FEATURE_H2_DIRECT" == true ]]; then
   # 带 xh 开关使用的成对标记，xh h2direct off 才能整块删除安装时写入的入站
-  XRAY_H2_DIRECT_INBOUND=$(printf '\n        // >>xh:h2direct\n%s\n        // <<xh:h2direct' "$(xray_h2_direct_inbound)")
+  XRAY_H2_DIRECT_INBOUND=$(printf '\n        // >>xh:h2direct\n%s\n        // <<xh:h2direct\n' "$(xray_h2_direct_inbound)")
   info "已启用 h2-direct 直连节点: TCP ${H2_PORT}"
 fi
 
@@ -485,7 +487,7 @@ HY2EOF
 
 if [[ "$FEATURE_HY2" == true ]]; then
   if [[ "${FEATURE_HY2_OBFS:-false}" == true ]]; then
-  XRAY_HY2_INBOUND=$(printf '\n        // >>xh:hy2obfs\n%s\n        // <<xh:hy2obfs' "$(xray_hy2_obfs_inbound)")
+  XRAY_HY2_INBOUND=$(printf '\n        // >>xh:hy2obfs\n%s\n        // <<xh:hy2obfs\n' "$(xray_hy2_obfs_inbound)")
   info "已启用 Hysteria2-obfs 节点: UDP ${HY2_PORT}（Salamander 混淆，FEATURE_HY2_OBFS=true）"
   fi
 
@@ -575,7 +577,7 @@ HY2H3EOF
 }
 
 if [[ "$FEATURE_HY2_H3" == true ]]; then
-  XRAY_HY2_H3_INBOUND=$(printf '\n        // >>xh:hy2h3\n%s\n        // <<xh:hy2h3' "$(xray_hy2_h3_inbound)")
+  XRAY_HY2_H3_INBOUND=$(printf '\n        // >>xh:hy2h3\n%s\n        // <<xh:hy2h3\n' "$(xray_hy2_h3_inbound)")
   info "已启用 Hysteria2-H3 直连节点: UDP ${HY2_H3_PORT}（无混淆，标准 HTTP/3 形态）"
 fi
 fi
@@ -630,7 +632,7 @@ MASQUEEOF
 
 XRAY_MASQUE_INBOUND=""
 if [[ "$FEATURE_MASQUE" == true ]]; then
-  XRAY_MASQUE_INBOUND=$(printf '\n        // >>xh:masque\n%s\n        // <<xh:masque' "$(xray_masque_inbound)")
+  XRAY_MASQUE_INBOUND=$(printf '\n        // >>xh:masque\n%s\n        // <<xh:masque\n' "$(xray_masque_inbound)")
   info "已启用 MASQUE 标准 L3 隧道 (RFC 9484): UDP/TCP ${MASQUE_PORT}"
 fi
 
@@ -669,7 +671,7 @@ XDRIVEEOF
 
 XRAY_XDRIVE_INBOUND=""
 if [[ "$FEATURE_XDRIVE" == true && -n "${XDRIVE_FOLDER:-}" && -n "${XDRIVE_CLIENT_ID:-}" ]]; then
-  XRAY_XDRIVE_INBOUND=$(printf '\n        // >>xh:xdrive\n%s\n        // <<xh:xdrive' "$(xray_xdrive_inbound)")
+  XRAY_XDRIVE_INBOUND=$(printf '\n        // >>xh:xdrive\n%s\n        // <<xh:xdrive\n' "$(xray_xdrive_inbound)")
   info "已启用 XDRIVE 网盘穿透代理 (Google Drive)"
 fi
 
