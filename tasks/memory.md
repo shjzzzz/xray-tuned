@@ -786,19 +786,16 @@
     3. 重新构建 `dist/install.sh` 并热更新宿主机 `/usr/local/bin/xh`。
 
 ## 39. Debian/Ubuntu 自适应、上游语法热修复与客户端防 -1 兼容调优 (2026-10-23)
-- **Debian 与 Ubuntu 双系统深度自适应**：
-  - 补齐最小化系统工具检测：自动安装 `iptables`、`ip6tables`、`curl`、`file`、`python3-yaml` 等，避免缺失基础网络工具导致环境检测或管理命令异常；
-  - 维护非交互式包管理器行为（`DEBIAN_FRONTEND=noninteractive`），确保双平台无感一键安装。
+- **Debian / Ubuntu 双系统自适应**：
+  - 自动检测并补齐基础依赖（`iptables`、`ip6tables`、`curl`、`file`、`python3-yaml` 等），全流程强制 `DEBIAN_FRONTEND=noninteractive`，确保跨平台一键无感安装。
 - **上游语法热修复**：
-  1. **Nginx map 正则花括号加引号**：
-     - 在 `templates/nginx.conf.tmpl` 中，将 map 指令中的正则 `~^[0-9]{1,3}\...` 与 `~^[0-9a-fA-F:]+\$` 严格包裹在双引号中（`"~^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\$"`），彻底消除新版 Nginx 解析未加引号的 `{1,3}` 报 `unexpected "{"` 导致的解析崩溃。
-  2. **入站拼接换行符保护**：
-     - 修复 `templates/xray-config.json.tmpl`、`src/09-server-config.sh` 及 `src/13-manage-cli.sh` 中拼接入站时末尾单行注释（`// <<xh:...`）无独立换行吞掉紧随其后的逗号 `,` 或闭合括号 `]` 导致 Xray JSON 配置校验失败的问题，保证所有动态入站及标记行结尾包含完整独立换行。
+  - **Nginx map 正则花括号加引号**：`templates/nginx.conf.tmpl` 中将 IP 匹配正则显式加双引号（`"~^[0-9]{1,3}\..."`），修复新版 Nginx 解析 `{1,3}` 报 `unexpected "{"` 导致的崩溃。
+  - **入站拼接换行符保护**：在 `templates/xray-config.json.tmpl`、`src/09-server-config.sh` 及 `src/13-manage-cli.sh` 中为动态入站末尾注释行（`// <<xh:...`）强制附加独立换行，杜绝吞掉后续闭合符导致 Xray JSON 校验失败。
 - **客户端防 -1 兼容调优**：
-  - 将所有 VLESS 节点的底层 `encryption` 继续设为 `none`，彻底杜绝 v2rayN、Clash Meta / Mihomo、小火箭因解析不了嵌套的 ML-KEM-768 后量子格密码而测速报 `-1` 的致命缺陷；
-  - 外部 TLS / REALITY 握手层继续保持抗量子破解的 X25519MLKEM768 密钥交换，兼顾前沿安全与多端零报错兼容。
-- **甲骨文云 (Oracle Cloud OCI) 防火墙端口保护**：
-  - 强化 `ensure_firewall_ports` 函数，针对 Oracle Cloud VCN 安全列表与实例内置 iptables 规则，在初始与动态端口生成后统一使用 `iptables -I INPUT 1` 优先插入放行规则（覆盖 80、443、8443、8445、8446、8447、动态 Hy2/MASQUE 端口及 10489、10800-10809、11801-11806、18793、23106、27295、28443 等 OCI 保护端口），杜绝流量被系统默认 REJECT 拦截。
+  - 所有 VLESS 节点的 `encryption` 保持设为 `none`，彻底杜绝 v2rayN、Clash Meta / Mihomo、小火箭因解析不了嵌套的 ML-KEM-768 后量子格密码而测速报 `-1`；
+  - 外部 TLS/REALITY 握手层继续保留抗量子密钥交换，兼顾前沿安全与全客户端零报错兼容。
+- **甲骨文云 (OCI) 防火墙端口保护**：
+  - 强化 `ensure_firewall_ports`，使用 `iptables -I INPUT 1` 优先置顶放行全部服务端口与 OCI 预留端口（80、443、8443、8445-8447、动态 Hy2/MASQUE、10489、10800-10809、11801-11806、18793、23106、27295、28443 等），防止流量被系统内置默认 REJECT 拦截。
 
 
 
