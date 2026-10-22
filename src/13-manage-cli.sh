@@ -4639,18 +4639,15 @@ cmd_menu() {
     echo " 19) Reality 时间差校验 maxTimeDiff (show / on [毫秒] / off)"
     echo " 20) XHTTP-Direct-H2（TCP 直连），默认开启 (show / on / off)"
     echo " 21) Hysteria2 节点与混淆管理 (show / on / off / obfs on|off)"
-    echo " 22) MASQUE 标准 L3 隧道 (show / on / off)"
-    echo " 23) XDRIVE 网盘穿透代理 (show / setup / on / off)"
-    echo " 24) Finalmask Noise exp 动态混淆 (show / on / off / set)"
-    echo " 25) 备用节点 上行 Reality / 下行 CDN，默认关闭 (show / on / off)"
-    echo " 26) 备用节点 上行 CDN / 下行 Reality (show / on / off)"
-    echo " 27) 重新生成全量订阅 (resub)"
-    echo " 28) 证书续期方式查看 / 切换 DNS-01 (cert: show / dnscf)"
-    echo " 29) Nginx 版本检查与升级 (nginx: show / check / update)"
-    echo " 30) Reality 节点管理 (show / vision on|off / xhttp on|off / updown on|off)"
-    echo " 31) Cloudflare CDN 优选 IP (bestcf: 锁定当前IP / 自主控制 / 定时轮换)"
-    echo " 32) Cloudflare Argo 隧道与 WARP (argo / warp: status / update / on / off)"
-    echo " 33) 卸载"
+    echo " 22) 备用节点 上行 Reality / 下行 CDN，默认关闭 (show / on / off)"
+    echo " 23) 备用节点 上行 CDN / 下行 Reality (show / on / off)"
+    echo " 24) 重新生成全量订阅 (resub)"
+    echo " 25) 证书续期方式查看 / 切换 DNS-01 (cert: show / dnscf)"
+    echo " 26) Nginx 版本检查与升级 (nginx: show / check / update)"
+    echo " 27) Reality 节点管理 (show / vision on|off / xhttp on|off / updown on|off)"
+    echo " 28) Cloudflare CDN 优选 IP (bestcf: 锁定当前IP / 自主控制 / 定时轮换)"
+    echo " 29) Cloudflare Argo 隧道与 WARP (argo / warp: status / update / on / off)"
+    echo " 30) 卸载"
     echo "  0) 退出"
     read -rp "请选择: " choice
     case "$choice" in
@@ -4693,48 +4690,13 @@ cmd_menu() {
           *)                    cmd_hy2 "${a:-show}" ;;
         esac
         ;;
-      22) read -rp "  show / on / off: " a; ( cmd_masque "${a:-show}" ) ;;
-      23)
-        echo ""
-        echo -e "${CYAN}--- XDRIVE 网盘代理操作选择 ---${NC}"
-        echo "  1) 查看 XDRIVE 状态 (show)"
-        echo "  2) 配置 Google Drive 凭证 (setup)"
-        echo "  3) 开启 XDRIVE 网盘穿透入站 (on)"
-        echo "  4) 关闭 XDRIVE 网盘穿透入站 (off)"
-        read -rp "请选择 [1-4 或输入指令，直接回车查看状态]: " a
-        case "$a" in
-          1|show|"")  cmd_xdrive show ;;
-          2|setup)    cmd_xdrive setup ;;
-          3|on)       cmd_xdrive on ;;
-          4|off)      cmd_xdrive off ;;
-          *)          cmd_xdrive "${a:-show}" ;;
-        esac
-        ;;
-      24)
-        echo ""
-        echo -e "${CYAN}--- Finalmask Noise exp 动态混淆操作选择 ---${NC}"
-        echo "  1) 查看 Noise 状态与模板 (show)"
-        echo "  2) 开启 Noise 动态混淆 (on)"
-        echo "  3) 关闭 Noise 动态混淆 (off)"
-        echo "  4) 自定义数据包表达式与延时 (set)"
-        read -rp "请选择 [1-4 或输入指令，直接回车查看状态]: " a
-        case "$a" in
-          1|show|"")  cmd_noise show ;;
-          2|on)       cmd_noise on ;;
-          3|off)      cmd_noise off ;;
-          4|set)      read -rp "请输入数据包表达式 (回车默认: <b 16030100><r 32><t><c><rd 8>): " p
-                      read -rp "请输入延时范围毫秒 (回车默认: 10-50): " d
-                      cmd_noise set "$p" "$d" ;;
-          *)          cmd_noise "${a:-show}" ;;
-        esac
-        ;;
-      25) read -rp "  show / on / off: " a; ( cmd_split reality-up "${a:-show}" ) ;;
-      26) read -rp "  show / on / off: " a; ( cmd_split cdn-up "${a:-show}" ) ;;
-      27) cmd_resub ;;
-      28) read -rp "  show / dnscf: " a; cmd_cert "${a:-show}" ;;
-      29) read -rp "  show / check / update: " a; cmd_nginx "${a:-show}" ;;
-      30) read -rp "  show / vision on|off / xhttp on|off / updown on|off: " a; ( cmd_reality ${a:-show} ) ;;
-      31)
+      22) read -rp "  show / on / off: " a; ( cmd_split reality-up "${a:-show}" ) ;;
+      23) read -rp "  show / on / off: " a; ( cmd_split cdn-up "${a:-show}" ) ;;
+      24) cmd_resub ;;
+      25) read -rp "  show / dnscf: " a; cmd_cert "${a:-show}" ;;
+      26) read -rp "  show / check / update: " a; cmd_nginx "${a:-show}" ;;
+      27) read -rp "  show / vision on|off / xhttp on|off / updown on|off: " a; ( cmd_reality ${a:-show} ) ;;
+      28)
         echo ""
         echo -e "${CYAN}--- Cloudflare 优选 IP 操作菜单 (自主控制) ---${NC}"
         echo "  1) 查看当前状态与解析 (show)"
@@ -4763,7 +4725,7 @@ cmd_menu() {
           *)          cmd_bestcf "${a:-show}" ;;
         esac
         ;;
-      32)
+      29)
         echo ""
         echo -e "${CYAN}--- Cloudflare 隧道与出站选择 ---${NC}"
         echo "  1) 查看 Argo 隧道状态 (argo status)"
@@ -4781,7 +4743,7 @@ cmd_menu() {
           *)           cmd_argo "${a:-status}" ;;
         esac
         ;;
-      33) cmd_uninstall; break ;;
+      30) cmd_uninstall; break ;;
       0) break ;;
       *) warn "无效选择" ;;
     esac
@@ -4813,9 +4775,6 @@ xray-xhttp 管理命令
   xh h2direct [show|on|off]         XHTTP-Direct-H2（TCP 直连，默认开启），开启时加服务端入站并放行端口
   xh hy2 [show|on|off]              Hysteria2 直连节点开关（随机高 UDP 端口，默认安装），关闭时连同混淆节点一起移除
   xh hy2 obfs [show|on|off]         Hysteria2 混淆节点（salamander 混淆，需先开 hy2；别名: xh hy2obfs）
-  xh masque [show|on|off]           MASQUE 标准 L3 隧道 (RFC 9484 CONNECT-IP, UDP/TCP 8447)
-  xh xdrive [show|setup|on|off]     XDRIVE 网盘穿透代理 (Google Drive 中继，零公网 IP 穿透)
-  xh noise [show|on|off|links|sync|set <exp>]  Finalmask Noise exp 动态混淆 (抗 DPI 模板标签)
   xh split [show|reality-up on|off|cdn-up on|off]  上下行分离两条（纯客户端链接；两条都是默认关闭的备用节点）
   xh block [show|cn on|off|ads on|off]  出站屏蔽回国 IP / 广告域名（默认关闭）
   xh timediff [show|on [毫秒]|off]  Reality maxTimeDiff 时间差校验（默认关闭）
