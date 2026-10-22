@@ -994,7 +994,7 @@ cmd_update() {
 
   local ok=0
   if [[ "${OS_ID:-}" != "alpine" ]]; then
-    bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --version "v${latest}" -u root && ok=1
+    bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --version "v${latest}" && ok=1
   else
     local arch asset tmpdir
     arch=$(uname -m)

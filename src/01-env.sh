@@ -36,7 +36,7 @@ PROJECT_NAME="xray-xhttp"
 PROJECT_VERSION="5.0.9"
 PROJECT_REPO="shjzzzz/xray-tuned"
 # 默认推荐的 Xray-core 版本：升级至最新稳定/前沿版 v26.9.30（具备 XDRIVE 云盘代理、MASQUE、Finalmask Noise exp、WFP 防泄露等特性）。
-XRAY_DEFAULT_VERSION="26.10.10"
+XRAY_DEFAULT_VERSION="26.9.30"
 MANAGE_CMD="xh"
 MANAGE_BIN="/usr/local/bin/${MANAGE_CMD}"
 STATE_DIR="/etc/xhttp-cdn"

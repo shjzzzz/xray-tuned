@@ -199,7 +199,7 @@ install_xray() {
           if [[ "$OS_ID" != "alpine" ]]; then
             local install_flag=""
             [[ -n "$target_ver" && "$target_ver" != "latest" ]] && install_flag="--version v${target_ver#v}"
-            bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install $install_flag -u root \
+            bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install $install_flag \
               || warn "自动升级失败，将按现有版本继续（两个直连 UDP 节点会被关闭）"
             info "升级后版本: $(/usr/local/bin/xray version 2>/dev/null | head -1 || echo unknown)"
           else
@@ -234,7 +234,7 @@ install_xray() {
     local target_ver="$(resolve_xray_target_ver)"
     local install_flag=""
     [[ -n "$target_ver" && "$target_ver" != "latest" ]] && install_flag="--version v${target_ver#v}"
-    bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install $install_flag -u root
+    bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install $install_flag
     return
   fi
 

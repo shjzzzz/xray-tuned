@@ -6,6 +6,7 @@ info "[5/7] 启动服务"
 
 info "配置证书自动续签命令..."
 mkdir -p /etc/ssl/private
+  chmod 755 /etc/ssl/private 2>/dev/null || true
 # 证书文件必须先落地，nginx -t 才能加载，所以 install-cert 只能排在前面。
 # 但它的 reloadcmd 会先于我们自己的 nginx -t 重启 nginx：配置有错时 acme 只会打印
 # "Reload error"，真正的 nginx 报错被吞掉。因此这里让 reloadcmd 自带 nginx -t，
@@ -30,6 +31,8 @@ acme.sh --install-cert -d "$REALITY_DOMAIN" --ecc \
   --fullchain-file /etc/ssl/private/fullchain.cer \
   --reloadcmd "/usr/local/sbin/xh-trim-chain /etc/ssl/private/fullchain.cer 2>/dev/null || true; nginx -t && ${NGINX_RESTART_CMD} && { ${XRAY_RESTART_CMD} || true; }; { command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet hysteria-server 2>/dev/null && systemctl restart hysteria-server; } || true" || \
   warn "acme.sh reloadcmd 返回非零，下面的 Nginx 自检会给出具体原因"
+  chmod 755 /etc/ssl/private 2>/dev/null || true
+  chmod 644 /etc/ssl/private/* 2>/dev/null || true
 
 info "测试 Nginx 配置..."
 nginx -t || error "Nginx 配置有误，具体报错见上方 nginx -t 输出"

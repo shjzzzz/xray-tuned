@@ -48,5 +48,13 @@ while [ "$i" -le "$keep" ]; do cat "$d/c$i.pem" >> "$tmp"; i=$((i+1)); done
 before=$(wc -c < "$f"); after=$(wc -c < "$tmp")
 cp -f "$f" "$f.full" 2>/dev/null
 cat "$tmp" > "$f"
-chmod 600 "$f" "$f.full" 2>/dev/null
+chmod 644 "$f" "$f.full" 2>/dev/null
 echo "证书链已裁剪：$n → $keep 张（${before} → ${after} 字节，每次握手少传 $((before-after)) 字节）"
+
+# 同步证书至 sbbox (sing-box) 并重载
+if [ -d "/root/sbbox/cert" ]; then
+  cp -f "$f" /root/sbbox/cert/fullchain.cer 2>/dev/null || true
+  key_file="$(dirname "$f")/private.key"
+  [ -f "$key_file" ] && cp -f "$key_file" /root/sbbox/cert/private.key 2>/dev/null || true
+  command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet sbbox && systemctl restart sbbox 2>/dev/null || true
+fi
