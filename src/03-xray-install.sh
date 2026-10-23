@@ -28,7 +28,7 @@ resolve_xray_target_ver() {
   local url="https://api.github.com/repos/XTLS/Xray-core/releases" tag
   [[ "${XRAY_CHANNEL:-stable}" != "prerelease" ]] && url="${url}/latest"
   tag=$(curl -fsSL --max-time 15 "$url" 2>/dev/null | grep -m1 '"tag_name"' | cut -d'"' -f4)
-  printf '%s' "${tag#v}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' && printf '%s' "${tag#v}" || printf '%s' "${XRAY_DEFAULT_VERSION:-26.9.30}"
+  printf '%s' "${tag#v}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' && printf '%s' "${tag#v}" || printf '%s' "${XRAY_DEFAULT_VERSION:-26.10.21}"
 }
 
 ver_ge() {
@@ -239,7 +239,7 @@ install_xray() {
         info "残留进程已清理"
       fi
     fi
-    # 默认安装锁定版本（默认 v26.9.30 最新特性版本，支持 XDRIVE、MASQUE 等新特性）
+    # 按通道自适应取最新版（stable 取 GitHub 正式版 latest，失败回退 XRAY_DEFAULT_VERSION）
     local target_ver="$(resolve_xray_target_ver)"
     local install_flag=""
     [[ -n "$target_ver" && "$target_ver" != "latest" ]] && install_flag="--version v${target_ver#v}"

@@ -46,8 +46,9 @@ fi
 PROJECT_NAME="xray-xhttp"
 PROJECT_VERSION="5.1.2"
 PROJECT_REPO="shjzzzz/xray-tuned"
-# 默认推荐的 Xray-core 版本：升级至最新稳定/前沿版 v26.9.30（具备 XDRIVE 云盘代理、MASQUE、Finalmask Noise exp、WFP 防泄露等特性）。
-XRAY_DEFAULT_VERSION="26.9.30"
+# 默认推荐的 Xray-core 版本：回退版本 v26.10.21（含 v26.9.30 起的 XDRIVE / MASQUE / Noise / WFP 特性，并移除了 3 张被攻破的中间 CA 根证书；
+# v26.10.10 / v26.10.17 已被官方撤版）。正常情况下按通道（stable=/releases/latest）自适应取最新，查询失败才用它。
+XRAY_DEFAULT_VERSION="26.10.21"
 MANAGE_CMD="xh"
 MANAGE_BIN="/usr/local/bin/${MANAGE_CMD}"
 STATE_DIR="/etc/xhttp-cdn"
@@ -123,11 +124,11 @@ FEATURE_HY2_OBFS=${FEATURE_HY2_OBFS:-true}
 HY2_H3_PORT=${HY2_H3_PORT:-}
 HY2_PORT=${HY2_PORT:-}
 
-# FEATURE_CDN_H2：是否生成经 CDN 的 TCP(h2) 节点 VLESS-XHTTP-CDN-H2（默认关闭；需要时 FEATURE_CDN_H2=true 或装好后 xh cdnh2 on）。
-FEATURE_CDN_H2=${FEATURE_CDN_H2:-false}
+# FEATURE_CDN_H2：是否生成经 CDN 的 TCP(h2) 节点 VLESS-XHTTP-CDN-H2（默认开启；需要关闭时 FEATURE_CDN_H2=false 或装好后 xh cdnh2 off）。
+FEATURE_CDN_H2=${FEATURE_CDN_H2:-true}
 
-# FEATURE_CDN_H3：是否生成经 CDN 的 QUIC(h3) 节点 VLESS-XHTTP-CDN-H3（默认关闭；需要时 FEATURE_CDN_H3=true 或装好后 xh cdnh3 on）。
-FEATURE_CDN_H3=${FEATURE_CDN_H3:-false}
+# FEATURE_CDN_H3：是否生成经 CDN 的 QUIC(h3) 节点 VLESS-XHTTP-CDN-H3（默认开启；需要关闭时 FEATURE_CDN_H3=true 或装好后 xh cdnh3 off）。
+FEATURE_CDN_H3=${FEATURE_CDN_H3:-true}
 
 # FEATURE_BLOCK_CN / FEATURE_BLOCK_ADS（v4.9.53，默认关闭）：出站屏蔽回国 IP（geoip:cn）/ 广告域名
 # （geosite:category-ads-all），参考 zxcvos/Xray-script 的可选规则。运行期用 xh block cn|ads on|off 切换。
@@ -192,6 +193,10 @@ XDRIVE_FOLDER=${XDRIVE_FOLDER:-""}
 XDRIVE_CLIENT_ID=${XDRIVE_CLIENT_ID:-""}
 XDRIVE_CLIENT_SECRET=${XDRIVE_CLIENT_SECRET:-""}
 XDRIVE_REFRESH_TOKEN=${XDRIVE_REFRESH_TOKEN:-""}
+# Xray >= 26.10.17：XDRIVE 只接受 VLESS + VLESS Encryption（无 flow），客户端必须开 mux；service 名改为 google-drive。
+# 密钥对由 xray vlessenc 生成（X25519 认证），留空时开启 XDRIVE 自动生成。
+XDRIVE_ENCRYPTION=${XDRIVE_ENCRYPTION:-""}
+XDRIVE_DECRYPTION=${XDRIVE_DECRYPTION:-""}
 
 # FEATURE_NOISE_EXP: Finalmask Noise dynamic expression 动态模板混淆（防 UDP DPI 识别）
 FEATURE_NOISE_EXP=${FEATURE_NOISE_EXP:-false}

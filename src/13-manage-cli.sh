@@ -931,6 +931,10 @@ cmd_update() {
   current=$("$XRAY_BIN" version 2>/dev/null | head -1 | awk '{print $2}')
   current="${current#v}"
 
+  case "$current" in
+    26.10.10|26.10.17) warn "当前 Xray ${current} 内置了已被攻破的根证书，官方已撤版，请尽快升级到 26.10.21 或更新版本" ;;
+  esac
+
   local force_channel=""
   if [[ "$target_ver" == "pre" || "$target_ver" == "prerelease" ]]; then
     force_channel="prerelease"
@@ -954,7 +958,7 @@ cmd_update() {
         | grep -m1 '"tag_name"' | cut -d'"' -f4)
     fi
     latest="${latest#v}"
-    [[ -z "$latest" ]] && latest="${XRAY_DEFAULT_VERSION:-26.3.27}"
+    [[ -z "$latest" ]] && latest="${XRAY_DEFAULT_VERSION:-26.10.21}"
   fi
 
   if [[ -z "$latest" ]]; then
@@ -3747,12 +3751,27 @@ cmd_hy2() {
   esac
 }
 
+# 确保 XDRIVE 的 VLESS Encryption 密钥对存在（Xray >= 26.10.17 强制），缺失时用 xray vlessenc 生成并写入 node.env
+xdrive_ensure_keys() {
+  [[ -n "${XDRIVE_DECRYPTION:-}" && -n "${XDRIVE_ENCRYPTION:-}" ]] && return 0
+  local out enc dec
+  out=$(xray vlessenc 2>/dev/null) || fail "xray vlessenc 失败，无法生成 XDRIVE 加密密钥"
+  enc=$(awk -F'"' '/Authentication: X25519/{f=1} f && /"encryption"/{print $4; exit}' <<< "$out")
+  dec=$(awk -F'"' '/Authentication: X25519/{f=1} f && /"decryption"/{print $4; exit}' <<< "$out")
+  [[ -n "$enc" && -n "$dec" ]] || fail "解析 xray vlessenc 输出失败"
+  update_node_env XDRIVE_ENCRYPTION "$enc"
+  update_node_env XDRIVE_DECRYPTION "$dec"
+  export XDRIVE_ENCRYPTION="$enc" XDRIVE_DECRYPTION="$dec"
+}
+
 render_xdrive_inbound() {
+  xdrive_ensure_keys
   cat <<XDRIVEEOF
 ,
         {
             "tag": "vless-xdrive",
-            "port": 0,
+            "listen": "127.0.0.1",
+            "port": 1,
             "protocol": "vless",
             "settings": {
                 "clients": [
@@ -3761,12 +3780,12 @@ render_xdrive_inbound() {
                         "level": 0
                     }
                 ],
-                "decryption": "none"
+                "decryption": "${XDRIVE_DECRYPTION}"
             },
             "streamSettings": {
                 "network": "xdrive",
                 "xdriveSettings": {
-                    "service": "Google Drive",
+                    "service": "google-drive",
                     "remoteFolder": "${XDRIVE_FOLDER:-unknown}",
                     "secrets": [
                         "${XDRIVE_CLIENT_ID:-unknown}",
@@ -3780,6 +3799,7 @@ XDRIVEEOF
 }
 
 generate_xdrive_client_config() {
+  xdrive_ensure_keys
   local target="${USER_HOME:-/root}/xdrive-client.json"
   cat > "$target" <<XCEOF
 {
@@ -3796,16 +3816,17 @@ generate_xdrive_client_config() {
                         "users": [
                             {
                                 "id": "${UUID2}",
-                                "encryption": "none"
+                                "encryption": "${XDRIVE_ENCRYPTION}"
                             }
                         ]
                     }
                 ]
             },
+            "mux": { "enabled": true },
             "streamSettings": {
                 "network": "xdrive",
                 "xdriveSettings": {
-                    "service": "Google Drive",
+                    "service": "google-drive",
                     "remoteFolder": "${XDRIVE_FOLDER:-your_folder_id}",
                     "secrets": [
                         "${XDRIVE_CLIENT_ID:-your_client_id}",

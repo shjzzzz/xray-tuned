@@ -636,13 +636,23 @@ if [[ "$FEATURE_MASQUE" == true ]]; then
   info "已启用 MASQUE 标准 L3 隧道 (RFC 9484): UDP/TCP ${MASQUE_PORT}"
 fi
 
-# XDRIVE 网盘穿透代理 (Google Drive 中继, Xray v26.9.30+)
+# XDRIVE 网盘穿透代理 (Google Drive 中继, Xray v26.9.30+；v26.10.17+ 强制 VLESS Encryption + 客户端 mux)
+xdrive_ensure_keys() {
+  [[ -n "${XDRIVE_DECRYPTION:-}" && -n "${XDRIVE_ENCRYPTION:-}" ]] && return 0
+  local out
+  out=$(xray vlessenc 2>/dev/null) || return 1
+  XDRIVE_ENCRYPTION=$(awk -F'"' '/Authentication: X25519/{f=1} f && /"encryption"/{print $4; exit}' <<< "$out")
+  XDRIVE_DECRYPTION=$(awk -F'"' '/Authentication: X25519/{f=1} f && /"decryption"/{print $4; exit}' <<< "$out")
+  [[ -n "$XDRIVE_ENCRYPTION" && -n "$XDRIVE_DECRYPTION" ]]
+}
+
 xray_xdrive_inbound() {
   cat <<XDRIVEEOF
 ,
         {
             "tag": "vless-xdrive",
-            "port": 0,
+            "listen": "127.0.0.1",
+            "port": 1,
             "protocol": "vless",
             "settings": {
                 "clients": [
@@ -651,12 +661,12 @@ xray_xdrive_inbound() {
                         "level": 0
                     }
                 ],
-                "decryption": "none"
+                "decryption": "${XDRIVE_DECRYPTION:-none}"
             },
             "streamSettings": {
                 "network": "xdrive",
                 "xdriveSettings": {
-                    "service": "Google Drive",
+                    "service": "google-drive",
                     "remoteFolder": "${XDRIVE_FOLDER:-unknown}",
                     "secrets": [
                         "${XDRIVE_CLIENT_ID:-unknown}",
@@ -670,7 +680,9 @@ XDRIVEEOF
 }
 
 XRAY_XDRIVE_INBOUND=""
-if [[ "$FEATURE_XDRIVE" == true && -n "${XDRIVE_FOLDER:-}" && -n "${XDRIVE_CLIENT_ID:-}" ]]; then
+if [[ "$FEATURE_XDRIVE" == true && -n "${XDRIVE_FOLDER:-}" && -n "${XDRIVE_CLIENT_ID:-}" ]] && ! xdrive_ensure_keys; then
+  warn "XDRIVE 需要 VLESS Encryption 密钥（xray vlessenc 失败），已跳过 XDRIVE 入站"
+elif [[ "$FEATURE_XDRIVE" == true && -n "${XDRIVE_FOLDER:-}" && -n "${XDRIVE_CLIENT_ID:-}" ]]; then
   XRAY_XDRIVE_INBOUND=$(printf '\n        // >>xh:xdrive\n%s\n        // <<xh:xdrive\n' "$(xray_xdrive_inbound)")
   info "已启用 XDRIVE 网盘穿透代理 (Google Drive)"
 fi
@@ -771,6 +783,8 @@ info "写入 ${NODE_ENV_FILE} ..."
   printf 'XDRIVE_CLIENT_ID=%q\n'       "${XDRIVE_CLIENT_ID:-}"
   printf 'XDRIVE_CLIENT_SECRET=%q\n'   "${XDRIVE_CLIENT_SECRET:-}"
   printf 'XDRIVE_REFRESH_TOKEN=%q\n'   "${XDRIVE_REFRESH_TOKEN:-}"
+  printf 'XDRIVE_ENCRYPTION=%q\n'     "${XDRIVE_ENCRYPTION:-}"
+  printf 'XDRIVE_DECRYPTION=%q\n'     "${XDRIVE_DECRYPTION:-}"
   printf 'FEATURE_NOISE_EXP=%q\n'      "${FEATURE_NOISE_EXP:-false}"
   printf 'FEATURE_NOISE_LINKS=%q\n'    "${FEATURE_NOISE_LINKS:-false}"
   printf 'FEATURE_REALITY_VISION=%q\n'  "${FEATURE_REALITY_VISION:-true}"

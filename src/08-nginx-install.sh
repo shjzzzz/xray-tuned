@@ -3,7 +3,22 @@
 # ==================================================
 
 info "[3/7] 编译安装 Nginx"
-NGINX_VER="1.31.6"
+# 默认跟随 nginx.org 最新 mainline；NGINX_VERSION 可显式指定；查询失败回退 NGINX_FALLBACK_VER。
+# 1.31.7 起修复 5 个安全漏洞（alias/rewrite 缓冲区溢出、HTTP/3 请求体绕过、会话票据密钥未初始化等），不接受更低版本。
+NGINX_FALLBACK_VER="1.31.8"
+NGINX_MIN_VER="1.31.7"
+resolve_nginx_ver() {
+  [[ -n "${NGINX_VERSION:-}" ]] && { printf '%s' "$NGINX_VERSION"; return; }
+  local v
+  v=$(curl -fsSL --max-time 20 https://nginx.org/en/download.html 2>/dev/null \
+    | sed 's/Stable version.*//' | grep -o 'nginx-[0-9][0-9.]*\.tar\.gz' | head -1 \
+    | sed 's/^nginx-//; s/\.tar\.gz$//')
+  [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || v="$NGINX_FALLBACK_VER"
+  # 查询结果低于下限（页面异常）时同样回退
+  [[ "$(printf '%s\n%s\n' "$v" "$NGINX_MIN_VER" | sort -V | head -1)" == "$NGINX_MIN_VER" ]] || v="$NGINX_FALLBACK_VER"
+  printf '%s' "$v"
+}
+NGINX_VER="$(resolve_nginx_ver)"
 NGINX_PGP_KEYS="${NGINX_PGP_KEYS:-pluknet arut thresh sb}"
 NGINX_PGP_FPRS="${NGINX_PGP_FPRS:-D6786CE303D9A9022998DC6CC8464D549AF75C0A 43387825DDB1BB97EC36BA5D007C8D7C15D87369 13C82A63B603576156E30A4EA0EA981B66B0D967 7338973069ED3F443F4D37DFA64FD5B17ADB39A8}"
 
@@ -130,10 +145,12 @@ SERVICEEOF
   echo ""
 }
 
-if command -v nginx >/dev/null 2>&1 &&
-   nginx -v 2>&1 | grep -Fq "nginx/${NGINX_VER}" &&
+# 已装版本 >= 目标版本即跳过（不降级）；低于 NGINX_MIN_VER 视为需要重装
+nginx_cur_ver=$(nginx -v 2>&1 | sed -n 's|.*nginx/||p')
+if command -v nginx >/dev/null 2>&1 && [[ -n "$nginx_cur_ver" ]] &&
+   [[ "$(printf '%s\n%s\n' "$nginx_cur_ver" "$NGINX_VER" | sort -V | tail -1)" == "$nginx_cur_ver" ]] &&
    nginx -V 2>&1 | grep -q -- '--with-http_v3_module'; then
-  info "Nginx ${NGINX_VER} 已安装，跳过编译"
+  info "Nginx ${nginx_cur_ver} 已安装（目标 ${NGINX_VER}），跳过编译"
 else
   install_nginx
 fi
