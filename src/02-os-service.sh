@@ -4,11 +4,15 @@
 
 case "$OS_ID" in
   debian|ubuntu)
-    pkg_update()  { apt update -y; }
-    pkg_install() { apt install -y "$@"; }
+    # 非交互 + 等待 apt 锁（新机 unattended-upgrades/cloud-init 常占锁；needrestart 会弹框）
+    export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1
+    APT_OPTS=(-o DPkg::Lock::Timeout=300 -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef)
+    pkg_update()  { apt-get "${APT_OPTS[@]}" update; }
+    pkg_install() { apt-get "${APT_OPTS[@]}" install -y "$@"; }
     install_build_deps() {
-      apt-get install -y gcc g++ libpcre3 libpcre3-dev zlib1g zlib1g-dev openssl libssl-dev libcrypt-dev wget make 2>/dev/null || \
-        apt-get install -y gcc g++ libpcre2-dev zlib1g-dev libssl-dev libcrypt-dev wget make
+      # 优先 pcre2（Debian 13 已无 libpcre3），旧系统回退 pcre3
+      apt-get "${APT_OPTS[@]}" install -y gcc g++ libpcre2-dev zlib1g-dev libssl-dev libcrypt-dev wget make 2>/dev/null || \
+        apt-get "${APT_OPTS[@]}" install -y gcc g++ libpcre3-dev zlib1g-dev libssl-dev libcrypt-dev wget make
     }
     ;;
   centos|rhel|almalinux|rocky|ol|amzn)

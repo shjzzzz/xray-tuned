@@ -15,7 +15,8 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 # 支持 `bash install.sh key=value ...` 位置参数传入（与环境变量前缀等价，且彻底规避终端换行/转义断行报错）
 for arg in "$@"; do
   case "$arg" in
-    *=*) export "$arg" ;;
+    [A-Za-z_]*=*) export "$arg" ;;
+    *=*) warn "忽略无法识别的参数: $arg" ;;
   esac
 done
 
@@ -23,7 +24,17 @@ done
 
 if [[ -f /etc/os-release ]]; then
   . /etc/os-release
-  OS_ID="$ID"
+  OS_ID="${ID:-}"
+  case "$OS_ID" in
+    debian|ubuntu|centos|rhel|almalinux|rocky|ol|amzn|fedora|alpine|opensuse*|sles) ;;
+    *) for _l in ${ID_LIKE:-}; do
+         case "$_l" in
+           debian|ubuntu) OS_ID=$_l; break ;;
+           rhel|fedora|centos) OS_ID=$_l; break ;;
+           suse) OS_ID=sles; break ;;
+         esac
+       done ;;
+  esac
 else
   error "无法识别当前系统发行版"
 fi

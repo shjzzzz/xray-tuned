@@ -33,6 +33,11 @@ acme.sh --install-cert -d "$REALITY_DOMAIN" --ecc \
   warn "acme.sh reloadcmd 返回非零，下面的 Nginx 自检会给出具体原因"
   chmod 755 /etc/ssl/private 2>/dev/null || true
   chmod 644 /etc/ssl/private/* 2>/dev/null || true
+  # 私钥不对全体用户开放：存在 xray 组时仅 root:xray 可读
+  if getent group xray >/dev/null 2>&1; then
+    chown root:xray /etc/ssl/private/private.key 2>/dev/null || true
+    chmod 640 /etc/ssl/private/private.key 2>/dev/null || true
+  fi
 
 info "测试 Nginx 配置..."
 nginx -t || error "Nginx 配置有误，具体报错见上方 nginx -t 输出"

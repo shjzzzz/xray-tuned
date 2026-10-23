@@ -25,6 +25,7 @@ have_existing_dual_cert() {
   [[ -f "$ACME_CERT_HOME/fullchain.cer" ]] || return 1
   [[ -f "$ACME_CERT_HOME/${REALITY_DOMAIN}.key" ]] || return 1
 
+  openssl x509 -in "$ACME_CERT_HOME/fullchain.cer" -noout -checkend 1209600 >/dev/null 2>&1 || return 1  # 14 天内过期则重签
   local cert_domains
   cert_domains=$(openssl x509 -in "$ACME_CERT_HOME/fullchain.cer" -noout -ext subjectAltName 2>/dev/null | grep -o 'DNS:[^,[:space:]]*' | sed 's/^DNS://' || true)
   grep -Fxq "$REALITY_DOMAIN" <<< "$cert_domains" &&

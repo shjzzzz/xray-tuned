@@ -23,6 +23,13 @@ python3 -c "import yaml" >/dev/null 2>&1 || pkg_install python3-yaml || pkg_inst
 command -v file    >/dev/null 2>&1 || pkg_install file
 command -v iptables >/dev/null 2>&1 || pkg_install iptables || true
 command -v ip6tables >/dev/null 2>&1 || pkg_install iptables || true
+command -v ss >/dev/null 2>&1 || pkg_install iproute2 || true
+# Debian/Ubuntu 默认无 iptables 持久化，重启后 QDoS 规则会丢
+if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" ]] && ! command -v netfilter-persistent >/dev/null 2>&1; then
+  echo "iptables-persistent iptables-persistent/autosave_v4 boolean false" | debconf-set-selections 2>/dev/null || true
+  echo "iptables-persistent iptables-persistent/autosave_v6 boolean false" | debconf-set-selections 2>/dev/null || true
+  pkg_install iptables-persistent || mkdir -p /etc/iptables
+fi
 
 # ---------- 平台识别（v4.9.56）：ARM / AMD(x86_64) 与云厂商、内存档位自动选默认 ----------
 # 云厂商：读 DMI（无需联网、无需凭据）；识别不了就是 other。
@@ -173,7 +180,7 @@ ensure_firewall_ports() {
         ip6tables -I INPUT 3 -p udp --dport 443 -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name hy6_qdos_443 -j DROP 2>/dev/null || true
     fi
   fi
-  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qw "active"; then
+  if command -v ufw >/dev/null 2>&1 && LC_ALL=C ufw status 2>/dev/null | grep -q "^Status: active"; then
     for port in "${default_ports[@]}"; do
       ufw allow "$port/tcp" >/dev/null 2>&1 || true
       ufw allow "$port/udp" >/dev/null 2>&1 || true
@@ -358,12 +365,22 @@ fi
 SR_DECRYPTION="${SR_DECRYPTION:-none}"
 [[ "${FEATURE_XHTTP_VLESSENC_STRICT:-false}" == true ]] && SR_DECRYPTION="$XHTTP_DECRYPTION"
 if [[ "$IP_CHOICE" == "2" ]]; then
-  VPS_IP=$(curl -6 -s --max-time 5 ip.sb)
+  VPS_IP=""
+  for _u in ip.sb api6.ipify.org icanhazip.com; do
+    VPS_IP=$(curl -6 -fsS --max-time 5 "$_u" 2>/dev/null | tr -d '[:space:]') || VPS_IP=""
+    [[ "$VPS_IP" =~ ^[0-9a-fA-F:]+$ ]] && break
+    VPS_IP=""
+  done
   [[ -z "$VPS_IP" ]] && error "无法获取 IPv6 地址"
   [[ "$VPS_IP" =~ ^[0-9a-fA-F:]+$ ]] || error "获取到的 IPv6 地址格式无效"
   VPS_IP_URI="[${VPS_IP}]"
 else
-  VPS_IP=$(curl -4 -s --max-time 5 ip.sb)
+  VPS_IP=""
+  for _u in ip.sb api.ipify.org ifconfig.me icanhazip.com; do
+    VPS_IP=$(curl -4 -fsS --max-time 5 "$_u" 2>/dev/null | tr -d '[:space:]') || VPS_IP=""
+    [[ "$VPS_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && break
+    VPS_IP=""
+  done
   [[ -z "$VPS_IP" ]] && error "无法获取 IPv4 地址"
   [[ "$VPS_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || error "获取到的 IPv4 地址格式无效"
   VPS_IP_URI="${VPS_IP}"

@@ -880,9 +880,12 @@ cfg, action, ms = sys.argv[1:4]
 t = open(cfg, encoding='utf-8').read()
 t = re.sub(r',\s*"maxTimeDiff"\s*:\s*\d+', '', t)              # 先清掉旧值，开 / 关都幂等
 if action != 'off':
-    m = re.search(r'("shortIds"\s*:\s*\[[^\]]*\])', t)
-    if not m: sys.exit(1)
-    t = t[:m.end()] + ',\n                    "maxTimeDiff": ' + ms + t[m.end():]
+    n = [0]
+    def add(m):
+        n[0] += 1
+        return m.group(1) + ',\n                    "maxTimeDiff": ' + ms
+    t = re.sub(r'("shortIds"\s*:\s*\[[^\]]*\])', add, t)
+    if not n[0]: sys.exit(1)
 open(cfg, 'w', encoding='utf-8').write(t)
 TDPY
   if "$XRAY_BIN" run -test -c "$XRAY_CONF" >/dev/null 2>&1; then
@@ -3443,7 +3446,7 @@ backup_open_port() {
         "$ipt" -I INPUT 1 -p udp --dport "$port" -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name "hy_qdos_${port}" -j DROP 2>/dev/null || failed=1
     fi
   done
-  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qw "active"; then
+  if command -v ufw >/dev/null 2>&1 && LC_ALL=C ufw status 2>/dev/null | grep -q "^Status: active"; then
     ufw allow "${port}/${proto}" >/dev/null 2>&1 || failed=1
   fi
   if command -v netfilter-persistent >/dev/null 2>&1; then
@@ -4506,15 +4509,11 @@ reality_toggle() {
 
 cmd_reality() {
   local what="${1:-show}" act="${2:-show}" v x u sid minv mtd
-  local link1 link2 link3 bestcf
-  local spx_q=""
-  if [[ "${FEATURE_REALITY_SPX:-true}" == true && -n "${UUID1:-}" && -n "${UUID2:-}" ]]; then
-    local spx="/$(printf '%s' "${UUID1}${UUID2}" | sha256sum | cut -c1-12)"
-    spx_q="&spx=$(rawurlencode "$spx")"
-  fi
-  link1="vless://${UUID2}@${bestcf}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${extra_enc}&packetEncoding=xudp#VLESS-TLS+后量子+XHTTP+CDN"
-  link2="vless://${UUID1}@${bestcf}:443?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=${extra_enc}&packetEncoding=xudp#VLESS-TLS+后量子+Vision+XHTTP+CDN"
-  link3="vless://${UUID1}@${VPS_IP_URI}:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2,http/1.1&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${spx_q}&type=raw&headerType=none&packetEncoding=xudp#VLESS-REALITY+后量子+Vision"
+  local link1 link2 link3 cc="${USER_HOME:-/root}/client-config.txt"
+  # 直接取安装时生成的完整链接（bestcf/extra/spx 都已编码在内），不再在此重新拼接
+  link1=$(grep -m1 '#VLESS-TLS+后量子+XHTTP+CDN' "$cc" 2>/dev/null || true)
+  link2=$(grep -m1 '#VLESS-TLS+后量子+Vision+XHTTP+CDN' "$cc" 2>/dev/null || true)
+  link3=$(grep -m1 '#VLESS-REALITY+后量子+Vision' "$cc" 2>/dev/null || true)
 
   case "$what" in
     show|status|list|"")

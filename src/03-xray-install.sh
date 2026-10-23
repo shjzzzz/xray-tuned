@@ -1,3 +1,12 @@
+run_xray_official_install() {
+  local _ins
+  _ins=$(curl -fsSL --retry 3 --max-time 60 https://github.com/XTLS/Xray-install/raw/main/install-release.sh) \
+    || { warn "下载 Xray 官方安装脚本失败，请检查到 github.com 的网络"; return 1; }
+  [[ -n "$_ins" ]] || return 1
+  bash -c "$_ins" @ install "$@" || return 1
+  [[ -x /usr/local/bin/xray ]] || { warn "Xray 安装后未找到 /usr/local/bin/xray"; return 1; }
+}
+
 # ==================================================
 # Xray 安装与服务配置
 # ==================================================
@@ -199,7 +208,7 @@ install_xray() {
           if [[ "$OS_ID" != "alpine" ]]; then
             local install_flag=""
             [[ -n "$target_ver" && "$target_ver" != "latest" ]] && install_flag="--version v${target_ver#v}"
-            bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install $install_flag \
+            run_xray_official_install $install_flag \
               || warn "自动升级失败，将按现有版本继续（两个直连 UDP 节点会被关闭）"
             info "升级后版本: $(/usr/local/bin/xray version 2>/dev/null | head -1 || echo unknown)"
           else
@@ -234,7 +243,7 @@ install_xray() {
     local target_ver="$(resolve_xray_target_ver)"
     local install_flag=""
     [[ -n "$target_ver" && "$target_ver" != "latest" ]] && install_flag="--version v${target_ver#v}"
-    bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install $install_flag
+    run_xray_official_install $install_flag || error "Xray 安装失败"
     return
   fi
 
@@ -264,7 +273,7 @@ install_xray() {
       asset_url="https://github.com/XTLS/Xray-core/releases/latest/download/${asset}"
     fi
   fi
-  curl -fL "$asset_url" -o "${tmpdir}/xray.zip"
+  curl -fL --retry 3 --max-time 300 "$asset_url" -o "${tmpdir}/xray.zip" || { rm -rf "$tmpdir"; error "下载 Xray 失败"; }
   unzip -q "${tmpdir}/xray.zip" -d "$tmpdir"
 
   mkdir -p /usr/local/bin /usr/local/etc/xray /usr/local/share/xray /var/log/xray

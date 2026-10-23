@@ -83,6 +83,8 @@ echo ""
 
 if command -v qrencode >/dev/null 2>&1; then
   output_subscription_qr "V2RayN / Shadowrocket" "$V2RAYN_SUB_URL" "$V2RAYN_QR_FILE"
+  output_subscription_qr "V2RayN TUN" "$V2RAYN_TUN_SUB_URL" "$V2RAYN_TUN_QR_FILE"
+  output_subscription_qr "Shadowrocket" "$SHADOWROCKET_SUB_URL" "$SHADOWROCKET_QR_FILE"
   output_subscription_qr "Mihomo 完整分流" "$MIHOMO_FULL_SUB_URL" "$MIHOMO_FULL_QR_FILE"
   output_subscription_qr "Mihomo 纯节点" "$MIHOMO_NODES_SUB_URL" "$MIHOMO_NODES_QR_FILE"
 else
