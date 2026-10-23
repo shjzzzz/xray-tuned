@@ -156,7 +156,7 @@ while [ "$i" -le "$keep" ]; do cat "$d/c$i.pem" >> "$tmp"; i=$((i+1)); done
 before=$(wc -c < "$f"); after=$(wc -c < "$tmp")
 cp -f "$f" "$f.full" 2>/dev/null
 cat "$tmp" > "$f"
-chmod 600 "$f" "$f.full" 2>/dev/null
+chmod 644 "$f" "$f.full" 2>/dev/null   # 证书链是公开内容；xray 以 xray 用户运行，必须可读（600 会让续期后 xray 起不来）
 echo "证书链已裁剪：$n → $keep 张（${before} → ${after} 字节，每次握手少传 $((before-after)) 字节）"
 XH_TRIM_CHAIN_EOF
 chmod 755 /usr/local/sbin/xh-trim-chain
