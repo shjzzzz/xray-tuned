@@ -42,7 +42,7 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
 | **3** | `VLESS-REALITY+PQ+Vision（自域名）` | VLESS + REALITY (RAW) | 8447 / TCP (Direct) | ML-KEM-768 + Vision (0.05ms local gateway) | **High-Speed Direct**: Linux kernel `splice()` zero-copy, line-rate Gigabit throughput |
 | **4** | `VLESS-XHTTP-CDN-H2` | VLESS + XHTTP (H2) | 443 (Cloudflare CDN) | TLS 1.3 / xpadding / 16 Concurrency | Standard CDN fallback, compatible with legacy Xray clients |
 | **5** | `VLESS-XHTTP-CDN-H3` | VLESS + XHTTP (H3) | 443 (Cloudflare CDN) | QUIC (H3) 0-RTT / 64MB window | Packet-loss resistant CDN acceleration on unstable mobile networks |
-| **6** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8446 / UDP (Direct) | Native QUIC (H3) / 64MB window | Direct low-latency cross-ocean high throughput |
+| **6** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8443 / UDP (Direct) | Native QUIC (H3) / 64MB window | Direct low-latency cross-ocean high throughput |
 | **7** | `Hysteria2-H3-Direct` | Hysteria2 | UDP Dynamic Port (e.g., 19142) | BBRv3 / Standard HTTP/3 | Gigabit line-rate throughput & instant recovery from packet loss |
 | **8** | `Hysteria2-TLS-BBR-Salamander` | Hysteria2 | UDP Dynamic Port (e.g., 38969) | Salamander Obfs + BBR + 64MB window | Extreme ISP UDP throttling & active-probing evasion |
 | **9** | `VLESS-Reality-Vision-Direct` | VLESS + REALITY (RAW) | 443 / TCP (Direct) | xtls-rprx-vision zero-copy | Standard port 443 direct connection enjoying highest carrier QoS |

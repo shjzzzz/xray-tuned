@@ -588,7 +588,7 @@ cmd_diag() {
 
   # 证书自动续期链路自检。
   #
-  # 本项目的 xray 8446（h3-direct）、独立 hysteria 8443、nginx 8003 三者都直接读
+  # 本项目的 xray 8443（h3-direct）、独立 hysteria 8446、nginx 8003 三者都直接读
   # /etc/ssl/private/ 下的证书副本，而不是 acme.sh 自己的目录。这份副本靠安装时
   # 配置的 `acme.sh --install-cert --key-file/--fullchain-file` 在每次续期后自动
   # 更新——那几个路径记在域名配置的 Le_RealKeyPath / Le_RealFullChainPath 里。

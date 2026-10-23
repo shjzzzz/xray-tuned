@@ -35,8 +35,8 @@ XHTTP_PATH = env.get("XHTTP_PATH", "")
 VLESSENC = env.get("VLESSENC_ENCRYPTION", "none")
 HY2_PASS = env.get("HY2_PASSWORD", "")
 OBFS_PASS = env.get("OBFS_PASSWORD", "")
-H3_PORT = int(env.get("H3_PORT", 8446))
-HY2_PORT = int(env.get("HY2_PORT", 8443))
+H3_PORT = int(env.get("H3_PORT", 8443))
+HY2_PORT = int(env.get("HY2_PORT", 8446))
 
 XP = {
     "xPaddingBytes": "100-1000",

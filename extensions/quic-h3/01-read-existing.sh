@@ -74,7 +74,7 @@ XHTTP_H3_PORT=${_port:-${XHTTP_H3_PORT:-443}}
 # Hysteria2 扩展可能已经占了这个 UDP 端口，抢占会让后装的那个静默失效
 if [[ -f /etc/hysteria/config.yaml ]] &&
    grep -Eq "^[[:space:]]*listen:[[:space:]]*:${XHTTP_H3_PORT}[[:space:]]*$" /etc/hysteria/config.yaml; then
-  error "UDP ${XHTTP_H3_PORT} 已被 Hysteria2 占用，请换一个端口（Hysteria2 默认 8443）"
+  error "UDP ${XHTTP_H3_PORT} 已被 Hysteria2 占用，请换一个端口（Hysteria2 默认 8446）"
 fi
 
 info "XHTTP H3:     UDP ${XHTTP_H3_PORT}"

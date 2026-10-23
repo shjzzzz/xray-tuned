@@ -73,7 +73,7 @@ SAVED_QUIC_MODE="${QUIC_MODE:-separate}"
 # 一个无效选项上做选择。
 if [[ "$FEATURE_XHTTP_H3_NODE" != true ]]; then
   QUIC_MODE="separate"
-  DEFAULT_HY2_PORT="${HY2_PORT:-8443}"
+  DEFAULT_HY2_PORT="${HY2_PORT:-8446}"
   read -rp "请输入 hysteria2 UDP 端口 [默认 ${DEFAULT_HY2_PORT}]: " HY2_PORT
   HY2_PORT=${HY2_PORT:-$DEFAULT_HY2_PORT}
   # XHTTP_H3_PORT 后续仍被 state 文件与提示语引用，给一个不参与监听的占位值
@@ -92,10 +92,10 @@ case "$QUIC_CHOICE" in
     QUIC_MODE="separate"
     if [[ "$SAVED_QUIC_MODE" == "separate" ]]; then
       DEFAULT_XHTTP_H3_PORT="${XHTTP_H3_PORT:-443}"
-      DEFAULT_HY2_PORT="${HY2_PORT:-8443}"
+      DEFAULT_HY2_PORT="${HY2_PORT:-8446}"
     else
       DEFAULT_XHTTP_H3_PORT=443
-      DEFAULT_HY2_PORT=8443
+      DEFAULT_HY2_PORT=8446
     fi
 
     read -rp "请输入 XHTTP H3 UDP 端口 [默认 ${DEFAULT_XHTTP_H3_PORT}]: " XHTTP_H3_PORT

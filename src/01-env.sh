@@ -49,9 +49,9 @@ LIMITS_CONF="/etc/security/limits.d/99-xray-xhttp.conf"
 # 端口规划 (默认配置，全部单端口，默认关闭端口跳跃)
 # ==================================================
 # 443      TCP (Xray VLESS 兜底)
-# 8443     UDP (Xray Hysteria 2)
+# 8443     UDP (Xray h3-direct)
 # 8445     TCP (Xray h2-direct，默认关闭)
-# 8446     UDP (Xray h3-direct)
+# 8446     UDP (Xray Hysteria 2 / 备用)
 # 80       TCP (Nginx HTTP 验证与重定向)
 # 8001     TCP (Xray XHTTP CDN 回源入站，仅监听 127.0.0.1)
 # 8002     TCP (Nginx 反代分流，仅监听 127.0.0.1)
@@ -88,7 +88,7 @@ AUTO=${AUTO:-0}
 # ==================================================
 #   1. VLESS-TLS+后量子+XHTTP+CDN     经 CDN，TLS 1.3 + ML-KEM-768
 #   2. VLESS-REALITY+后量子+Vision    直连 TCP 443，REALITY + ML-KEM-768
-#   3. VLESS-XHTTP-Direct-H3         直连 UDP 8446，QUIC/h3
+#   3. VLESS-XHTTP-Direct-H3         直连 UDP 8443，QUIC/h3
 #   4. VLESS-XHTTP-Direct-H2         直连 TCP 8445，h2
 #   5. Hysteria2-H3-Direct           直连 UDP 随机高端口，标准 HTTP/3
 #   6. Hysteria2-TLS-BBR-Salamander  直连 UDP 随机高端口，salamander 混淆

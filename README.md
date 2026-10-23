@@ -39,7 +39,7 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
 | **3** | `VLESS-REALITY+PQ+Vision（自域名）` | VLESS + REALITY (RAW) | 8447 / TCP (直连) | ML-KEM-768 + Vision (0.05ms 自域名伪装) | **直连极速推荐**：内核 `splice` 零拷贝跑满千兆，极致低延迟 |
 | **4** | `VLESS-XHTTP-CDN-H2` | VLESS + XHTTP (H2) | 443 (Cloudflare CDN) | TLS 1.3 / xpadding 填充 / 16 并发 | 标准 CDN 容灾节点，支持老版本 Xray 客户端 |
 | **5** | `VLESS-XHTTP-CDN-H3` | VLESS + XHTTP (H3) | 443 (Cloudflare CDN) | QUIC (H3) 0-RTT / 64MB 接收窗口 | 跨洋 UDP 丢包恶劣链路下的 CDN 极速加速 |
-| **6** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8446 / UDP (直连) | 原生 QUIC (H3) / 64MB 接收窗口 | 直连低延迟大吞吐，抗跨境链路偶发丢包 |
+| **6** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8443 / UDP (直连) | 原生 QUIC (H3) / 64MB 接收窗口 | 直连低延迟大吞吐，抗跨境链路偶发丢包 |
 | **7** | `Hysteria2-H3-Direct` | Hysteria2 | UDP 随机高端口 (如 19142) | BBRv3 / 标准 HTTP/3 握手 | 跨境千兆跑满，高丢包网络（如移动/校园网）极速回血 |
 | **8** | `Hysteria2-TLS-BBR-Salamander` | Hysteria2 | UDP 随机高端口 (如 38969) | Salamander 混淆 + BBR + 64MB 窗口 | 运营商严苛封锁 UDP 重灾区专用穿透与防主动探测 |
 | **9** | `VLESS-Reality-Vision-Direct` | VLESS + REALITY (RAW) | 443 / TCP (直连标口) | xtls-rprx-vision 零拷贝直通 | 标口 443 直连，免额外端口，享受骨干网最高 QoS |

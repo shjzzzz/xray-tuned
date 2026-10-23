@@ -33,7 +33,7 @@ Multiplexes high-speed direct Reality traffic and survivable CDN-tunneled XHTTP 
 | S02 | Internal Inbound 8001 | `127.0.0.1:8001 (TCP)` | Core XHTTP inbound with post-quantum vlessenc | VLESS xhttp, mlkem768x25519plus decryption, xpadding | Active, healthy |
 | S03 | Internal Inbound 8002 | `127.0.0.1:8002 (TCP)` | Shadowrocket / legacy client XHTTP inbound | VLESS xhttp, decryption none, path `/sr*` | Active, legacy fallback |
 | S04 | Gateway Port 8003 | `127.0.0.1:8003 (TCP)` | Nginx SSL termination, SNI demux, fallback website | Nginx SSL, grpc_pass upstream, camouflage proxy | Active, healthy |
-| S05 | QUIC/H3 Gateway | `0.0.0.0:443 (UDP)` vs `8446 (UDP)` | High-speed HTTP/3 transport for mobile networks | Nginx QUIC module vs Xray direct H3 inbound | Partial (8446 open, 443 UDP closed) |
+| S05 | QUIC/H3 Gateway | `0.0.0.0:443 (UDP)` vs `8443 (UDP)` | High-speed HTTP/3 transport for mobile networks | Nginx QUIC module vs Xray direct H3 inbound | Partial (8443 open, 443 UDP closed) |
 | S06 | Hysteria 2 Ports | UDP 33385 / 37987 | High-latency / high-loss network acceleration | Hysteria 2 protocol, Salamander obfuscation mask | Active, listening |
 | S07 | Subscription Gateway | `https://reality.example.com/sub/<TOKEN>/` | Dynamic client configuration delivery | Nginx static `/sub/`, rate limiter `sub_limit` | Active, rate-limited |
 
@@ -68,9 +68,9 @@ F05 Mode 5: Asymmetric Uplink Reality + Downlink CDN
     Downlink: Client receives via CDN Anycast edge (circumventing downlink RST)
 
 F06 Mode 6: HTTP/3 (QUIC) Transport Flow
-    Client -> UDP 443 (or 8446) -> Nginx QUIC (or Xray H3) -> S02 -> Outbound
+    Client -> UDP 443 (or 8443) -> Nginx QUIC (or Xray H3) -> S02 -> Outbound
     Happy path: 0-RTT resumption, immune to TCP head-of-line blocking
-    Current state: Direct 8446 works; standard 443 UDP is currently not listening on Nginx
+    Current state: Direct 8443 works; standard 443 UDP is currently not listening on Nginx
 
 F07 Active Probing & Censorship Defense Flow
     Scanner -> VPS:443 (Direct IP or foreign SNI) -> S01 -> S04 Default Server -> ssl_reject_handshake (444)

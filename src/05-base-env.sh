@@ -126,8 +126,8 @@ ensure_firewall_ports() {
       iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
       iptables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p udp --dport "$port" -j ACCEPT 2>/dev/null || true
     done
-    # QDoS (QUIC Denial of Service / UDP Flooding) 防护: 针对 Hysteria2 端口 (8443 及动态端口)
-    for port in 8443 "${HY2_PORT:-}" "${HY2_H3_PORT:-}"; do
+    # QDoS (QUIC Denial of Service / UDP Flooding) 防护: 针对 Hysteria2 端口 (动态端口及备用端口)
+    for port in 8446 "${HY2_PORT:-}" "${HY2_H3_PORT:-}"; do
       [[ -n "$port" ]] || continue
       iptables -C INPUT -p udp --dport "$port" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
         iptables -I INPUT 1 -p udp --dport "$port" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
@@ -155,7 +155,7 @@ ensure_firewall_ports() {
       ip6tables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || ip6tables -I INPUT 1 -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
       ip6tables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || ip6tables -I INPUT 1 -p udp --dport "$port" -j ACCEPT 2>/dev/null || true
     done
-    for port in 8443 "${HY2_PORT:-}" "${HY2_H3_PORT:-}"; do
+    for port in 8446 "${HY2_PORT:-}" "${HY2_H3_PORT:-}"; do
       [[ -n "$port" ]] || continue
       ip6tables -C INPUT -p udp --dport "$port" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
         ip6tables -I INPUT 1 -p udp --dport "$port" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
@@ -274,7 +274,7 @@ get_random_port() {
   done
 }
 
-H3_PORT="${H3_PORT:-8446}"
+H3_PORT="${H3_PORT:-8443}"
 # H2_PORT（v4.7.0）：h3-direct 的 TCP 孪生体，见 01-env.sh 的 FEATURE_H2_DIRECT。
 # 它是**真 TCP**，和 Reality 的 TCP 443 属于同一协议族，必须独立端口。
 H2_PORT="${H2_PORT:-8445}"
@@ -290,8 +290,8 @@ export MASQUE_PORT MASQUE_PASSWORD
 
 # 兜底：无论用户怎么设，都不允许与 Reality 的 TCP 443 同端口。
 if [[ "$H3_PORT" == "443" ]]; then
-  warn "H3_PORT=443 会与 Reality 抢占 TCP 443（见 Xray#4391），已改用 8446"
-  H3_PORT=8446
+  warn "H3_PORT=443 会与 Reality 抢占 TCP 443（见 Xray#4391），已改用 8443"
+  H3_PORT=8443
 fi
 if [[ "$H2_PORT" == "443" ]]; then
   warn "H2_PORT=443 会与 Reality 抢占 TCP 443，已改用 8445"

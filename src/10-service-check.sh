@@ -20,7 +20,7 @@ mkdir -p /etc/ssl/private
 #
 # 末尾那段独立 hysteria 的重启是有条件的：本项目默认由 Xray 原生提供 Hysteria2
 # （03-xray-install.sh 会停用 hysteria-server），此时它是空转。但装在已有独立
-# hysteria 的机器上时，8443 由该二进制提供服务、同样读 /etc/ssl/private/ 的证书，
+# hysteria 的机器上时，8446 由该二进制提供服务、同样读 /etc/ssl/private/ 的证书，
 # 续期后不重启就会一直用旧证书。用 is-active 判断而非无条件重启，避免在没有该
 # 服务的机器上让整条 reloadcmd 返回非零。
 # reloadcmd 开头那句 xh-trim-chain：acme.sh 每次续期都会把完整 4 张链重新写进

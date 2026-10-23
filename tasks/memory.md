@@ -797,6 +797,17 @@
 - **甲骨文云 (OCI) 防火墙端口保护**：
   - 强化 `ensure_firewall_ports`，使用 `iptables -I INPUT 1` 优先置顶放行全部服务端口与 OCI 预留端口（80、443、8443、8445-8447、动态 Hy2/MASQUE、10489、10800-10809、11801-11806、18793、23106、27295、28443 等），防止流量被系统内置默认 REJECT 拦截。
 
+## 40. VLESS-XHTTP-Direct-H3 端口迁移至 8443 与端口冲突清理 (2026-10-23)
+- **端口对齐甲骨文云 VCN 规范**：
+  - 将直连 QUIC/HTTP3 节点 `VLESS-XHTTP-Direct-H3`（`H3_PORT`）从 UDP 8446 调整为 **UDP 8443**，直接契合 Oracle Cloud (OCI) VCN 安全列表与默认防火墙放行策略，无需额外开辟 UDP 端口。
+- **端口冲突化解与重定向清理**：
+  - **NAT 重定向规则清理**：彻底清除 iptables nat 表针对 UDP 8443 的历史重定向（`--dport 8443 -j REDIRECT`），杜绝 H3 流量被中间劫持至 Hysteria2。
+  - **其他节点端口避让**：历史占用 8443 的 Hysteria2 备用/混淆端口与中国移动 QoS 旁路迁移至 **UDP 8446**（或保留动态高端口），化解端口重叠。
+  - **QDoS 防护规则重定**：针对 Hysteria2 暴力破解限速的 `hy_qdos` 规则同步迁移至 8446 与动态端口，确保 8443 专注于 VLESS XHTTP 原生 QUIC 大吞吐传输。
+- **全端模板与生产环境热更新**：
+  - 同步更新多语言 README、客户端模板（txt/mihomo）、扩展模块及压测工具配置；
+  - 热更新宿主机 `/etc/xhttp-cdn/node.env`、Xray 服务端 `config.json` 与 `/usr/local/bin/xh`，平滑重载 Xray 并执行 `xh resub` 刷新全量订阅。
+
 
 
 

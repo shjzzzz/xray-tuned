@@ -55,7 +55,7 @@ require_xray_version_for_udp() {
 
 # 直连 UDP 端口与既有扩展的互检。基础安装无任何 UDP 监听，但两个扩展会占用：
 #   extensions/quic-h3        默认 UDP 443  （/etc/xhttp-cdn/quic-h3.env）
-#   extensions/common-nodes   默认 UDP 8443 （/etc/hysteria/config.yaml）
+#   extensions/common-nodes   默认 UDP 8446 （/etc/hysteria/config.yaml）
 # 纯 Xray 方案下这两个扩展已无必要，同时存在会抢同一个端口。
 # 旧版 UDP 组件的自动迁移（v4.0.1）
 # --------------------------------------------------
@@ -79,7 +79,7 @@ migrate_legacy_udp_components() {
 
   if [[ "${KEEP_LEGACY_UDP:-false}" == true ]]; then
     warn "KEEP_LEGACY_UDP=true：保留旧的独立 UDP 组件，改为关闭 Xray 原生的两个新节点"
-    [[ -f "$hy_conf" ]] && { FEATURE_HY2_OBFS=false; warn "  → Hysteria2-obfs 已关闭（旧的独立 hysteria 占用 8443）；Hysteria2-H3（UDP 443）不受影响"; }
+    [[ -f "$hy_conf" ]] && { FEATURE_HY2_OBFS=false; warn "  → Hysteria2-obfs 已关闭（旧的独立 hysteria 占用 8446）；Hysteria2-H3（UDP 443）不受影响"; }
     [[ -f "$h3_env" ]] && { FEATURE_H3_DIRECT=false; warn "  → h3-direct 已关闭"; }
     return 0
   fi

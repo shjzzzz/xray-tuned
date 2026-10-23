@@ -153,13 +153,13 @@ proxies:
         c-max-reuse-times: "0"
         h-max-reusable-secs: "1800-3000"
 
-  # Hysteria2 + Salamander 混淆（UDP 8443），由 Xray 原生 hysteria inbound 提供。
+  # Hysteria2 + Salamander 混淆（UDP 8446），由 Xray 原生 hysteria inbound 提供。
   # password 与 obfs-password 是两个独立的值，两端都必须一致。
   # up/down 不写 = 客户端用 BBR；写具体速率则切到 Brutal 模式。
   - name: Hysteria2-obfs-YOUR_HOST
     type: hysteria2
     server: YOUR_VPS_IP
-    port: 8443
+    port: 8446
     password: YOUR_HY2_PASSWORD
     obfs: salamander
     obfs-password: YOUR_OBFS_PASSWORD

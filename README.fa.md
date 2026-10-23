@@ -41,7 +41,7 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
 | **۳** | `VLESS-REALITY+PQ+Vision（自域名）` | VLESS + REALITY (RAW) | 8447 / TCP (مستقیم) | ML-KEM-768 + Vision (پوشش 0.05ms) | **حداکثر سرعت مستقیم**: فناوری Zero-Copy و سرعت گیگابیتی با کمترین پینگ |
 | **۴** | `VLESS-XHTTP-CDN-H2` | VLESS + XHTTP (H2) | 443 (Cloudflare CDN) | TLS 1.3 / xpadding / ۱۶ اتصال همزمان | ضد فیلتر و مخفی‌سازی کامل IP سرور با پشتیبانی از کلاینت‌های قدیمی |
 | **۵** | `VLESS-XHTTP-CDN-H3` | VLESS + XHTTP (H3) | 443 (Cloudflare CDN) | شتاب CDN همراه با QUIC 0-RTT بافر ۶۴MB | بهترین شتاب روی اینترنت‌های موبایل و دارای پکت‌لاس |
-| **۶** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8446 / UDP (مستقیم) | اتصال مستقیم QUIC / بافر ۶۴MB | اتصال مستقیم با تاخیر کم و پایداری بالا |
+| **۶** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8443 / UDP (مستقیم) | اتصال مستقیم QUIC / بافر ۶۴MB | اتصال مستقیم با تاخیر کم و پایداری بالا |
 | **۷** | `Hysteria2-H3-Direct` | Hysteria2 | UDP پورت تصادفی (مثلا 19142) | BBRv3 / استاندارد HTTP/3 | حداکثر سرعت دانلود و بازیابی آنی بسته‌های از دست رفته |
 | **۸** | `Hysteria2-TLS-BBR-Salamander` | Hysteria2 | UDP پورت تصادفی (مثلا 38969) | مبهم‌سازی Salamander + بافر ۶۴MB | عبور تضمینی از شدیدترین اختلالات و فیلترینگ ترافیک UDP |
 | **۹** | `VLESS-Reality-Vision-Direct` | VLESS + REALITY (RAW) | 443 / TCP (پورت استاندارد) | اتصال مستقیم xtls-rprx-vision | پورت مستقیم ۴۴۳ با بالاترین اولویت شبکه |
