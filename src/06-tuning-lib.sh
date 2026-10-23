@@ -556,7 +556,15 @@ LIMITSEOF
         cat > "${dir}/${dropin}" <<DROPINEOF || warn "写入 ${unit} drop-in 失败"
 # xray-xhttp 句柄上限，由 xh tuning on 生成 / xh tuning off 移除。
 # 本项目只写这一个文件，同目录下你自己的 override.conf 不会被改动。
+# 自愈：systemd 默认 RestartSec=100ms + 10s 内最多启动 5 次，起不来（如证书权限被改、
+# 端口被占）会在 0.5 秒内撞上限流变成永久 failed，之后即使问题已修复也不会再拉起；
+# nginx 官方 unit 还是 Restart=no，崩溃后不会自动恢复。取消限流并固定 2s 间隔重试。
+[Unit]
+StartLimitIntervalSec=0
+
 [Service]
+Restart=always
+RestartSec=2
 LimitNOFILE=1048576
 LimitNPROC=infinity
 LimitMEMLOCK=infinity
