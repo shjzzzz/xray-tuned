@@ -136,6 +136,25 @@ if [[ -n "$def_dev" ]]; then
       echo "网卡 $def_dev MTU $cur_mtu → 1500（避免 PMTU 黑洞）"
     fi
   fi
+  # 路由层 MTU：DHCP（OCI 等）会把默认路由 / 直连路由的 mtu 设成 9000，链路 MTU 降到 1500 后路由上的 9000 仍在，
+  # UDP/QUIC（Direct-H3、CDN-H3、Hysteria2）按它估算包大小，超大包在公网被静默丢弃 → 断连。全部钉回 1500，
+  # 并让 dhcpcd 不再接受下发的 MTU，租约续期后再兜底一次。
+  while read -r _r; do
+    ip route change $(sed 's/ mtu [0-9]*//' <<< "$_r") dev "$def_dev" mtu 1500 2>/dev/null || true
+  done < <(ip -4 route show dev "$def_dev" 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="mtu" && $(i+1)>1500){print; break}}')
+  if [[ -f /etc/dhcpcd.conf ]] && grep -q '^option interface_mtu' /etc/dhcpcd.conf; then
+    sed -i 's/^option interface_mtu$/nooption interface_mtu/' /etc/dhcpcd.conf
+  fi
+  if command -v dhcpcd >/dev/null 2>&1 && [[ ! -f /etc/dhcpcd.exit-hook ]]; then
+    cat > /etc/dhcpcd.exit-hook <<'MTUHOOK'
+# 租约更新后把本接口所有路由 MTU 钉回 1500（DHCP 下发 9000 巨帧会产生公网 PMTU 黑洞，影响 UDP/QUIC 节点）
+case "$reason" in BOUND|RENEW|REBIND|REBOOT|STATIC)
+  ip -4 route show dev "$interface" 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="mtu" && $(i+1)>1500){print; break}}' | sed 's/ mtu [0-9]*//' | while read -r r; do
+    ip route change $r dev "$interface" mtu 1500 2>/dev/null
+  done ;;
+esac
+MTUHOOK
+  fi
   # TCP MSS 钳制兜底（防中国移动 PPPoE 1492 / 蜂窝移动 GTP 1420 导致的 PMTU 黑洞与大包静默丢弃）
   for ipt in iptables ip6tables; do
     command -v "$ipt" >/dev/null 2>&1 || continue
