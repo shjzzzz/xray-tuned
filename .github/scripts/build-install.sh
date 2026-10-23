@@ -12,6 +12,7 @@ MODULES=(
   07-acme-cert.sh
   08-nginx-install.sh
   09-server-config.sh
+  09a-reality-legacy.sh
   10-service-check.sh
   11-client-config.sh
   12-subscription.sh
