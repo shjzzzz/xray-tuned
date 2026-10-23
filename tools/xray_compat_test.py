@@ -9,8 +9,8 @@ atexit.register(lambda: _td.cleanup() if os.path.exists(_td.name) else None)
 S = os.environ.get("BENCH_TMP", _td.name)
 SUB = sys.argv[1]; N_DL = int(os.environ.get("N_DL", "2"))
 SOURCES = [("xray-v2rayn", f"{SUB}/v2rayn-raw.txt"), ("xray-tun", f"{SUB}/v2rayn-tun-raw.txt"), ("sbbox", "/root/sbbox/nodes.txt")]
-URLS = ["https://speedtest.fremont.linode.com/100MB-fremont.bin", "https://sjo-ca-us-ping.vultr.com/vultr.com.100MB.bin"]
-NEED = 52428800
+URLS = os.environ.get("BENCH_URLS", "https://speed.cloudflare.com/__down?bytes=20000000").split(",")
+NEED = int(os.environ.get("BENCH_NEED", "20000000"))
 
 from xlinks import vless, hy2, XRAY_PROTOS  # 解析逻辑与 xray_rtt_bench.py 共用
 
@@ -48,18 +48,20 @@ try:
     time.sleep(3)
     def curl(port, args):
         return subprocess.run(f"curl -s -o /dev/null --socks5-hostname 127.0.0.1:{port} {args}", shell=True, capture_output=True, text=True).stdout.split()
-    for n in ok:
+    def probe(n):
         curl(n["port"], "--max-time 10 http://www.gstatic.com/generate_204")   # 预热
-        lat = [float(o[1])*1000 for o in (curl(n["port"], "-w '%{http_code} %{time_starttransfer}' --max-time 10 http://www.gstatic.com/generate_204") for _ in range(8)) if len(o)==2 and o[0]=="204"]
+        lat = [float(o[1])*1000 for o in (curl(n["port"], "-w '%{http_code} %{time_starttransfer}' --max-time 10 http://www.gstatic.com/generate_204") for _ in range(5)) if len(o)==2 and o[0]=="204"]
         bw, bad = [], 0
         for k in range(N_DL):
-            o = curl(n["port"], f"-w '%{{http_code}} %{{size_download}} %{{speed_download}}' --max-time 60 -r 0-{NEED-1} {URLS[k%2]}")
+            o = curl(n["port"], f"-w '%{{http_code}} %{{size_download}} %{{speed_download}}' --max-time 30 -r 0-{NEED-1} {URLS[k%len(URLS)]}")
             if len(o)==3 and o[0] in ("200","206") and int(o[1])>=NEED: bw.append(float(o[2])*8/1e6)
             else: bad += 1
-        # UDP：经 socks UDP 发 DNS 查询验证 UDP 转发
         n["lat"] = statistics.median(lat) if lat else None
         n["bw"] = statistics.median(bw) if bw else None; n["bad"] = bad
         n["status"] = "PASS" if lat and bw else ("仅握手通/下载失败" if lat else "FAIL")
+    # 各节点用独立 socks 端口，可并行（BENCH_PAR=1 串行，吞吐数字更干净）
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(int(os.environ.get("BENCH_PAR", "6"))) as ex: list(ex.map(probe, ok))
 finally:
     proc.terminate(); proc.wait(timeout=5)
 
