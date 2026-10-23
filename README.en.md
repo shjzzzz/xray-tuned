@@ -75,6 +75,25 @@ xh warp status|update # Cloudflare WARP outbound status and dynamic credential r
 
 ---
 
+## 🔐 Subscription Service (HTTPS)
+
+The subscriptions printed by `xh sub` are served by the Nginx deployed at install time over **HTTPS (443)** with the same ACME certificate as the nodes. No extra subscription daemon or port is needed:
+
+```text
+https://<cert-domain>/sub/<token>/v2rayn.txt         # v2rayN / generic Base64
+https://<cert-domain>/sub/<token>/v2rayn-tun.txt     # v2rayN TUN profile
+https://<cert-domain>/sub/<token>/shadowrocket.txt   # Shadowrocket
+https://<cert-domain>/sub/<token>/mihomo-full.yaml   # Mihomo full rules
+https://<cert-domain>/sub/<token>/mihomo-nodes.yaml  # Mihomo nodes only
+```
+
+* **Token path**: `<token>` is random; a wrong or missing token returns 404, and plain HTTP (80) is redirected to HTTPS with a 301.
+* **Renewals**: after acme.sh renews, Nginx and Xray are restarted automatically, so the subscription certificate stays current.
+* **Private key permissions**: `/etc/ssl/private/private.key` is readable only by `root:xray` (640) instead of by everyone.
+* **QR codes**: the installer prints terminal QR codes for V2RayN, V2RayN TUN, Shadowrocket and Mihomo full/nodes subscriptions and saves them as `~/subscription-*.png`.
+
+---
+
 ## 🔒 Cloudflare SSL/TLS Certificate Management
 
 This project provides an automated, production-grade certificate management pipeline with two best-practice options:

@@ -72,6 +72,25 @@ xh warp status|update # Cloudflare WARP 出站状态查看与账户凭据动态�
 
 ---
 
+## 🔐 订阅服务（HTTPS）
+
+`xh sub` 输出的订阅由安装时部署的 Nginx 通过 **HTTPS（443）** 提供，使用与节点相同的 ACME 证书，无需额外订阅服务和端口：
+
+```text
+https://<证书域名>/sub/<token>/v2rayn.txt         # v2rayN / 通用 Base64
+https://<证书域名>/sub/<token>/v2rayn-tun.txt     # v2rayN TUN 优化
+https://<证书域名>/sub/<token>/shadowrocket.txt   # Shadowrocket
+https://<证书域名>/sub/<token>/mihomo-full.yaml   # Mihomo 完整分流
+https://<证书域名>/sub/<token>/mihomo-nodes.yaml  # Mihomo 纯节点
+```
+
+* **token 路径**：`<token>` 为随机字符串，token 不对或不存在时返回 404；HTTP（80）请求会 301 跳转到 HTTPS。
+* **证书续期**：acme.sh 续期后自动重启 Nginx 与 Xray，订阅证书随之更新，无需手工处理。
+* **私钥权限**：`/etc/ssl/private/private.key` 仅 `root:xray` 可读（640），不再对所有用户开放。
+* **二维码**：安装结束时输出 V2RayN、V2RayN TUN、Shadowrocket、Mihomo 完整/纯节点订阅的终端二维码，并保存为 `~/subscription-*.png`。
+
+---
+
 ## 🔒 Cloudflare 证书申请与管理 (SSL/TLS)
 
 本项目配备针对真实域名的高效自动化证书管理流水线，支持两种最佳工程实践：
