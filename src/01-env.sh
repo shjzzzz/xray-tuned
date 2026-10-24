@@ -205,7 +205,7 @@ FEATURE_NOISE_EXP=${FEATURE_NOISE_EXP:-false}
 # 10 大核心节点之三大后量子 (ML-KEM-768) 节点开关（默认全部开启）
 FEATURE_TLS_PQ_XHTTP=${FEATURE_TLS_PQ_XHTTP:-true}
 FEATURE_TLS_PQ_VISION=${FEATURE_TLS_PQ_VISION:-false}
-FEATURE_REALITY_PQ_VISION=${FEATURE_REALITY_PQ_VISION:-true}
+FEATURE_REALITY_PQ_VISION=${FEATURE_REALITY_PQ_VISION:-false}
 
 # FEATURE_REALITY_VISION / FEATURE_REALITY_XHTTP（默认均开启，对应 10 大核心节点之 9 与 10）：Reality 443 入站上的两个直连节点。
 # 关闭 = 服务端去掉对应的 clients 项 / fallback 项并从订阅里移除节点；装好后用 xh reality vision|xhttp on|off 切换。
