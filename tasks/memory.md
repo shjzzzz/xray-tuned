@@ -811,3 +811,21 @@
 
 
 
+
+## 41. 权威节点精简与 Hysteria2 协议栈扩展需求技术评估与决策 (2026-10-24)
+- **权威核心节点精简与冗余清理**：
+  - **冗余节点剔除**：移除 `VLESS-REALITY+后量子+Vision`（原 8447 / TCP 直连入站）。该节点配置实质与标口 443 的 `VLESS-Reality-Vision-Direct` 高度重复，且额外占用端口与触发非标客户端解析异常。
+  - **开关默认值调整**：在 `src/01-env.sh` 与 `.github/scripts/build-install.sh` 中将 `FEATURE_REALITY_PQ_VISION` 默认值设为 `false`，确保默认安装不再生成该冗余项；同时将 `FEATURE_CDN_H2` 与 `FEATURE_CDN_H3` 默认设为 `true`，固化全协议栈最佳节点集。
+  - **实机与订阅生效**：宿主机平滑下线 8447 入站，解除 `reality-pq-vision-in` 监听，执行 `xh resub` 重新分发全客户端订阅（剔除该节点）。
+- **Hysteria2-TLS-BBR-Salamander 协议栈需求技术评估**：
+  - **finalmask 评估**：**【已原生实现】**
+    - 服务端 `streamSettings.finalmask.udp` 已原生集成 `salamander` 混淆及密钥；
+    - 客户端 URI 通过 `&fm=` 参数携带了完整的 `finalmask`（含 `quicParams` 与 `salamander` 结构），并附带标准 `obfs=salamander`，完全满足全客户端生态解析需求。
+  - **fingerprint 评估**：**【传输层不可行且无效】**
+    - uTLS 客户端指纹模拟（如 `fp=chrome`）仅设计并工作于基于 TCP 的流式 TLS 握手；
+    - Hysteria 2 是运行在 UDP 上的纯 QUIC 协议（RFC 9000/9001），TLS 握手报文由底层的 `quic-go` 协议栈处理，无法亦不受理 uTLS 劫持；
+    - 官方 `hysteria2://` URI 标准未定义 `fp` 字段，强行追加会导致部分严格校验的第三方客户端导入报错。
+  - **ALPN 支持 h2 和 h3 评估**：**【绝对不可行】**
+    - 协议定义互斥：`h2`（RFC 7540）是基于 TCP 的 HTTP/2 标识，而 `h3`（RFC 9114）是基于 QUIC/UDP 的 HTTP/3 标识；
+    - QUIC 传输层无法承载单流 TCP 依赖的 HTTP/2 协议栈，若在 QUIC 握手中声明或协商出 `h2`，将直接触发底层 TLS 协议协商错误并断开连接。
+  - **工程决策**：维持当前标准的 `ALPN: ["h3"]` 与 `finalmask (salamander)` 架构设计，不做破坏性变更。
