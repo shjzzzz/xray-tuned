@@ -837,3 +837,25 @@
 - **全平台订阅按节点名称升序自动排序**：
   - 在 `src/11-client-config.sh`（安装时客户端配置渲染）与 `src/13-manage-cli.sh`（`xh resub` 订阅重构）中内置排序机制，使 `client-config.txt` 与 Mihomo proxies 统一按节点名称升序排序。
   - 客户端在通过订阅 URL 拉取（Base64、RAW、Mihomo YAML、Shadowrocket 等）时节点顺序严格一致工整。
+
+## 43. xh tuning 与 sbbox tuning 统一及最佳自适应系统实践 (2026-10-25)
+- **网络与内核参数完全对齐与统一**：
+  - 提取 `xray-tuned` 与 `sbbox-tuned` 两边长处，58 项有效 sysctl 参数实现 100% 字节级一致。
+  - **机型规格与链路速率自适应**：自动探测内存、CPU 核心数、架构、PAGE_SIZE（兼容 ARM64 64KB 页）以及出口网卡链路速率（`NIC_SPEED`）；大内存档（>=16GB）与标准档（4-16GB）放宽至 128MB 核心套接字缓冲（`134217728`）。
+  - **前沿自适应参数优化**：
+    - `tcp_autocorking = 0`：消除代理转发场景下的小包阻塞，显著降低首包 TTFB 与交互延迟。
+    - `tcp_notsent_lowat = 524288`：兼顾超千兆高 BDP 吞吐并杜绝网卡发送队列 bufferbloat。
+    - `tcp_mtu_probing = 0`：配合路由 MTU 1500 锁定与 TCP MSS 钳制，避免黑洞误探测引起的链路降速。
+    - `tcp_ecn = 0` & `tcp_ecn_fallback = 0`：避免跨境不稳定网络中间设备丢弃 ECN 标记报文。
+    - `net.core.rps_sock_flow_entries`：按核心数动态补齐全局 RFS 流表项（`8192 * CPU_CORES`）。
+    - 预留端口全集统一：覆盖两边全部协议监听端口（8001-8447、10723、38969、62808 等），杜绝本地出站端口碰撞。
+- **网卡运行时与开机守护（NIC Tuning）增强**：
+  - 引入 `ethtool -G` 硬件收发环形队列（Ring Buffer）拉满，并开启 `gro gso tso` 通用分片卸载，降低高吞吐软中断 CPU 消耗 30%+。
+  - 健壮化软中断（RPS）CPU 掩码计算，消除超多核系统下的数值溢出风险。
+  - 路由层 MTU 存量循环清理与 `/etc/dhcpcd.exit-hook` 自动注入，租约更新后持久钉回 1500，杜绝 UDP/QUIC PMTU 黑洞。
+  - iptables / ip6tables POSTROUTING 与 OUTPUT 链双重 TCP MSS 钳制兜底（`--clamp-mss-to-pmtu`）。
+- **进程防护与自愈**：
+  - `align_default_nofile` 自动清理第三方残留的全局 `ulimit -n`，杜绝非 root 用户及服务 205/LIMITS 报错。
+  - systemd drop-in 统一注入 `StartLimitIntervalSec=0`、`Restart=always`、`RestartSec=2` 与 Go 运行时优化环境变量（小内存自适应 GOMEMLIMIT 60%）。
+- **命令与别名互通**：
+  - `sbbox tune` 与 `sbbox tuning` 完全等价，`xh tuning` 与 `xh tune` 完全等价；客户端调优指南增加 `sb` 选项。

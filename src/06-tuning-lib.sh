@@ -190,11 +190,31 @@ MTUHOOK
     fi
   fi
   command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save >/dev/null 2>&1
+
+  # 3. 收发环形队列拉到硬件上限与通用分片卸载（GRO/GSO/TSO，大幅降低千兆及软中断 CPU 开销）
+  if command -v ethtool >/dev/null 2>&1; then
+    rx_max=$(ethtool -g "$def_dev" 2>/dev/null | awk '/^RX:/{print $2; exit}')
+    tx_max=$(ethtool -g "$def_dev" 2>/dev/null | awk '/^TX:/{print $2; exit}')
+    if [[ -n "$rx_max" && -n "$tx_max" && "$rx_max" =~ ^[0-9]+$ && "$tx_max" =~ ^[0-9]+$ ]]; then
+      ethtool -G "$def_dev" rx "$rx_max" tx "$tx_max" >/dev/null 2>&1 && \
+        echo "网卡 $def_dev 收发队列已拉满：rx=$rx_max tx=$tx_max"
+    fi
+    ok=""
+    ethtool -K "$def_dev" gro on >/dev/null 2>&1 && ok="gro"
+    ethtool -K "$def_dev" gso on >/dev/null 2>&1 && ok="${ok:+$ok }gso"
+    ethtool -K "$def_dev" tso on >/dev/null 2>&1 && ok="${ok:+$ok }tso"
+    [[ -n "$ok" ]] && echo "网卡 $def_dev 已开启分片卸载：$ok"
+  fi
 fi
 
-# 3. RPS/RFS 多核软中断均衡（仅多核）+ fq 队列（仅在 default_qdisc=fq 即 BBR 可用时设置）
+# 4. RPS/RFS 多核软中断均衡（仅多核）+ fq 队列（仅在 default_qdisc=fq 即 BBR 可用时设置）
 cores=$(nproc 2>/dev/null || echo 1)
-rps_mask=$(printf '%x' $((2**cores - 1)))
+[[ "$cores" -lt 1 ]] && cores=1
+if [[ "$cores" -le 64 ]]; then
+  rps_mask=$(printf '%x' $(( (1 << cores) - 1 )))
+else
+  rps_mask=$(python3 -c "print(hex((1 << $cores) - 1)[2:])" 2>/dev/null || printf '%x' -1)
+fi
 flow_entries=$((8192 * cores))
 want_fq=0
 [[ "$(sysctl -n net.core.default_qdisc 2>/dev/null)" == "fq" ]] && command -v tc >/dev/null 2>&1 && want_fq=1
@@ -294,19 +314,36 @@ apply_system_tuning() {
   PAGE_SIZE=$(getconf PAGESIZE 2>/dev/null || echo 4096)
   MEM_PAGES=$(awk -v ps="$PAGE_SIZE" '/^MemTotal:/{printf "%d", $2*1024/ps}' /proc/meminfo 2>/dev/null || echo 262144)
 
-  local SOCK_MEM_DEF UDP_MEM_MIN
+  local SOCK_MEM_DEF UDP_MEM_MIN OPTMEM_MAX
+  # 网卡链路速率探测（Mb/s）
+  local NIC_SPEED=0 _nic_probe def_route_dev
+  def_route_dev=$(ip route show default 2>/dev/null | awk '/default/{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')
+  if [[ -n "$def_route_dev" && -r "/sys/class/net/$def_route_dev/speed" ]]; then
+    NIC_SPEED=$(cat "/sys/class/net/$def_route_dev/speed" 2>/dev/null)
+    [[ "$NIC_SPEED" =~ ^[0-9]+$ ]] || NIC_SPEED=0
+  fi
+
   if [[ "$MEM_MB" -ge 16384 ]]; then
-    TUNE_TIER="large";  SOCK_MEM_MAX=67108864;  TCP_MEM_MAX=67108864;  NETDEV_BACKLOG=65536; CONNTRACK_MAX=1048576; NETDEV_BUDGET=6000; OPTMEM_MAX=131072
+    # 大内存档 (>= 16GB)
+    TUNE_TIER="large";  SOCK_MEM_MAX=134217728; TCP_MEM_MAX=134217728; NETDEV_BACKLOG=65536; CONNTRACK_MAX=1048576; NETDEV_BUDGET=6000; OPTMEM_MAX=131072
     SOCK_MEM_DEF=8388608; UDP_MEM_MIN=262144
   elif [[ "$MEM_MB" -ge 4096 ]]; then
-    TUNE_TIER="medium"; SOCK_MEM_MAX=67108864;  TCP_MEM_MAX=67108864;  NETDEV_BACKLOG=32768; CONNTRACK_MAX=262144; NETDEV_BUDGET=6000; OPTMEM_MAX=131072
+    # 标准档 (4GB - 16GB)
+    TUNE_TIER="medium"; SOCK_MEM_MAX=134217728; TCP_MEM_MAX=134217728; NETDEV_BACKLOG=32768; CONNTRACK_MAX=262144; NETDEV_BUDGET=6000; OPTMEM_MAX=131072
     SOCK_MEM_DEF=1048576; UDP_MEM_MIN=65536
   elif [[ "$MEM_MB" -ge 1536 ]]; then
+    # 入门档 (1.5GB - 4GB)
     TUNE_TIER="entry";  SOCK_MEM_MAX=33554432; TCP_MEM_MAX=16777216;  NETDEV_BACKLOG=16384; CONNTRACK_MAX=65536; NETDEV_BUDGET=""; OPTMEM_MAX=65536
     SOCK_MEM_DEF=524288; UDP_MEM_MIN=32768
   else
+    # 极小内存档 (< 1.5GB) - 严防 OOM 熔断模式
     TUNE_TIER="small";  SOCK_MEM_MAX=8388608;  TCP_MEM_MAX=4194304;  NETDEV_BACKLOG=4096;  CONNTRACK_MAX=0; NETDEV_BUDGET=""; OPTMEM_MAX=65536
     SOCK_MEM_DEF=262144; UDP_MEM_MIN=16384
+  fi
+  # 千兆以上链路在 16GB+ 内存机型上放宽并发与队列预算
+  if [[ "$NIC_SPEED" -ge 1000 && "$MEM_MB" -ge 16384 ]]; then
+    SOCK_MEM_MAX=134217728; TCP_MEM_MAX=134217728; NETDEV_BACKLOG=131072; NETDEV_BUDGET=8000
+    TUNE_TIER="large+${NIC_SPEED}M"
   fi
 
   info "机型: ${CPU_CORES} 核 / ${MEM_MB} MB / ${ARCH} → 调优档位 ${TUNE_TIER}"
@@ -345,11 +382,11 @@ apply_system_tuning() {
   try_sysctl net.ipv4.tcp_rmem "4096 87380 ${TCP_MEM_MAX}"
   try_sysctl net.ipv4.tcp_wmem "4096 65536 ${TCP_MEM_MAX}"
   try_sysctl net.ipv4.tcp_limit_output_bytes 4194304
-  # 接收缓冲中留给协议开销的比例。设为 1（保留 50% 内存作为通告窗口），让 64MB/32MB
-  # 缓冲能通告出 32MB/16MB 的接收窗口，突破跨境高延迟（200ms+）下的单流千兆吞吐瓶颈。
+  # 接收缓冲中留给协议开销的比例。设为 1（保留 50% 内存作为通告窗口），让 128MB/64MB/32MB
+  # 缓冲能通告出 64MB/32MB/16MB 的接收窗口，突破跨境高延迟（200ms+）下的单流千兆吞吐瓶颈。
   try_sysctl net.ipv4.tcp_adv_win_scale 1
-  # 自动合并小包发送，降低 PPS 与软中断 CPU 开销
-  try_sysctl net.ipv4.tcp_autocorking 1
+  # 代理转发场景关闭软塞子，首包与小包零等待即时发出，降低 TTFB 与交互延迟
+  try_sysctl net.ipv4.tcp_autocorking 0
   # 内核 6.x/7.x SACK 压缩，在跨境丢包路径上聚合压缩 SACK ACK，抑制 ACK 风暴
   try_sysctl net.ipv4.tcp_comp_sack_nr 44
   try_sysctl net.ipv4.tcp_comp_sack_delay_ns 1000000
@@ -357,6 +394,8 @@ apply_system_tuning() {
   try_sysctl net.ipv4.tcp_mem "$(( MEM_PAGES * 4 / 100 )) $(( MEM_PAGES * 6 / 100 )) $(( MEM_PAGES * 8 / 100 ))"
   # QUIC / HTTP3 / TLS 辅助缓冲扩容
   try_sysctl net.core.optmem_max "${OPTMEM_MAX:-65536}"
+  # 多核 RFS 全局流表表项（需与网卡队列 rps_flow_cnt 联动生效）
+  [[ "$CPU_CORES" -gt 1 ]] && try_sysctl net.core.rps_sock_flow_entries "$((8192 * CPU_CORES))"
   # udp_mem：全系统 UDP 内存池上限，全档位动态闭环覆盖
   if [[ "$MEM_MB" -ge 16384 ]]; then
     try_sysctl net.ipv4.udp_mem "$(( MEM_PAGES * 4 / 100 )) $(( MEM_PAGES * 6 / 100 )) $(( MEM_PAGES * 8 / 100 ))"
@@ -382,7 +421,7 @@ apply_system_tuning() {
   try_sysctl net.ipv4.tcp_max_syn_backlog "$NETDEV_BACKLOG"
   try_sysctl net.ipv4.tcp_max_tw_buckets 65536
   try_sysctl net.ipv4.ip_local_port_range "1024 65535"
-  try_sysctl net.ipv4.ip_local_reserved_ports "8001,8003,8443,8445,8446,8447,10489,10800-10809,11801-11806,18793,23106,27295,28443"
+  try_sysctl net.ipv4.ip_local_reserved_ports "8001,8002,8003,8443,8445,8446,8447,10489,10723,10800-10809,11801-11806,13547,17781,18448,18793,19142,23106,27295,27668,27802,28443,29390,38969,62808"
 
   # conntrack 仅在模块已加载时调整；未加载时写入会失败并留下无用告警。
   # 开机时 systemd-sysctl 早于 iptables / Docker 加载 nf_conntrack，键还不存在就被静默跳过，
@@ -397,11 +436,11 @@ apply_system_tuning() {
 
   # ---------- 连接建立与保持 ----------
   try_sysctl net.ipv4.tcp_fastopen 3
-  try_sysctl net.ipv4.tcp_mtu_probing 1
+  # MTU 已经通过物理网卡锁定 1500、存量路由钉回 1500 及防火墙 TCPMSS 钳制多重兜底，设为 0 关闭多余探测
+  try_sysctl net.ipv4.tcp_mtu_probing 0
   try_sysctl net.ipv4.tcp_slow_start_after_idle 0
-  # 套接字里允许积压的未发送字节数。针对中国移动等高抖动蜂窝网络 (4G/5G) 及高 BDP 跨境链路，
-  # 设为 16KB (16384)，根治 TCP send bufferbloat 与应用层多路复用队头阻塞，保持高吞吐同时降低延迟抖动。
-  try_sysctl net.ipv4.tcp_notsent_lowat 16384
+  # 套接字未发送数据上限：设为 512KB (524288)，在千兆高带宽 BDP 下保证大吞吐，同时有效控制多路复用队头延迟
+  try_sysctl net.ipv4.tcp_notsent_lowat 524288
   # 移动网络无线跳频与高抖动优化（RFC 8985 TLP / F-RTO）：
   # tcp_frto = 2: 开启 Forward RTO 探测，避免移动蜂窝网络偶发无线重传误触发 cwnd 骤降
   # tcp_early_retrans = 3: 开启 Tail Loss Probe (TLP)，尾包丢失快速重传，避免长 RTO 超时
@@ -409,27 +448,9 @@ apply_system_tuning() {
   try_sysctl net.ipv4.tcp_early_retrans 3
   try_sysctl net.ipv4.tcp_syncookies 1
   try_sysctl net.ipv4.tcp_tw_reuse 1
-  # tcp_ecn = 1（v4.9.1）：主动发起 ECN 协商，而不是只被动应答（旧值 2）。
-  # 实测本机对 7 个对端发起协商（tcpdump 看 SYN 的 [SEW] 与 SYN-ACK 的 [S.E]，
-  # 按对端 IP 过滤，避免把自己作为服务端回的 SYN-ACK 误判成对端接受）：
-  #   接受：Cloudflare / GitHub / Bing / Microsoft / 1.1.1.1 / 9.9.9.9  共 6 个
-  #   拒绝：Google（gstatic）
-  # 无一例连接失败，tcp_ecn_fallback=1 也仍然兜着黑洞路径。
-  #
-  # **但要说清楚：在本机当前内核上它并不提速。** 本机 tcp_congestion_control=bbr，
-  # 而这个 bbr 是 **BBRv1**（kallsyms 里有 v1 专属的 bbr_lt_bw_sampling，且
-  # ss 打印的是 v1 的 info 字段 bw/mrtt/pacing_gain/cwnd_gain；没有任何 v3 符号）。
-  # BBRv1 的控制环路**不消费 ECN 标记**。实测 A/B（12 轮交错，speed.cloudflare.com）：
-  #   tcp_ecn=2  首字节中位 44.8ms  吞吐中位 1212 Mbps
-  #   tcp_ecn=1  首字节中位 47.5ms  吞吐中位 1373 Mbps
-  # 两组差异完全落在 CF 边缘本身的波动里（两组各有 4/12 次传输直接失败），
-  # 结论是**无可测差异**——这正是理论预期。
-  #
-  # 之所以仍然设成 1：它是无成本的前置条件。等哪天换上 ECN 敏感的拥塞控制
-  # （BBRv3 / DCTCP），协商能力得提前就位，否则那时才发现对端早就支持、
-  # 只是我们从来没问过。
-  try_sysctl net.ipv4.tcp_ecn 1
-  try_sysctl net.ipv4.tcp_ecn_fallback 1
+  # 关闭 ECN：公网多数跨境中间设备对 ECN 处理不规范常导致黑洞丢包，设为 0 保障全网最佳可达性
+  try_sysctl net.ipv4.tcp_ecn 0
+  try_sysctl net.ipv4.tcp_ecn_fallback 0
   # fs.suid_dumpable = 0：setuid / 中途切换过身份的进程崩溃时不产生 core dump。
   # 代理进程内存里有私钥、UUID、解密后的流量，默认值 2（suidsafe）仍会 dump 到 core_pattern 指定处；
   # 0 则一律不 dump。配合 limits.conf 的 `* hard core 0` 与 core_pattern = core。
@@ -485,13 +506,6 @@ apply_system_tuning() {
   align_default_nofile
 
   # ---------- 网卡运行时参数：fq / initcwnd / txqueuelen / RPS（best-effort）----------
-  # v4.9.44：这几项都不是 sysctl，此前只在这里执行一次，**重启即丢**：
-  # net.core.default_qdisc=fq 只对此后新建的 qdisc 生效，而网卡在 initramfs 阶段、
-  # sysctl.d 加载前就已建好，实测重启后出口网卡是 mq + pfifo_fast。
-  # 现改为写开机脚本 + systemd oneshot，这里先执行一次，开机再执行一次。
-  if [[ "$CPU_CORES" -gt 1 ]]; then
-    try_sysctl net.core.rps_sock_flow_entries "$((8192 * CPU_CORES))"
-  fi
   install_nic_tune
 
   # 3. TCP MSS Clamp 防护（避免 Jumbo Frame 与公网 MTU 冲突导致的黑洞丢包，防中国移动 PPPoE 1492 / 蜂窝移动 GTP 1420 握手黑洞）
