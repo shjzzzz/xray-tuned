@@ -829,3 +829,11 @@
     - 协议定义互斥：`h2`（RFC 7540）是基于 TCP 的 HTTP/2 标识，而 `h3`（RFC 9114）是基于 QUIC/UDP 的 HTTP/3 标识；
     - QUIC 传输层无法承载单流 TCP 依赖的 HTTP/2 协议栈，若在 QUIC 握手中声明或协商出 `h2`，将直接触发底层 TLS 协议协商错误并断开连接。
   - **工程决策**：维持当前标准的 `ALPN: ["h3"]` 与 `finalmask (salamander)` 架构设计，不做破坏性变更。
+
+## 42. 当前实机 6 大节点设为默认命令安装节点与按名称排序拉取架构 (2026-10-25)
+- **默认安装节点与线上实机对齐**：
+  - 默认命令安装仅激活当前实机运行的 6 大核心精选节点：`Hysteria2-H3-Direct`、`Hysteria2-TLS-BBR-Salamander`、`VLESS-Reality-XHTTP-Direct`、`VLESS-TLS+后量子+XHTTP+CDN`、`VLESS-XHTTP-Direct-H2`、`VLESS-XHTTP-Direct-H3`。
+  - 将 `FEATURE_REALITY_VISION`、`FEATURE_CDN_H2`、`FEATURE_CDN_H3` 默认值设为 `false`（`src/01-env.sh`、`.github/scripts/build-install.sh`、`src/09-server-config.sh`），其余备用节点均存入备用库，保证安装默认最精炼高效。
+- **全平台订阅按节点名称升序自动排序**：
+  - 在 `src/11-client-config.sh`（安装时客户端配置渲染）与 `src/13-manage-cli.sh`（`xh resub` 订阅重构）中内置排序机制，使 `client-config.txt` 与 Mihomo proxies 统一按节点名称升序排序。
+  - 客户端在通过订阅 URL 拉取（Base64、RAW、Mihomo YAML、Shadowrocket 等）时节点顺序严格一致工整。

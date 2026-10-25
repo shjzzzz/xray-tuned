@@ -325,6 +325,53 @@ cmd_resub() {
   [[ -d "$subdir" ]] || fail "未找到订阅目录 ${subdir}"
   [[ -f "${home}/client-config.txt" ]] || fail "未找到 ${home}/client-config.txt"
 
+  # 按节点名称升序排序
+  if [[ -f "${home}/client-config.txt" ]] && command -v python3 >/dev/null 2>&1; then
+    python3 -c "
+import sys
+fpath = sys.argv[1]
+with open(fpath, 'r', encoding='utf-8') as f:
+    lines = [line.strip() for line in f if line.strip()]
+def get_name(line):
+    return line.split('#', 1)[1] if '#' in line else line
+sorted_lines = sorted(lines, key=get_name)
+with open(fpath, 'w', encoding='utf-8') as f:
+    for line in sorted_lines:
+        f.write(line + '\n')
+" "${home}/client-config.txt" 2>/dev/null || true
+  fi
+
+  if [[ -f "${home}/client-config-mihomo-nodes.yaml" || -f "${home}/client-config-mihomo-full.yaml" ]] && command -v python3 >/dev/null 2>&1; then
+    python3 -c "
+import sys, re
+
+def sort_proxies_in_file(fpath):
+    try:
+        with open(fpath, 'r', encoding='utf-8') as f:
+            text = f.read()
+        match = re.search(r'(proxies:\n)(.*?)(?=\n[a-z\-]+:|\Z)', text, re.DOTALL)
+        if not match:
+            return
+        header = match.group(1)
+        body = match.group(2)
+        proxy_chunks = re.split(r'\n(?=- name:)', '\n' + body)
+        proxy_chunks = [c.strip() for c in proxy_chunks if c.strip()]
+        def get_proxy_name(chunk):
+            m = re.search(r'^- name:\s*([^\n]+)', chunk)
+            return m.group(1).strip() if m else ''
+        sorted_chunks = sorted(proxy_chunks, key=get_proxy_name)
+        sorted_body = '\n'.join(sorted_chunks) + '\n'
+        new_text = text[:match.start()] + header + sorted_body + text[match.end():]
+        with open(fpath, 'w', encoding='utf-8') as f:
+            f.write(new_text)
+    except Exception:
+        pass
+
+for p in sys.argv[1:]:
+    sort_proxies_in_file(p)
+" "${home}/client-config-mihomo-nodes.yaml" "${home}/client-config-mihomo-full.yaml" 2>/dev/null || true
+  fi
+
   cp "${home}/client-config.txt" "${subdir}/v2rayn-raw.txt"
   base64 "${home}/client-config.txt" | tr -d '\n' > "${subdir}/v2rayn.txt"
   [[ -f "${home}/client-config-mihomo-full.yaml" ]]  && cp "${home}/client-config-mihomo-full.yaml"  "${subdir}/mihomo-full.yaml"
