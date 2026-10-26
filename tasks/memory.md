@@ -866,3 +866,13 @@
   bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/acme-yg/main/acme.sh)
   ```
 - **证书复用机制**：`acme-yg` 产物落地于 `$HOME/ygkkkca`（包含 `cert.crt` / `private.key`），本项目优先检测并直接复用该路径下的证书。
+
+## 45. 对抗性安全审查与纵深防御加固 (Adversarial Security Audit & Hardening) - 2026-10-26
+- **TLS / SNI 探针防御补齐 (h2-direct / 8445 端口)**：
+  - 发现 `h2-direct` 入站遗漏 `rejectUnknownSni: true`，在收到针对 IP 的直接 TLS 扫描或恶意 SNI 探测时会无条件交出真实证书 `CN=reality.cch.us.kg`。
+  - 在 `src/09-server-config.sh` 及 `config.json` 中补齐 `"rejectUnknownSni": true`，未知或缺失 SNI 的探针连接在 TLS 握手阶段即被直接切断（Alert 112: unrecognized name），与 443 / 8443 协同杜绝证书侧信道泄露。
+- **TLS 私钥权限隔离**：
+  - 修正 `/etc/ssl/private/private.key` 全局可读问题，将权限收紧至 `0640` 并归属 `root:xray`，消灭本地未授权进程跨权读取利用风险。
+- **产物与构建同步**：
+  - 执行 `.github/scripts/build-install.sh` 重新打包发布产物，确保 `dist/install.sh` 与 `dist/install-xpadding.sh` 同步受护。
+

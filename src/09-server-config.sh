@@ -372,6 +372,9 @@ xray_h2_direct_inbound() {
                     "minVersion": "1.3",
                     "maxVersion": "1.3",
                     "cipherSuites": "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256",
+                    // 只接受证书覆盖的 SNI；未知 SNI 直接拒绝握手，
+                    // 避免本入站被当作任意 SNI 的 TLS 前置来探测或滥用。
+                    "rejectUnknownSni": true,
                     "certificates": [
                         {
                             "certificateFile": "${CERT_FILE}",
