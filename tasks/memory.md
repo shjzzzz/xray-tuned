@@ -876,3 +876,15 @@
 - **产物与构建同步**：
   - 执行 `.github/scripts/build-install.sh` 重新打包发布产物，确保 `dist/install.sh` 与 `dist/install-xpadding.sh` 同步受护。
 
+## 46. Cloudflare 优选 IP (bestcf) 超时排障与 Anycast 纯净候选池重构 (2026-10-27)
+- **故障排查与根因分析**：
+  1. **国内运营商 TLS/SNI 阻断导致“能联通但超时”**：原默认保留的 `104.16.x.x` 节点在海外 VPS 本地探测虽然正常，但在国内受运营商 QoS 与 SNI 阻断，握手及 XHTTP 数据流持续丢包判定超时。
+  2. **`cfst` 自动化解包路径失效**：`XIU2/CloudflareSpeedTest` 官方 release tar 包内包含 `cfst_linux_amd64/` 及 `cfst_linux_arm64/` 顶层目录，原有 `tar -C "$dir" cfst` 报 Not found in archive 导致测速二进制拉取失败。
+  3. **白名单联动缺失**：`dns_updater.py` 生成逻辑未自适应兼容 `/root/cf-bestip/whitelist.txt`，未在白名单为空时平滑回退，导致 systemd 定时器崩溃报错退出。
+- **治理与固化动作**：
+  1. **修正 `cfst` 解压**：补充 `--strip-components=1` 匹配路径，自适应解压跨架构二进制。
+  2. **候选池升级与 104.16 阻断段剔除**：将候选池全面收敛至高连通率的 `162.159.192.x`、`162.159.193.x`、`162.159.195.x` 与 `104.19.x.x` Anycast 段；解除对 `104.16.` 的硬编码保留。
+  3. **优雅白名单优先级接入**：`load_whitelist()` 优先接入自定义白名单，若为空则平滑采用纯净 Anycast 池，兜底调用 `cfst` 全量测速。
+  4. **扩展 XHTTP CDN 探测链接匹配**：`_link()` 兼容 `XHTTP%2BCDN` 与 `XHTTP+CDN` 节点别名，杜绝回退 None。
+
+
