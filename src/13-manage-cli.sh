@@ -2343,7 +2343,8 @@ cmd_bestcf() {
           cfst_url="https://github.com/XIU2/CloudflareSpeedTest/releases/download/v2.3.5/cfst_linux_arm64.tar.gz"
         fi
         info "下载 CloudflareSpeedTest (${arch})..."
-        curl -fsSL "$cfst_url" | tar -zxvf - -C "$dir" cfst 2>/dev/null || true
+        curl -fsSL "$cfst_url" | tar -zxvf - --strip-components=1 -C "$dir" "*/cfst" 2>/dev/null || \
+        curl -fsSL "$cfst_url" | tar -zxvf - --strip-components=1 -C "$dir" 2>/dev/null || true
         chmod +x "${dir}/cfst" 2>/dev/null || true
       fi
 
@@ -2463,37 +2464,47 @@ def sync_dns(ips):
             print(f"成功添加优选 DNS 记录: {DOMAIN_NAME} -> {ip} (TTL=60, 仅DNS)")
 
 # 优质 Anycast 纯净优选 IP 候选池 (实测对国内三网连通率最高并支持 XHTTP 隧道回源)
+# 排除易被国内运营商 SNI 阻断/QoS 丢包超时的 104.16.x.x 段，优选 162.159 与 104.19 高速 Anycast 段
 CMCC_PREFERRED_IPS = [
-    "%d.%d.%d.%d" % (a, b, c, d) for a, b, c, d in [
-        (162, 159, 192, 1),   (162, 159, 237, 59), (104, 18, 40, 34),   (172, 64, 152, 180),
-        (104, 16, 160, 187), (104, 16, 161, 187), (104, 16, 160, 1),   (104, 16, 161, 1)
-    ]
+    "162.159.192.1", "162.159.192.2", "162.159.193.1", "162.159.193.2",
+    "162.159.195.1", "162.159.195.2", "104.19.18.1", "104.19.19.1",
+    "104.19.20.1", "162.159.152.1", "162.159.153.1"
 ]
+WHITELIST_FILE = f"{DIR}/whitelist.txt"
+
+def load_whitelist():
+    if not os.path.exists(WHITELIST_FILE): return []
+    try:
+        return [l.split("#")[0].strip() for l in open(WHITELIST_FILE, encoding="utf-8") if l.split("#")[0].strip()]
+    except Exception:
+        return []
 
 def get_cmcc_candidates():
     candidates = []
+    wl = load_whitelist()
+    pool = wl if wl else CMCC_PREFERRED_IPS
     # 1. 优先复用当前 DNS 中已有的且探测健康通过的 IP（避免无故障盲目漂移）
     try:
         current_records = get_existing_records()
         for r in current_records:
             cip = r.get("content")
-            if cip and (cip in CMCC_PREFERRED_IPS or cip.startswith("104.16.")):
+            if cip and cip in pool:
                 ok, why = origin_ok(cip, attempts=1)
                 if ok:
                     lat = "25"
                     m = re.search(r'\(([0-9.]+)ms\)', why)
                     if m: lat = f"{float(m.group(1)):.0f}"
                     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 保持当前健康优选 IP {cip}: {why}")
-                    candidates.append({"ip": cip, "speed": "CMI-HKG", "latency": lat, "loss": "0.00"})
+                    candidates.append({"ip": cip, "speed": "CF-Anycast", "latency": lat, "loss": "0.00"})
                     if len(candidates) >= 2:
                         return candidates
     except Exception as e:
         print(f"检查现有记录异常: {e}")
 
-    # 2. 若现有 IP 不足 2 个健康节点，从 CMCC 纯净候选池中探测补充
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 探测中国移动 CMI 香港纯净优选池补充节点...")
+    # 2. 若现有 IP 不足 2 个健康节点，从候选池中探测补充
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 探测优质纯净优选池补充节点...")
     existing_ips = [c["ip"] for c in candidates]
-    for ip in CMCC_PREFERRED_IPS:
+    for ip in pool:
         if ip in existing_ips:
             continue
         ok, why = origin_ok(ip, attempts=1)
@@ -2501,12 +2512,12 @@ def get_cmcc_candidates():
             lat = "25"
             m = re.search(r'\(([0-9.]+)ms\)', why)
             if m: lat = f"{float(m.group(1)):.0f}"
-            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ✅ 移动优选候选 {ip}: 探测通过 (延迟 {lat}ms)")
-            candidates.append({"ip": ip, "speed": "CMI-HKG", "latency": lat, "loss": "0.00"})
+            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ✅ 优选候选 {ip}: 探测通过 (延迟 {lat}ms)")
+            candidates.append({"ip": ip, "speed": "CF-Anycast", "latency": lat, "loss": "0.00"})
             if len(candidates) >= 2:
                 break
         else:
-            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ❌ 移动优选候选 {ip}: {why}")
+            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ❌ 优选候选 {ip}: {why}")
     return candidates
 
 if __name__ == "__main__":
@@ -2546,7 +2557,7 @@ TEST_URLS = ("https://www.gstatic.com/generate_204", "https://cp.cloudflare.com/
 def _link():
     for f in glob.glob(SUB_GLOB):
         for l in open(f, encoding="utf-8"):
-            if l.startswith("vless://") and "XHTTP-CDN-H2" in l:
+            if l.startswith("vless://") and ("XHTTP-CDN-H2" in l or "XHTTP%2BCDN" in l or "XHTTP+CDN" in l):
                 return l.strip()
     return None
 
