@@ -191,7 +191,8 @@ ${XRAY_XDRIVE_INBOUND}
                 // domainStrategy=AsIs 时拿不到解析结果，两者互补，缺一不可。
                 "finalRules": [
                     { "action": "block", "ip": ["geoip:private"] }${XRAY_BLOCK_CN_RULE}
-                ]
+                ],
+                "blockDelay": "30-90"
             },
             "streamSettings": {
                 "sockopt": {
