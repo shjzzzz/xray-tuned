@@ -876,3 +876,18 @@
 - **产物与构建同步**：
   - 执行 `.github/scripts/build-install.sh` 重新打包发布产物，确保 `dist/install.sh` 与 `dist/install-xpadding.sh` 同步受护。
 
+## 46. 适配 Xray 26.10.29 后量子握手与链路参数调优 (v5.2.3) - 2026-10-29
+- **Mihomo 后量子混合握手适配 (`support-x25519mlkem768`)**：
+  - 新版 Xray-core (>= 26.9.8) 严格校验 REALITY ClientHello 中的 `X25519MLKEM768` 密钥份额。
+  - 在所有 Mihomo 客户端模板及扩展配置的 `reality-opts` 中注入 `support-x25519mlkem768: true`，解决新内核握手认证失败（REALITY authentication failed）问题。
+- **Freedom 出站 `blockDelay` 防探测黑洞机制**：
+  - 适配 Xray 26.10.29 对 DispatchLink 调度类入站的 `blockDelay` 修复，在 `freedom` 出站注入 `"blockDelay": "30-90"`。
+  - 针对受阻内网/元数据与非法嗅探流量实施 30-90s 静默黑洞延迟断开，杜绝探测器瞬间判定代理拓扑。
+- **全局 Policy 缓冲与保活调优**：
+  - 注入 `policy.levels.0` 参数：`bufferSize: 4096KB`（解决 ARM64 默认 4KB 吞吐瓶颈）、`connIdle: 1800s`、`uplinkOnly: 15s`、`downlinkOnly: 30s`。
+- **全链路 Socket 选项调优 (`sockopt`)**：
+  - 核心入站与出站统一注入 `tcpcongestion: "bbr"`、`tcpNoDelay: true`、`tcpKeepAliveIdle: 60`、`tcpKeepAliveInterval: 15`、`tcpUserTimeout: 300000`。
+  - Hysteria2 入站设置 `udpIdleTimeout: 60`，增强移动端切网与长连接防掉线能力。
+- **默认内核升级与构建产物同步**：
+  - `XRAY_DEFAULT_VERSION` 升级至 `26.10.29`，更新安装器产物至 `dist/`。
+
