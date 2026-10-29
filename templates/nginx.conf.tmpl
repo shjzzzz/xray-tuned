@@ -8,7 +8,7 @@ worker_cpu_affinity auto;
 # 的事），所以这一行必须在配置里自己声明。
 # 取 worker_connections 的 2 倍：本项目所有连接都是代理（grpc_pass / proxy_pass），
 # 每条连接同时占用「客户端 + 上游」两个描述符，1:1 会在半数连接处触顶。
-worker_rlimit_nofile 131072;
+worker_rlimit_nofile 1048576;
 
 error_log /usr/local/nginx/logs/error.log error;
 pid /run/nginx.pid;
@@ -72,10 +72,13 @@ http {
     real_ip_recursive     on;
 
     sendfile              on;
-    open_file_cache       max=10000 inactive=60s;
+    open_file_cache       max=65535 inactive=60s;
     open_file_cache_valid 120s;
     open_file_cache_min_uses 2;
     open_file_cache_errors on;
+    reset_timedout_connection on;
+    types_hash_max_size   4096;
+    server_names_hash_bucket_size 128;
     server_tokens         off;
     # 隐私：默认 access_log 会把访客 IP、订阅 token 路径和 UA 写进磁盘；各 location 单独的 off 之外，这里全局关闭
     access_log            off;
@@ -112,8 +115,9 @@ http {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
 
-    ssl_session_cache          shared:SSL:16m;
-    ssl_session_timeout        1h;
+    ssl_session_cache          shared:SSL:64m;
+    ssl_session_timeout        1d;
+    ssl_buffer_size            8k;
     # TLS1.1 / 1.2 只为兼容老客户端：1.1 需要 ssl_ciphers 里的 CBC-SHA 套件与 @SECLEVEL=0 才能协商（否则服务端回
     # protocol version 告警），@SECLEVEL=0 对整个 nginx TLS 生效。
     # v4.9.69：session tickets 重新打开。tickets 让客户端重连时恢复会话、少传证书，并且是下面 ssl_early_data
@@ -131,8 +135,8 @@ http {
     # 只会让 nginx 每次启动/重载打两条 [warn]，装订不出任何东西。
     # 写成显式 off 是表态：不是忘了开，是签发方已经没有 OCSP 了。
     ssl_stapling               off;
-    resolver                   1.1.1.1 8.8.8.8 valid=60s ${NGINX_RESOLVER_IPV6};
-    resolver_timeout           2s;
+    resolver                   169.254.169.254 1.1.1.1 8.8.8.8 valid=300s ${NGINX_RESOLVER_IPV6};
+    resolver_timeout           5s;
 
     map \$real_client_ip \$proxy_forwarded_elem {
         ~^[0-9.]+\$        "for=\$real_client_ip";
@@ -150,6 +154,7 @@ http {
         keepalive          256;
         keepalive_requests 1000000;
         keepalive_timeout  3600s;
+        keepalive_time     1h;
     }
 
     upstream xray_xhttp_sr {
@@ -157,6 +162,7 @@ http {
         keepalive          256;
         keepalive_requests 1000000;
         keepalive_timeout  3600s;
+        keepalive_time     1h;
     }
 
     # 默认 SSL 丢弃服务：未匹配 SNI / 直接 IP 探测在 TLS 握手阶段直接断开，防止证书/域名泄露
@@ -310,7 +316,7 @@ $(nginx_fallback_config "$CDN_DOMAIN" "$CDN_FALLBACK_ORIGIN" "$CDN_FALLBACK_HOST
     }
 
     server {
-        listen  80 default_server;
+        listen  80 default_server reuseport backlog=65535;
         server_name _;
         return 301 https://\$host\$request_uri;
     }

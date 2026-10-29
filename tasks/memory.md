@@ -891,3 +891,21 @@
 - **默认内核升级与构建产物同步**：
   - `XRAY_DEFAULT_VERSION` 升级至 `26.10.29`，更新安装器产物至 `dist/`。
 
+## 47. Nginx 1.31.8 主线版深度性能调优与高可用加固 (2026-10-30)
+- **文件描述符与内核连接限制完全对齐**：
+  - `worker_rlimit_nofile` 由 `131072` 提升至 `1048576`（1M 句柄），与 systemd LimitNOFILE 和内核 `fs.file-max` 完全对齐，消除海量 XHTTP 长连接与回源连接双向占用时的触顶风险。
+  - `open_file_cache` 扩容至 `max=65535 inactive=60s`，预置 `types_hash_max_size 4096` 与 `server_names_hash_bucket_size 128`。
+- **套接字生命周期与死连接快速回收**：
+  - 启用 `reset_timedout_connection on;`，客户端异常中断或超时后快速发送 TCP RST 释放套接字，避免长期待在 `FIN_WAIT` 堆积占用内核缓冲区。
+  - 将 HTTP 80 端口监听升级为 `listen 80 default_server reuseport backlog=65535;`，利用多核心 `SO_REUSEPORT` 均衡分发，与内核 `net.core.somaxconn=65535` 队列对齐。
+- **TLS 会话复用与 TTFB 首包延迟优化**：
+  - `ssl_session_cache` 扩容至 `shared:SSL:64m;`（容纳约 26 万会话），`ssl_session_timeout` 延长至 `1d`（符合 RFC 8446 标准），保证移动端及断网重连稳定利用 Session Ticket 和 0-RTT 极速复用，显著降低 CPU 握手开销。
+  - 注入 `ssl_buffer_size 8k;`，减少 TLS 记录块切片等待，有效压缩首包往返延迟 (TTFB)。
+- **回落伪装站 DNS 解析韧性增强 (Masquerade DNS Resilience)**：
+  - 针对此前日志排查出的 `www.sjsu.edu could not be resolved (Operation timed out)`，在 `resolver` 列表中优先引入云内网低延迟解析器 `169.254.169.254`（<1ms），并保留 `1.1.1.1`、`8.8.8.8` 作为灾备；解析缓存由 60s 延长为 300s，超时放宽至 5s，彻底根除回落伪装站偶发的 502/504 错误。
+- **Upstream gRPC 保活平滑轮换**：
+  - 在 `upstream xray_xhttp` 与 `upstream xray_xhttp_sr` 中加入 `keepalive_time 1h;`，确保超长连接在维持复用的同时平滑轮替。
+- **模板与实机同步**：
+  - 线上实机 `/etc/nginx/nginx.conf` 与仓库模板 `templates/nginx.conf.tmpl` 保持完全一致，重新构建并校验通过。
+
+
