@@ -77,6 +77,7 @@ proxies:
     reality-opts:
       public-key: YOUR_PUBLIC_KEY
       short-id: YOUR_SHORT_ID
+      support-x25519mlkem768: true
 
   - name: Vless-xhttp-reality-YOUR_HOST
     type: vless
@@ -95,6 +96,7 @@ proxies:
     reality-opts:
       public-key: YOUR_PUBLIC_KEY
       short-id: YOUR_SHORT_ID
+      support-x25519mlkem768: true
     xhttp-opts:
       path: YOUR_PATH
       mode: auto
@@ -186,6 +188,7 @@ proxies:
     reality-opts:
       public-key: YOUR_PUBLIC_KEY
       short-id: YOUR_SHORT_ID
+      support-x25519mlkem768: true
     xhttp-opts:
       path: YOUR_PATH
       mode: stream-up

@@ -71,6 +71,7 @@ EOF
         reality-opts:
           public-key: ${PUBLIC_KEY}
           short-id: ${SHORT_ID}
+          support-x25519mlkem768: true
         reuse-settings:
           max-concurrency: "16-32"
           c-max-reuse-times: "0"
