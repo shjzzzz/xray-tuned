@@ -1,12 +1,33 @@
 # xray-tuned
 
-> High-performance proxy and kernel-tuning deployment suite powered by **Xray-core (v26.3.27 stable)**.
+> High-performance proxy and kernel-tuning deployment suite powered by **Xray-core (v26.10.29 stable)**.
 > Features **XHTTP + Cloudflare CDN + Reality + Hysteria2** with native BBRv3, TCP Fast Open, 64MB buffer safety, and automated multi-platform subscription distribution.
 
 **语言：** **简体中文** · [English](./README.en.md) · [فارسی](./README.fa.md)
 
 ---
 先申请证书：bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/acme-yg/main/acme.sh)
+
+## 🌟 最新更新亮点 (v5.2.3 / 2026-10-29)
+
+本项目已全面适配 **Xray-core v26.10.29** 最新内核与后量子安全规范，并注入全链路性能与防主动探测调优：
+
+1. **Mihomo 后量子混合密钥交换适配 (`support-x25519mlkem768`)**：
+   - 适配 Xray-core (>= 26.9.8) 对 REALITY 握手严格校验 `X25519MLKEM768` 份额的要求。
+   - 在全平台 Mihomo 订阅与配置模板中注入 `support-x25519mlkem768: true`，杜绝 ClientHello 握手密钥份额被 uTLS 剥离引发的 `REALITY authentication failed`。
+2. **Freedom 出站 `blockDelay` 防主动探测黑洞机制**：
+   - 适配 Xray 26.10.29 对 DispatchLink 调度入站 `blockDelay` 的修复，注入 `"blockDelay": "30-90"`。
+   - 遭遇未授权内网探测、云元数据嗅探或非法扫描时，服务端保持 30~90 秒静默黑洞延迟断开，杜绝扫描器依据即时 RST 判定代理拓扑与端口属性。
+3. **突破 ARM64 吞吐瓶颈的全局 Policy 缓冲调优**：
+   - 解决 ARM64 架构下未声明 policy 时 Xray 默认单连接缓冲仅 4 KB 的吞吐瓶颈，注入 `bufferSize: 4096KB`（4 MB 单连接缓冲）。
+   - 协同设置 `connIdle: 1800s`、`uplinkOnly: 15s`、`downlinkOnly: 30s` 优雅半关闭机制，彻底消除大文件持续拉取与流媒体长视频截断。
+4. **全链路 Socket 选项与流控优化 (`sockopt`)**：
+   - 核心出入站统一注入 `tcpcongestion: "bbr"`、`tcpNoDelay: true`、`tcpKeepAlive` 与 `tcpUserTimeout: 300000`（5 分钟保护，防跨境抖动误杀连接，同时自愈僵尸套接字）。
+   - Hysteria2 入站设置 `udpIdleTimeout: 60`，大幅增强移动蜂窝网络息屏与切网保活能力。
+5. **REALITY 服务实例原生升级**：
+   - `xray-reality.service` 原生统一升级至 `Xray 26.10.29`，全链路无缝享受后量子混合加密与内核性能优化。
+
+---
 
 ## ⚡ 快速一键部署
 
