@@ -8,7 +8,18 @@
 ---
 先申请证书：bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/acme-yg/main/acme.sh)
 
-## 🌟 最新更新亮点 (v5.2.3 / 2026-10-29)
+## 🌟 最新更新亮点 (v5.2.4 / 2026-10-30)
+
+本项目已实现 **Nginx 1.31.8 主线版深度性能调优与高可用加固**，全面对齐百万并发与内网低延迟解析：
+
+1. **文件描述符与百万并发对齐**：`worker_rlimit_nofile` 提升至 `1048576`（1M 句柄），与 systemd LimitNOFILE 和内核 `fs.file-max` 完全对齐，杜绝海量 XHTTP 长连接与回源双向并发触顶。
+2. **TLS 会话复用与 TTFB 首包延迟优化**：`ssl_session_cache` 扩容至 `shared:SSL:64m`，会话缓存超时延长至 `1d`，降低 CPU 握手开销；注入 `ssl_buffer_size 8k`，显著压缩首包往返延迟 (TTFB)。
+3. **套接字生命周期与端口均衡**：启用 `reset_timedout_connection on` 快速回收死连接；HTTP 80 端口升级为 `reuseport backlog=65535`，结合多核心调度对齐内核积压队列。
+4. **回落伪装站内网 DNS 高可用与解析韧性**：优先引入云内网低延迟解析器 `169.254.169.254`（<1ms），并配置 `1.1.1.1` 灾备，彻底根除回落伪装站偶发的 502/504 域名解析超时。
+
+---
+
+## 🌟 历史更新亮点 (v5.2.3 / 2026-10-29)
 
 本项目已全面适配 **Xray-core v26.10.29** 最新内核与后量子安全规范，并注入全链路性能与防主动探测调优：
 

@@ -891,7 +891,7 @@
 - **默认内核升级与构建产物同步**：
   - `XRAY_DEFAULT_VERSION` 升级至 `26.10.29`，更新安装器产物至 `dist/`。
 
-## 47. Nginx 1.31.8 主线版深度性能调优与高可用加固 (2026-10-30)
+## 47. Nginx 1.31.8 主线版深度性能调优与高可用加固 (v5.2.4) - 2026-10-30
 - **文件描述符与内核连接限制完全对齐**：
   - `worker_rlimit_nofile` 由 `131072` 提升至 `1048576`（1M 句柄），与 systemd LimitNOFILE 和内核 `fs.file-max` 完全对齐，消除海量 XHTTP 长连接与回源连接双向占用时的触顶风险。
   - `open_file_cache` 扩容至 `max=65535 inactive=60s`，预置 `types_hash_max_size 4096` 与 `server_names_hash_bucket_size 128`。
