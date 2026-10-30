@@ -287,19 +287,19 @@ fi
 # 直连入站只收 stream-up。
 # 10 大核心节点之三大后量子 (ML-KEM-768) 节点（默认开启）
 if [[ "${FEATURE_TLS_PQ_XHTTP:-true}" == true ]]; then
-  TLS_PQ_XHTTP_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=%7B%22scMinPostsIntervalMs%22%3A30%2C%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D%7D&packetEncoding=xudp#VLESS-TLS+后量子+XHTTP+CDN"
+  TLS_PQ_XHTTP_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=%7B%22scMinPostsIntervalMs%22%3A30%2C%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D%7D&packetEncoding=xudp#VLESS-TLS+PQ+XHTTP+CDN"
 else
   TLS_PQ_XHTTP_NODE_LINE=""
 fi
 
 if [[ "${FEATURE_TLS_PQ_VISION:-false}" == true ]]; then
-  TLS_PQ_VISION_NODE_LINE="vless://${UUID1}@${CDN_CONNECT_ADDR}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=%7B%22scMinPostsIntervalMs%22%3A30%2C%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D%7D&packetEncoding=xudp#VLESS-TLS+后量子+Vision+XHTTP+CDN"
+  TLS_PQ_VISION_NODE_LINE="vless://${UUID1}@${CDN_CONNECT_ADDR}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=stream-up&extra=%7B%22scMinPostsIntervalMs%22%3A30%2C%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D%7D&packetEncoding=xudp#VLESS-TLS+PQ+Vision+XHTTP+CDN"
 else
   TLS_PQ_VISION_NODE_LINE=""
 fi
 
 if [[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
-  REALITY_PQ_VISION_NODE_LINE="vless://${UUID1}@${VPS_IP_URI}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=raw&headerType=none&packetEncoding=xudp#VLESS-REALITY+后量子+Vision"
+  REALITY_PQ_VISION_NODE_LINE="vless://${UUID1}@${VPS_IP_URI}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=raw&headerType=none&packetEncoding=xudp#VLESS-REALITY+PQ+Vision"
 else
   REALITY_PQ_VISION_NODE_LINE=""
 fi
@@ -579,7 +579,7 @@ if (
   info() { :; }; warn() { :; }
   render_client_configs
 ) >"${STATE_DIR}/all-render.log" 2>&1 \
-  && for _n in VLESS-TLS+后量子+XHTTP+CDN VLESS-REALITY+后量子+Vision VLESS-XHTTP-CDN-H2 VLESS-XHTTP-CDN-H3 VLESS-XHTTP-Direct-H2 Hysteria2-H3-Direct Hysteria2-TLS-BBR-Salamander VLESS-Reality-Vision-Direct VLESS-Reality-XHTTP-Direct VLESS-Reality-Up-CDN-Down VLESS-CDN-Up-Reality-Down MASQUE-CONNECT-IP; do
+  && for _n in VLESS-TLS+PQ+XHTTP+CDN VLESS-REALITY+PQ+Vision VLESS-XHTTP-CDN-H2 VLESS-XHTTP-CDN-H3 VLESS-XHTTP-Direct-H2 Hysteria2-H3-Direct Hysteria2-TLS-BBR-Salamander VLESS-Reality-Vision-Direct VLESS-Reality-XHTTP-Direct VLESS-Reality-Up-CDN-Down VLESS-CDN-Up-Reality-Down MASQUE-CONNECT-IP; do
        grep -q "${_n}" /etc/xhttp-cdn/all.new/client-config.txt || { echo "备用节点库缺少 ${_n}" >> "${STATE_DIR}/all-render.log"; false; }
      done; then
   # 保留旧库里的服务端入站文本（由 09 写入），换入新渲染的客户端文件

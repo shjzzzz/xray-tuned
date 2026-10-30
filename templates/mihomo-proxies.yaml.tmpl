@@ -4,7 +4,7 @@
 # 第 4 条 Hysteria2，后两条是 Reality TCP 直连兜底。
 proxies:
   #<<FEATURE_TLS_PQ_XHTTP
-  - name: VLESS-TLS+后量子+XHTTP+CDN${NODE_SUFFIX}
+  - name: VLESS-TLS+PQ+XHTTP+CDN${NODE_SUFFIX}
     type: vless
     server: ${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}
     port: 443
@@ -32,7 +32,7 @@ proxies:
   #>>FEATURE_TLS_PQ_XHTTP
 
   #<<FEATURE_REALITY_PQ_VISION
-  - name: VLESS-REALITY+后量子+Vision${NODE_SUFFIX}
+  - name: VLESS-REALITY+PQ+Vision${NODE_SUFFIX}
     type: vless
     server: ${VPS_IP}
     port: 443

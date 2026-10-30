@@ -98,8 +98,8 @@ AUTO=${AUTO:-0}
 # ==================================================
 # 节点集：默认 8 条核心节点（与实机当前一致），全部由 Xray 单核心提供
 # ==================================================
-#   1. VLESS-TLS+后量子+XHTTP+CDN     经 CDN，TLS 1.3 + ML-KEM-768
-#   2. VLESS-REALITY+后量子+Vision    直连 TCP 443，REALITY + ML-KEM-768
+#   1. VLESS-TLS+PQ+XHTTP+CDN        经 CDN，TLS 1.3 + ML-KEM-768
+#   2. VLESS-REALITY+PQ+Vision       直连 TCP 443，REALITY + ML-KEM-768
 #   3. VLESS-XHTTP-Direct-H3         直连 UDP 8443，QUIC/h3
 #   4. VLESS-XHTTP-Direct-H2         直连 TCP 8445，h2
 #   5. Hysteria2-H3-Direct           直连 UDP 随机高端口，标准 HTTP/3
@@ -147,10 +147,9 @@ FEATURE_REALITY_SPX=${FEATURE_REALITY_SPX:-true}
 # 默认开启（与实机当前节点集一致）；不需要时 FEATURE_H2_DIRECT=false 或装好后 xh h2direct off。
 FEATURE_H2_DIRECT=${FEATURE_H2_DIRECT:-true}
 
-# FEATURE_REALITY_UP_CDN_DOWN（v4.9.64 起默认开启）：上下行分离节点
+# FEATURE_REALITY_UP_CDN_DOWN（默认开启，与当前实机节点集一致）：上下行分离节点
 # VLESS-Reality-Up-CDN-Down（上行 Reality 直连 443 / 下行 CDN H2 443）。
-# v4.9.78 起默认关闭（备用节点）；需要时 FEATURE_REALITY_UP_CDN_DOWN=true，或装好后 xh split reality-up on。
-FEATURE_REALITY_UP_CDN_DOWN=${FEATURE_REALITY_UP_CDN_DOWN:-false}
+FEATURE_REALITY_UP_CDN_DOWN=${FEATURE_REALITY_UP_CDN_DOWN:-true}
 FEATURE_UP_CDN_DOWN_MIHOMO=${FEATURE_UP_CDN_DOWN_MIHOMO:-${FEATURE_REALITY_UP_CDN_DOWN}}
 
 # FEATURE_CDN_UP_REALITY_DOWN（v4.9.29 新增，v4.9.36 默认关闭）：反向的上下行分离节点

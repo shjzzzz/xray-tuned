@@ -2768,6 +2768,7 @@ HCTMREOF
       local cur_zone="" cur_token=""
       if [[ -f "$py_script" ]]; then
         cur_token=$(grep -E '^\s*CF_TOKEN\s*=' "$py_script" | cut -d'"' -f2 || true)
+        [[ -f "${dir}/.env" ]] && cur_token=$(awk -F= '$1 ~ /^CF_TOKEN/ {gsub(/[" '\''[:space:]]/, "", $2); print $2}' "${dir}/.env" || true)
         cur_zone=$(grep -E '^\s*CF_ZONE_ID\s*=' "$py_script" | cut -d'"' -f2 || true)
       fi
       [[ -n "$cur_zone" ]] || cur_zone="${CF_ZONE_ID:-}"
@@ -2859,6 +2860,7 @@ print('')
         cur_domain=$(grep -E '^\s*DOMAIN_NAME\s*=' "$py_script" | cut -d'"' -f2 || true)
         cur_zone=$(grep -E '^\s*CF_ZONE_ID\s*=' "$py_script" | cut -d'"' -f2 || true)
         cur_token=$(grep -E '^\s*CF_TOKEN\s*=' "$py_script" | cut -d'"' -f2 || true)
+        [[ -f "${dir}/.env" ]] && cur_token=$(awk -F= '$1 ~ /^CF_TOKEN/ {gsub(/[" '\''[:space:]]/, "", $2); print $2}' "${dir}/.env" || true)
       fi
       local cur_records=""
       if [[ -n "$cur_domain" ]] && command -v getent >/dev/null 2>&1; then
@@ -2900,6 +2902,7 @@ except Exception:
         cur_domain=$(grep -E '^\s*DOMAIN_NAME\s*=' "$py_script" | cut -d'"' -f2 || true)
         cur_zone=$(grep -E '^\s*CF_ZONE_ID\s*=' "$py_script" | cut -d'"' -f2 || true)
         cur_token=$(grep -E '^\s*CF_TOKEN\s*=' "$py_script" | cut -d'"' -f2 || true)
+        [[ -f "${dir}/.env" ]] && cur_token=$(awk -F= '$1 ~ /^CF_TOKEN/ {gsub(/[" '\''[:space:]]/, "", $2); print $2}' "${dir}/.env" || true)
       fi
 
       local input_ips="${2:-}"
@@ -4579,9 +4582,9 @@ cmd_reality() {
   local what="${1:-show}" act="${2:-show}" v x u sid minv mtd
   local link1 link2 link3 cc="${USER_HOME:-/root}/client-config.txt"
   # 直接取安装时生成的完整链接（bestcf/extra/spx 都已编码在内），不再在此重新拼接
-  link1=$(grep -m1 '#VLESS-TLS+后量子+XHTTP+CDN' "$cc" 2>/dev/null || true)
-  link2=$(grep -m1 '#VLESS-TLS+后量子+Vision+XHTTP+CDN' "$cc" 2>/dev/null || true)
-  link3=$(grep -m1 '#VLESS-REALITY+后量子+Vision' "$cc" 2>/dev/null || true)
+  link1=$(grep -m1 -E '#VLESS-TLS\+(后量子|PQ)\+XHTTP\+CDN' "$cc" 2>/dev/null || true)
+  link2=$(grep -m1 -E '#VLESS-TLS\+(后量子|PQ)\+Vision\+XHTTP\+CDN' "$cc" 2>/dev/null || true)
+  link3=$(grep -m1 -E '#VLESS-REALITY\+(后量子|PQ)\+Vision' "$cc" 2>/dev/null || true)
 
   case "$what" in
     show|status|list|"")
@@ -4591,18 +4594,18 @@ cmd_reality() {
       mtd=$(grep -o '"maxTimeDiff"[[:space:]]*:[[:space:]]*[0-9]*' "$XRAY_CONF" 2>/dev/null | head -1 | grep -o '[0-9]*$')
       echo ""
       echo -e "${CYAN}=== Reality 与后量子精选核心节点 (最佳本机配置) ===${NC}"
-      printf '  %-40s %s\n' "1) VLESS-TLS+后量子+XHTTP+CDN" "$([[ "${FEATURE_TLS_PQ_XHTTP:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  CF CDN(443)  TLS+ML-KEM+XHTTP(16流)"
-      printf '  %-40s %s\n' "2) VLESS-TLS+后量子+Vision+XHTTP+CDN" "$([[ "${FEATURE_TLS_PQ_VISION:-false}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  CF CDN(443)  TLS+ML-KEM+Vision+XHTTP"
-      printf '  %-40s %s\n' "3) VLESS-REALITY+后量子+Vision" "$([[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  直连(443)    REALITY+ML-KEM+Vision(BBR)"
+      printf '  %-40s %s\n' "1) VLESS-TLS+PQ+XHTTP+CDN" "$([[ "${FEATURE_TLS_PQ_XHTTP:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  CF CDN(443)  TLS+ML-KEM+XHTTP(16流)"
+      printf '  %-40s %s\n' "2) VLESS-TLS+PQ+Vision+XHTTP+CDN" "$([[ "${FEATURE_TLS_PQ_VISION:-false}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  CF CDN(443)  TLS+ML-KEM+Vision+XHTTP"
+      printf '  %-40s %s\n' "3) VLESS-REALITY+PQ+Vision" "$([[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  直连(443)    REALITY+ML-KEM+Vision(BBR)"
       echo ""
       echo -e "${CYAN}--- 核心节点链接 (可直接导入客户端) ---${NC}"
-      echo -e "  ${YELLOW}[1] VLESS-TLS+后量子+XHTTP+CDN:${NC}"
+      echo -e "  ${YELLOW}[1] VLESS-TLS+PQ+XHTTP+CDN:${NC}"
       echo -e "  ${link1}"
       echo ""
-      echo -e "  ${YELLOW}[2] VLESS-TLS+后量子+Vision+XHTTP+CDN:${NC}"
+      echo -e "  ${YELLOW}[2] VLESS-TLS+PQ+Vision+XHTTP+CDN:${NC}"
       echo -e "  ${link2}"
       echo ""
-      echo -e "  ${YELLOW}[3] VLESS-REALITY+后量子+Vision:${NC}"
+      echo -e "  ${YELLOW}[3] VLESS-REALITY+PQ+Vision:${NC}"
       echo -e "  ${link3}"
       echo ""
       echo -e "  伪装目标 target:   127.0.0.1:8003（本机 Nginx，证书域名 ${REALITY_DOMAIN:-?}）"
