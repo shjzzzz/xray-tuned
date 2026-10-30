@@ -321,9 +321,9 @@ proxies:
     tls: true
     encryption: none
     network: xhttp
-    # 上行腿 h3（v4.9.30 实测上行 11 → 102 Mbps）；mihomo 只在 alpn 恰好为 h3 时才走 HTTP/3
+    # 上行腿 h2 走 TCP 经 CDN（抗运营商 UDP QoS 阻断，握手稳定）
     alpn:
-      - h3
+      - h2
     servername: ${CDN_DOMAIN}
     client-fingerprint: chrome${MIHOMO_ECH_PROXY_BLOCK}
     xhttp-opts:
