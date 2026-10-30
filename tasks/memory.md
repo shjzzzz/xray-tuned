@@ -909,3 +909,11 @@
   - 线上实机 `/etc/nginx/nginx.conf` 与仓库模板 `templates/nginx.conf.tmpl` 保持完全一致，重新构建并校验通过。
 
 
+
+## 48. xh 与 sbbox 全链路流控对齐与 TCP Brutal 冲突消解 (v5.2.5) - 2026-10-30
+- **全端口保留锁定与出站防撞**：
+  - 在 `src/06-tuning-lib.sh` 中更新 `ip_local_reserved_ports`，补齐同机 sbbox 的核心服务端口（`16387, 18048, 25742, 29879`），形成 Xray + sbbox 全代理端口完全互斥保护，杜绝随机出站连接冲突。
+- **系统脏页刷盘与内存调优吸纳**：
+  - 注入 `vm.dirty_background_ratio = 5` 与 `vm.dirty_ratio = 10`，彻底替代外部独立调优配置，平滑内存写入与突发刷盘。
+- **TCP Brutal 协同与温备速率**：
+  - 明确入站流量主干采用自适应 `BBRv3`（重传率 0.1%），TCP Brutal 规则服务作为温备通道，默认速率对齐 500M 黄金带宽，避免超大突发吞吐引发客户端物理丢包。
