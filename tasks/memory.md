@@ -943,3 +943,10 @@
 - **跨平台客户端 (Shadowrocket / v2rayN / Mihomo) 全量兼容**：
   - 彻底重构 Shadowrocket 订阅生成器，从仅保留 2 个 Hysteria 节点扩展为全量生成 7 个纯净 URI（去除小火箭不兼容的嵌套 JSON 与 fm 参数，注入原生 `type=xhttp`、`tfo=1`），保证 iOS/macOS 顺畅拉取。
   - Mihomo 注入 `recv-window-conn: 134217728`、`recv-window: 67108864` 与 `h-keep-alive-period: 15`，实现多平台满血跑满。
+- **`xh` 交互菜单与帮助重构（对外行为兼容）**：
+  - 菜单改为数据驱动：`menu_loop` / `menu_choose` / `menu_onoff` 取代 6 套重复的“打印、read、case、循环”骨架；17 处需手敲 `show/on/off` 的关键字改为数字选择，自由文本输入从 33 处降到 4 处（仅版本号、毫秒数、过滤关键词）。
+  - 修复菜单在输入结束（EOF / 管道关闭）时无限循环刷屏：旧菜单不处理 `read` 失败，现在直接退出。
+  - 新增 `xh help [<命令>]` 与 `xh <命令> --help`；未知命令先给出提示再列用法（退出码仍为 1）。
+  - 修正 `xh warp` 用法：实现只支持 `status|update`，此前 usage 与菜单误称支持 `on|off`。
+  - 删除 `src/06-tuning-lib.sh` 中与 `src/manage/00-header.sh` 完全重复的 `try_sysctl`。
+  - 验证：改前改后对 25 项只读命令的输出逐项一致（`info` / `sub` 因含密钥只比对哈希）；120 个菜单用例（旧菜单与新菜单驱动到同一 `cmd_*` 调用）全部通过；`shellcheck -S error` 通过且 warning 数不增加。
