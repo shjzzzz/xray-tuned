@@ -106,36 +106,16 @@ rm -f /etc/xhttp-cdn/dual-cdn-domains /etc/xhttp-cdn/dual-ip-domains 2>/dev/null
 # （请求数是 CDN 侧最容易做特征的维度之一）。
 # 需要时可用环境变量覆盖：XHTTP_SC_MIN_POSTS_MS=30 bash install.sh
 XHTTP_SC_MIN_POSTS_MS=${XHTTP_SC_MIN_POSTS_MS:-10}
-[[ "${XRAY_DEFAULTS:-true}" == true ]] && XHTTP_SC_MIN_POSTS_MS=30   # XRAY_DEFAULTS：Xray 官方默认 30ms（只对 packet-up 有效）
 
-# ---------- Hysteria2 客户端带宽声明（v4.9.24） ----------
-# 链接里的 upmbps / downmbps 在 **sing-box 内核（v2rayN 的 Hysteria2 默认走它）与 Mihomo** 下会启用
-# Brutal，按声明速率硬发；**Xray 内核下无可测效果**。它应当约等于用户自己的真实线路带宽，
-# 生成器猜不出每个人的线路，只能给默认值。实测（netns，160ms RTT，sing-box 客户端，上行 Mbps）：
-#
-#   声明 ↑    线路 300↓/50↑（无丢包 / 下行1%）   线路 1000↓/300↑（无丢包 / 下行1%）
-#   100          41 / 42                          85 / 85      ← 快上行被硬卡在 ~89
-#   300          —  / 27                         190 / 175
-#   1000         31 / 33                         163 / 167
-#   不声明(BBR)   40 / 13                         171 / 160
-#
-# 没有哪个值两头都赢：调高后快上行翻倍，但慢上行掉 25~35%（超发把自己的上行队列灌满，
-# 上传期间同线路并行 ping 也更高）；不声明在「慢上行 + 丢包」下跌到 13。
-# （上表是 v4.9.24 旧默认 100/1000 的取舍依据，已被 v4.9.66 取代，保留作历史数据。）
-# v4.9.66：默认不再声明带宽（客户端用 BBR）。声明后 sing-box / Mihomo 客户端会按该速率 Brutal 硬发，
-# 线路实际达不到时超发丢包，速度忽快忽慢。确实知道自己的线路带宽时再设：HY2_UP_MBPS=300 HY2_DOWN_MBPS=500 bash install.sh
-# 只设一端时，Mihomo 条目里另一端回落 100 / 1000 Mbps。
-HY2_UP_MBPS=${HY2_UP_MBPS:-}
-HY2_DOWN_MBPS=${HY2_DOWN_MBPS:-}
-if [[ -n "${HY2_UP_MBPS}${HY2_DOWN_MBPS}" ]]; then
-  MIHOMO_HY2_BW_BLOCK=$(printf '\n    up: "%s Mbps"\n    down: "%s Mbps"' "${HY2_UP_MBPS:-100}" "${HY2_DOWN_MBPS:-1000}")
-else
-  MIHOMO_HY2_BW_BLOCK=""
-fi
+# ---------- Hysteria2 客户端带宽与接收窗口声明 ----------
+# 为客户端注入 1000 Mbps 与 128MB 连接流控接收窗口，跑满千兆高吞吐链路
+HY2_UP_MBPS=${HY2_UP_MBPS:-1000}
+HY2_DOWN_MBPS=${HY2_DOWN_MBPS:-1000}
+MIHOMO_HY2_BW_BLOCK=$(printf '\n    up: "%s Mbps"\n    down: "%s Mbps"\n    recv-window-conn: 134217728\n    recv-window: 67108864' "${HY2_UP_MBPS}" "${HY2_DOWN_MBPS}")
 
-XMUX_ENC="%22xmux%22%3A%7B%22maxConcurrency%22%3A%2216-32%22%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D"
+XMUX_ENC="%22xmux%22%3A%7B%22maxConcurrency%22%3A%2216-32%22%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A15%7D"
 # 经 CDN 的腿用 maxConnections=16，拉满并发以彻底突破 Cloudflare 边缘单流限速（支持多线程下载极限跑满）。
-XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D"
+XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A15%7D"
 # XHTTP/3（Direct-H3、CDN-H3）下载方向吃的是**客户端**的 QUIC 接收窗口：长 RTT + 丢包时，默认窗口会把吞吐卡住。
 # 用链接的 fm（finalmask）参数把窗口拉满放大：流 初始 8MB / 上限 64MB，连接 初始 16MB / 上限 128MB（兼顾极限吞吐与移动端 50MB 内存安全上限）。
 XH3_FM_PARAM="&fm=$(rawurlencode '{"quicParams":{"initStreamReceiveWindow":8388608,"maxStreamReceiveWindow":67108864,"initConnectionReceiveWindow":16777216,"maxConnectionReceiveWindow":134217728}}')"
@@ -173,12 +153,12 @@ EOF
 )
   MIHOMO_REUSE_KEEPALIVE_XHTTP=$(cat <<EOF
 
-        h-keep-alive-period: 0
+        h-keep-alive-period: 15
 EOF
 )
   MIHOMO_REUSE_KEEPALIVE_DOWNLOAD=$(cat <<EOF
 
-          h-keep-alive-period: 0
+          h-keep-alive-period: 15
 EOF
 )
 else
@@ -188,8 +168,16 @@ else
   MIHOMO_XPADDING_XHTTP_BLOCK=""
   MIHOMO_XPADDING_DOWNLOAD_BLOCK=""
   MIHOMO_SC_MIN_POSTS_BLOCK=""
-  MIHOMO_REUSE_KEEPALIVE_XHTTP=""
-  MIHOMO_REUSE_KEEPALIVE_DOWNLOAD=""
+  MIHOMO_REUSE_KEEPALIVE_XHTTP=$(cat <<EOF
+
+        h-keep-alive-period: 15
+EOF
+)
+  MIHOMO_REUSE_KEEPALIVE_DOWNLOAD=$(cat <<EOF
+
+          h-keep-alive-period: 15
+EOF
+)
 fi
 
 if [[ "$CDN_ECH_ENABLED" == true ]]; then

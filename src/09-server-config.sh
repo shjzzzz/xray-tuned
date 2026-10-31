@@ -453,6 +453,14 @@ ${HY2_UDP_IDLE_JSON}                    "masquerade": {
                 },
                 ${HY2_SOCKOPT_BLOCK}
                 "finalmask": {
+                    "quicParams": {
+                        "congestion": "bbr",
+                        "keepAlivePeriod": 10,
+                        "initStreamReceiveWindow": 8388608,
+                        "maxStreamReceiveWindow": 67108864,
+                        "initConnectionReceiveWindow": 16777216,
+                        "maxConnectionReceiveWindow": 134217728
+                    },
                     "udp": [
 $(if [[ "${FEATURE_NOISE_EXP:-false}" == true ]]; then cat <<NEOF
                         {
@@ -548,9 +556,17 @@ ${HY2_UDP_IDLE_JSON}                    "masquerade": {
                         "rewriteHost": false,
                         "insecure": true
                     }
-                }${HY2_SOCKOPT_JSON}$(if [[ "${FEATURE_NOISE_EXP:-false}" == true ]]; then cat <<NEOF
-,
+                }${HY2_SOCKOPT_JSON},
                 "finalmask": {
+                    "quicParams": {
+                        "congestion": "bbr",
+                        "keepAlivePeriod": 10,
+                        "initStreamReceiveWindow": 8388608,
+                        "maxStreamReceiveWindow": 67108864,
+                        "initConnectionReceiveWindow": 16777216,
+                        "maxConnectionReceiveWindow": 134217728
+                    }$(if [[ "${FEATURE_NOISE_EXP:-false}" == true ]]; then cat <<NEOF
+,
                     "udp": [
                         {
                             "type": "noise",
@@ -565,9 +581,9 @@ ${HY2_UDP_IDLE_JSON}                    "masquerade": {
                             }
                         }
                     ]
-                }
 NEOF
 fi)
+                }
             },
             "sniffing": {
                 "enabled": true,

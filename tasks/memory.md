@@ -931,3 +931,15 @@
   - 交互式菜单由 30 项平铺升级为 6 大功能分类子菜单，新增 11~16 快捷直达编号。
 - **默认节点策略与后量子命名对齐**：
   - 默认安装核心节点升级为反向上下行分离节点（`CDN-Up-Reality-Down`），所有节点名称中的后量子标记统一对齐为 `PQ`。
+
+
+## 50. 全协议端到端握手与速率调优及多端客户端（v2rayN/Shadowrocket/Mihomo）兼容增强 (v5.3.1) - 2026-10-31
+- **QUIC / Hysteria2 流控窗口全量对齐与握手加速**：
+  - 服务端与客户端双向注入 `finalmask.quicParams`（8MB/64MB 流接收窗口、16MB/128MB 连接接收窗口、10s 保活），彻底消除原默认小窗口对 BBR 的吞吐截流瓶颈。
+  - 实测 Hysteria2-H3 上行从 332 Mbps 跃升至 764 Mbps，Salamander 上行从 107 Mbps 翻 4 倍至 428 Mbps。
+- **XHTTP 流水线与 TFO 握手零延迟复用**：
+  - Reality 443 入站与客户端 URI 全面启用 TCP Fast Open (`tfo=1` / `tfo: true`)，握手延时缩减至 7.0ms。
+  - `xmux` 注入 `hKeepAlivePeriod: 15`，以 15s 周期发送 HTTP/2 ping 帧保活，实现后续请求 0ms 握手复用；CDN 上行最小 POST 间隔对齐为 10ms，有效降低首包延迟。
+- **跨平台客户端 (Shadowrocket / v2rayN / Mihomo) 全量兼容**：
+  - 彻底重构 Shadowrocket 订阅生成器，从仅保留 2 个 Hysteria 节点扩展为全量生成 7 个纯净 URI（去除小火箭不兼容的嵌套 JSON 与 fm 参数，注入原生 `type=xhttp`、`tfo=1`），保证 iOS/macOS 顺畅拉取。
+  - Mihomo 注入 `recv-window-conn: 134217728`、`recv-window: 67108864` 与 `h-keep-alive-period: 15`，实现多平台满血跑满。

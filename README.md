@@ -7,7 +7,23 @@
 
 ---
 
-## 🌟 最新更新亮点 (v5.3.0 / 2026-10-31)
+## 🌟 最新更新亮点 (v5.3.1 / 2026-10-31)
+
+本项目完成 **全协议握手与速率深度调优及多端客户端（v2rayN / Shadowrocket / Mihomo 新版）兼容性全面强化**：
+
+1. **QUIC / Hysteria2 流控窗口全量对齐与握手加速**：
+   - 服务端与客户端双向注入 `finalmask.quicParams`（8MB/64MB 流接收窗口、16MB/128MB 连接接收窗口、10s 保活），消除小窗口对 BBR 吞吐的限制。
+   - 实测 Hysteria2-H3 上行从 332 Mbps 跃升至 **764 Mbps**，Salamander 上行从 107 Mbps 翻 4 倍至 **428 Mbps**。
+2. **XHTTP 流水线与 TFO 握手零延迟复用**：
+   - Reality 443 入站与客户端 URI 全面启用 TCP Fast Open (`tfo=1` / `tfo: true`)，握手延时缩减至 **7.0ms**。
+   - `xmux` 注入 `hKeepAlivePeriod: 15`，以 15s 周期发送 HTTP/2 ping 帧保活，实现后续请求 0ms 握手复用；CDN 上行最小 POST 间隔对齐为 10ms，有效降低首包延迟。
+3. **跨平台客户端 (Shadowrocket / v2rayN / Mihomo) 全量兼容**：
+   - 彻底重构 Shadowrocket 专属订阅生成逻辑，全量生成 7 个纯净 URI（去除小火箭不兼容的嵌套 JSON 与 fm 参数，注入原生 `type=xhttp`、`tfo=1`），解决此前小火箭仅能识别 2 个节点的局限。
+   - Mihomo 注入 `recv-window-conn: 134217728`、`recv-window: 67108864` 与 `h-keep-alive-period: 15`，实现多端满血跑满。
+
+---
+
+## 🌟 历史更新亮点 (v5.3.0 / 2026-10-31)
 
 本项目完成 **`xh` 架构深度解耦重构与多协议端到端网速压测/审计全栈集成**：
 

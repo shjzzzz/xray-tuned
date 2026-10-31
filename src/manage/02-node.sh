@@ -205,21 +205,70 @@ for p in sys.argv[1:]:
   xray_tun_variants "${home}/client-config.txt" "${subdir}"
 
   # 重新生成 Shadowrocket 专属与 v2rayN TUN 订阅
-  {
-    # v4.9.49：剔除 v2rayN 专用的 fm（finalmask JSON）参数，小火箭解析不了复杂 URI
-    # 小火箭专属处理同 12-subscription.sh：去 fm、type=raw→tcp、去 spx
-    grep -E 'Reality-Vision|Hysteria2-(Obfs|H3)-Direct|Hysteria2-TLS-BBR-Salamander' "${home}/client-config.txt" | sed -E 's/&fm=[^&#]*//; s/&type=raw(&|#)/\&type=tcp\1/; s/&spx=[^&#]*//' || true
-    if [[ "${FEATURE_CDN_H2:-false}" == true ]]; then
-      local cdn_host="${BESTCF_DOMAIN:-${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}}"
-      [[ -z "$cdn_host" || "$cdn_host" == "127.0.0.1" ]] && cdn_host="bestcf.${REALITY_DOMAIN#reality.}"
-      echo "vless://${UUID2}@${cdn_host}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&type=xhttp&host=${CDN_DOMAIN}&path=%2Fsr${XHTTP_PATH#/}&mode=stream-up#VLESS-XHTTP-CDN-H2"
-    fi
-    if [[ "${FEATURE_CDN_H3:-false}" == true ]]; then
-      local cdn_host="${BESTCF_DOMAIN:-${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}}"
-      [[ -z "$cdn_host" || "$cdn_host" == "127.0.0.1" ]] && cdn_host="bestcf.${REALITY_DOMAIN#reality.}"
-      echo "vless://${UUID2}@${cdn_host}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3&type=xhttp&host=${CDN_DOMAIN}&path=%2Fsr${XHTTP_PATH#/}&mode=stream-up#VLESS-XHTTP-CDN-H3"
-    fi
-  } > "${subdir}/shadowrocket-raw.txt"
+  python3 - "${home}/client-config.txt" "${subdir}/shadowrocket-raw.txt" <<'SRPY'
+import sys, urllib.parse
+
+src, dst = sys.argv[1], sys.argv[2]
+try:
+    with open(src, "r", encoding="utf-8") as f:
+        lines = [l.strip() for l in f if l.strip()]
+except Exception:
+    sys.exit(0)
+
+sr_lines = []
+for line in lines:
+    p = urllib.parse.urlparse(line)
+    tag = urllib.parse.unquote(p.fragment or "")
+    qs = urllib.parse.parse_qs(p.query)
+    q = lambda k, d="": qs.get(k, [d])[0]
+
+    if p.scheme == "hysteria2":
+        clean_qs = {k: v[0] for k, v in qs.items() if k not in ("fm", "udp")}
+        new_q = urllib.parse.urlencode(clean_qs)
+        sr_lines.append(f"{p.scheme}://{p.netloc}{p.path}?{new_q}#{tag}")
+    elif p.scheme == "vless":
+        sec = q("security", "none")
+        net = q("type", "tcp")
+        if net == "raw": net = "tcp"
+        uid = p.username or ""
+        host = p.hostname or ""
+        port = p.port or 443
+        sni = q("sni")
+        fp = q("fp", "chrome")
+        path = q("path")
+        pbk = q("pbk")
+        sid = q("sid")
+        host_hdr = q("host")
+
+        if "downloadSettings" in line:
+            if "Reality-Up" in tag:
+                sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=reality&sni={sni}&fp={fp}&alpn=h2&pbk={pbk}&sid={sid}&type=xhttp&path={path}&mode=stream-up&tfo=1#{tag}-Direct")
+            elif "CDN-Up" in tag:
+                sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=tls&sni={sni}&fp={fp}&alpn=h2&type=xhttp&host={host_hdr}&path={path}&mode=stream-up&tfo=1#{tag}-CDN")
+        else:
+            clean_qs = {
+                "encryption": q("encryption", "none"),
+                "security": sec,
+                "sni": sni,
+                "fp": fp,
+                "type": net
+            }
+            if q("flow"): clean_qs["flow"] = q("flow")
+            if q("alpn"): clean_qs["alpn"] = q("alpn")
+            if pbk: clean_qs["pbk"] = pbk
+            if sid: clean_qs["sid"] = sid
+            if host_hdr: clean_qs["host"] = host_hdr
+            if path: clean_qs["path"] = path
+            if net == "xhttp":
+                clean_qs["mode"] = q("mode", "stream-up")
+            clean_qs["tfo"] = "1"
+            new_q = urllib.parse.urlencode(clean_qs)
+            sr_lines.append(f"vless://{uid}@{host}:{port}?{new_q}#{tag}")
+
+with open(dst, "w", encoding="utf-8") as f:
+    for s in sr_lines:
+        f.write(s + "\n")
+SRPY
   if [[ -s "${subdir}/shadowrocket-raw.txt" ]]; then
     base64 "${subdir}/shadowrocket-raw.txt" | tr -d '\n' > "${subdir}/shadowrocket.txt"
   fi
@@ -1709,9 +1758,17 @@ render_hy2_obfs_inbound() {
                 },
                 "sockopt": {
                     "tcpFastOpen": true,
-                    "tcpcongestion": "brutal"
+                    "tcpcongestion": "bbr"
                 },
                 "finalmask": {
+                    "quicParams": {
+                        "congestion": "bbr",
+                        "keepAlivePeriod": 10,
+                        "initStreamReceiveWindow": 8388608,
+                        "maxStreamReceiveWindow": 67108864,
+                        "initConnectionReceiveWindow": 16777216,
+                        "maxConnectionReceiveWindow": 134217728
+                    },
                     "udp": [
 $(if [[ "${FEATURE_NOISE_EXP:-false}" == true ]]; then cat <<NEOF
                         {
@@ -1792,10 +1849,18 @@ render_hy2_h3_inbound() {
                 },
                 "sockopt": {
                     "tcpFastOpen": true,
-                    "tcpcongestion": "brutal"
-                }$(if [[ "${FEATURE_NOISE_EXP:-false}" == true ]]; then cat <<NEOF
-,
+                    "tcpcongestion": "bbr"
+                },
                 "finalmask": {
+                    "quicParams": {
+                        "congestion": "bbr",
+                        "keepAlivePeriod": 10,
+                        "initStreamReceiveWindow": 8388608,
+                        "maxStreamReceiveWindow": 67108864,
+                        "initConnectionReceiveWindow": 16777216,
+                        "maxConnectionReceiveWindow": 134217728
+                    }$(if [[ "${FEATURE_NOISE_EXP:-false}" == true ]]; then cat <<NEOF
+,
                     "udp": [
                         {
                             "type": "noise",
@@ -1810,9 +1875,9 @@ render_hy2_h3_inbound() {
                             }
                         }
                     ]
-                }
 NEOF
 fi)
+                }
             },
             "sniffing": {
                 "enabled": true,

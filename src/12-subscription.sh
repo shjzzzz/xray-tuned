@@ -49,30 +49,71 @@ mihomo_tun_variants "$USER_HOME/client-config-mihomo-full.yaml" "$SUB_DIR"
 xray_tun_variants "$USER_HOME/client-config.txt" "$SUB_DIR"
 cp "$USER_HOME/client-config-mihomo-nodes.yaml" "$SUB_DIR/mihomo-nodes.yaml"
 
-# Shadowrocket 专属订阅（包含小火箭完全兼容的 REALITY、Hy2；若启用 FEATURE_CDN_H2 则附带）
-{
-  # v4.9.27：同时下发 Hysteria2-H3-Direct（UDP 443 无混淆）。小火箭原生支持 Hysteria2，
-  # 此前只匹配带 Obfs 的那条，新节点在新装机器上会漏掉。
-  # v4.9.49：Hy2-H3 链接带 v2rayN 的 fm（finalmask JSON）参数，小火箭解析不了复杂 URI，剔除
-  # 小火箭专属：1) 去掉 fm（finalmask JSON）；2) type=raw 改成 type=tcp——raw 是 Xray 新叫法，小火箭只认 tcp，
-  # 不改时 Reality 节点在小火箭里连不上，而 v2rayN 正常（对 Xray 内核两者等价）；3) 去掉 spx（纯客户端参数，可省）。
-  grep -E 'Reality-Vision|Hysteria2-(Obfs|H3)-Direct|Hysteria2-TLS-BBR-Salamander' "$USER_HOME/client-config.txt" | sed -E 's/&fm=[^&#]*//; s/&type=raw(&|#)/\&type=tcp\1/; s/&spx=[^&#]*//' || true
-  # 若 Hysteria2-H3 运行在高端口，同时下发一条 UDP 443 节点（借由 iptables UDP 443 重定向，绕过中国移动等运营商的高端口 UDP QoS 劣化）
-  if grep -q 'Hysteria2-H3-Direct' "$USER_HOME/client-config.txt" 2>/dev/null; then
-    grep 'Hysteria2-H3-Direct' "$USER_HOME/client-config.txt" | sed -E 's/&fm=[^&#]*//; s/:[0-9]+\/\?/:443\/?/; s/#Hysteria2-H3-Direct.*/#Hysteria2-H3-Port443-Direct/' || true
-  fi
-  # v4.9.29：8001 开了 vlessenc（FEATURE_XHTTP_VLESSENC）时小火箭连不上 CDN 节点，不再附带
-  if [[ "${FEATURE_CDN_H2:-false}" == true ]]; then
-    cdn_host="${BESTCF_DOMAIN:-${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}}"
-    [[ -z "$cdn_host" || "$cdn_host" == "127.0.0.1" ]] && cdn_host="bestcf.${REALITY_DOMAIN#reality.}"
-    echo "vless://${UUID2}@${cdn_host}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&type=xhttp&host=${CDN_DOMAIN}&path=%2Fsr${XHTTP_PATH#/}&mode=stream-up#VLESS-XHTTP-CDN-H2"
-  fi
-  if [[ "${FEATURE_CDN_H3:-false}" == true ]]; then
-    cdn_host="${BESTCF_DOMAIN:-${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}}"
-    [[ -z "$cdn_host" || "$cdn_host" == "127.0.0.1" ]] && cdn_host="bestcf.${REALITY_DOMAIN#reality.}"
-    echo "vless://${UUID2}@${cdn_host}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3&type=xhttp&host=${CDN_DOMAIN}&path=%2Fsr${XHTTP_PATH#/}&mode=stream-up#VLESS-XHTTP-CDN-H3"
-  fi
-} > "$SUB_DIR/shadowrocket-raw.txt"
+# Shadowrocket 专属订阅（包含小火箭完全兼容的 REALITY、Hy2、XHTTP 与 CDN 节点）
+python3 - "$USER_HOME/client-config.txt" "$SUB_DIR/shadowrocket-raw.txt" <<'SRPY'
+import sys, urllib.parse
+
+src, dst = sys.argv[1], sys.argv[2]
+try:
+    with open(src, "r", encoding="utf-8") as f:
+        lines = [l.strip() for l in f if l.strip()]
+except Exception:
+    sys.exit(0)
+
+sr_lines = []
+for line in lines:
+    p = urllib.parse.urlparse(line)
+    tag = urllib.parse.unquote(p.fragment or "")
+    qs = urllib.parse.parse_qs(p.query)
+    q = lambda k, d="": qs.get(k, [d])[0]
+
+    if p.scheme == "hysteria2":
+        clean_qs = {k: v[0] for k, v in qs.items() if k not in ("fm", "udp")}
+        new_q = urllib.parse.urlencode(clean_qs)
+        sr_lines.append(f"{p.scheme}://{p.netloc}{p.path}?{new_q}#{tag}")
+    elif p.scheme == "vless":
+        sec = q("security", "none")
+        net = q("type", "tcp")
+        if net == "raw": net = "tcp"
+        uid = p.username or ""
+        host = p.hostname or ""
+        port = p.port or 443
+        sni = q("sni")
+        fp = q("fp", "chrome")
+        path = q("path")
+        pbk = q("pbk")
+        sid = q("sid")
+        host_hdr = q("host")
+
+        if "downloadSettings" in line:
+            if "Reality-Up" in tag:
+                sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=reality&sni={sni}&fp={fp}&alpn=h2&pbk={pbk}&sid={sid}&type=xhttp&path={path}&mode=stream-up&tfo=1#{tag}-Direct")
+            elif "CDN-Up" in tag:
+                sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=tls&sni={sni}&fp={fp}&alpn=h2&type=xhttp&host={host_hdr}&path={path}&mode=stream-up&tfo=1#{tag}-CDN")
+        else:
+            clean_qs = {
+                "encryption": q("encryption", "none"),
+                "security": sec,
+                "sni": sni,
+                "fp": fp,
+                "type": net
+            }
+            if q("flow"): clean_qs["flow"] = q("flow")
+            if q("alpn"): clean_qs["alpn"] = q("alpn")
+            if pbk: clean_qs["pbk"] = pbk
+            if sid: clean_qs["sid"] = sid
+            if host_hdr: clean_qs["host"] = host_hdr
+            if path: clean_qs["path"] = path
+            if net == "xhttp":
+                clean_qs["mode"] = q("mode", "stream-up")
+            clean_qs["tfo"] = "1"
+            new_q = urllib.parse.urlencode(clean_qs)
+            sr_lines.append(f"vless://{uid}@{host}:{port}?{new_q}#{tag}")
+
+with open(dst, "w", encoding="utf-8") as f:
+    for s in sr_lines:
+        f.write(s + "\n")
+SRPY
 if [[ -s "$SUB_DIR/shadowrocket-raw.txt" ]]; then
   base64 "$SUB_DIR/shadowrocket-raw.txt" | tr -d '\n' > "$SUB_DIR/shadowrocket.txt"
 fi
