@@ -19,6 +19,7 @@ ver_ge() {
   [[ "$lowest" == "$2" ]]
 }
 
+# try_sysctl KEY VALUE —— 试写，如果在系统调优上下文中则记录待落盘
 try_sysctl() {
   if sysctl -w "${1}=${2}" >/dev/null 2>&1; then
     declare -p SYSCTL_APPLIED >/dev/null 2>&1 && SYSCTL_APPLIED+=("${1} = ${2}")

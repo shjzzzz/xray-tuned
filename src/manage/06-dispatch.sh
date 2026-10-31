@@ -8,6 +8,7 @@ xray-xhttp 全能管理命令 (v${XH_VERSION:-5.2.2})
 
 【基础运维与状态】
   xh                    进入交互式全功能分层导航终端
+  xh help [<命令>]      显示全部命令；带命令名时只显示该命令的用法 (也可 xh <命令> --help)
   xh status             查看服务运行状态、监听端口与流控指标
   xh info               查看当前全部节点参数与明文链接
   xh sub                查看订阅链接与多端二维码
@@ -48,7 +49,7 @@ xray-xhttp 全能管理命令 (v${XH_VERSION:-5.2.2})
   xh nginx [show|check|update]  Nginx mainline 版本检查与自动安全升级
   xh nginx h2only [on|off]      Nginx 强制 HTTP/2 模式
   xh argo [status|on|off|update] Cloudflare Argo 穿透隧道管理
-  xh warp [status|on|off|update] WARP 出站解锁流媒体与 AI
+  xh warp [status|update] WARP 出站解锁流媒体与 AI
 
 【自愈与自动化维护】
   xh guard              执行异常健康检查并自动拉起异常服务 (cron 调用)
@@ -57,6 +58,19 @@ xray-xhttp 全能管理命令 (v${XH_VERSION:-5.2.2})
   xh version            查看当前管理工具与节点版本
 USAGEEOF
 }
+
+# usage_for <命令>：只显示 usage() 里属于该命令的行（含"别名: xh <命令>"）；没有则返回 1。
+usage_for() {
+  local lines
+  [[ "$1" =~ ^[a-z0-9_-]+$ ]] || return 1
+  lines=$(usage | grep -E "^  xh $1( |\$)|别名: xh $1\b") || return 1
+  echo "$lines"
+}
+
+# xh <命令> -h|--help 只查看用法，不执行命令；usage 里没有的命令照旧交给下面的分发。
+case "${2:-}" in
+  -h|--help) usage_for "${1:-}" && exit 0 ;;
+esac
 
 case "${1:-}" in
   status)     cmd_status ;;
@@ -106,7 +120,14 @@ case "${1:-}" in
       echo "  （本机节点安装于 ${XH_INSTALLED_VER}，之后 xh 被更新过；节点配置不会因 xh 更新而改变）"
     fi
     ;;
-  -h|--help|help) usage ;;
+  -h|--help)  usage ;;
+  help)
+    if [[ -z "${2:-}" ]]; then
+      usage
+    else
+      usage_for "$2" || { echo "没有 '$2' 的说明，执行 ${MANAGE_CMD} help 查看全部命令" >&2; exit 1; }
+    fi
+    ;;
   "")         cmd_menu ;;
-  *)          usage; exit 1 ;;
+  *)          echo "未知命令: $1（执行 ${MANAGE_CMD} help <命令> 查看用法）" >&2; usage; exit 1 ;;
 esac

@@ -87,16 +87,7 @@ EOF
   info "已将 DefaultLimitNOFILE 由 ${cur:-未设置} 对齐到 fs.nr_open=${nr_open}（原值越界会导致服务报 205/LIMITS）"
 }
 
-# try_sysctl KEY VALUE —— 试写，如果在系统调优上下文中则记录待落盘
-try_sysctl() {
-  if sysctl -w "${1}=${2}" >/dev/null 2>&1; then
-    declare -p SYSCTL_APPLIED >/dev/null 2>&1 && SYSCTL_APPLIED+=("${1} = ${2}")
-    return 0
-  else
-    declare -p SYSCTL_SKIPPED >/dev/null 2>&1 && SYSCTL_SKIPPED+=("$1")
-    return 1
-  fi
-}
+# try_sysctl 定义在 src/manage/00-header.sh（本文件只被 xh 内联，不单独使用）。
 
 # ---------- 网卡运行时参数的开机重设（v4.9.44）----------
 # 与同机 sbbox（v2.7.32 起的 sbbox-nic.service）写法一致：出口网卡 mq 下每个 TX 队列挂 fq，
