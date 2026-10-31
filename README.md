@@ -6,7 +6,6 @@
 **语言：** **简体中文** · [English](./README.en.md) · [فارسی](./README.fa.md)
 
 ---
-先申请证书：bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/acme-yg/main/acme.sh)
 
 ## 🌟 最新更新亮点 (v5.3.0 / 2026-10-31)
 
@@ -23,6 +22,9 @@
    - 告别 30 项平铺的杂乱菜单，升级为 6 大功能分类子菜单，新增常用运维快捷直达编号（11-16）。
 5. **反向上下行分离节点作为默认安装配置**：
    - 将突破 GFW 握手审查与 QoS 限速的 `VLESS-CDN-Up-Reality-Down`（上行走 CDN 伪装防封，下行走 Reality 极速直连）设为默认安装核心节点，后量子密码学命名统一对齐为 `PQ`。
+6. **SSL 证书全生命周期原生集成与智能复用 (`xh cert`)**：
+   - 彻底剔除外部繁琐的手工脚本依赖，原生集成 Acme-yg 申请向导、Cloudflare DNS-01 与本地多证书源智能扫描（自动无缝复用 `/root/ygkkkca/`、`/etc/ssl/` 或 `acme.sh` 既有证书）。
+   - 支持一键申请 (`xh cert apply` / `xh cert yg`)、智能导入 (`xh cert import`)、强制续期 (`xh cert renew`) 与全链路证书链自动裁剪加速 (`xh-trim-chain`)。
 
 ---
 

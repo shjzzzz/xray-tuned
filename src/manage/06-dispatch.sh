@@ -44,7 +44,7 @@ xray-xhttp 全能管理命令 (v${XH_VERSION:-5.2.2})
 
 【Cloudflare 智能生态与隧道】
   xh bestcf [show|lock|unlock|set|interval|check|run|audit|setup|on|off]  优选 IP 智能管理
-  xh cert [show|dnscf]  证书续期方式查看 / 切换为 Cloudflare DNS-01 模式
+  xh cert [show|apply|import|renew|dnscf|yg]  SSL证书全生命周期管理 (申请/导入/续期/DNS-01)
   xh nginx [show|check|update]  Nginx mainline 版本检查与自动安全升级
   xh nginx h2only [on|off]      Nginx 强制 HTTP/2 模式
   xh argo [status|on|off|update] Cloudflare Argo 穿透隧道管理

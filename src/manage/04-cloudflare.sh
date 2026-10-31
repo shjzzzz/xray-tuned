@@ -20,27 +20,209 @@ cdn_behind_proxy() {
   ! grep -Fxq "$VPS_IP" <<< "$_ips"
 }
 
+# 智能检测现有证书路径（返回 "fullchain:key:source_desc"）
+detect_existing_cert() {
+  # 1. 优先检测当前生产生效证书 /etc/ssl/private/
+  if [[ -f "/etc/ssl/private/fullchain.cer" && -f "/etc/ssl/private/private.key" ]]; then
+    if openssl x509 -in "/etc/ssl/private/fullchain.cer" -noout -checkend 86400 >/dev/null 2>&1; then
+      printf '%s:%s:%s' "/etc/ssl/private/fullchain.cer" "/etc/ssl/private/private.key" "生产证书库 (/etc/ssl/private/)"
+      return 0
+    fi
+  fi
+  # 2. 检测 Acme-yg 证书库 /root/ygkkkca/
+  if [[ -f "/root/ygkkkca/cert.crt" && -f "/root/ygkkkca/private.key" ]]; then
+    if openssl x509 -in "/root/ygkkkca/cert.crt" -noout -checkend 86400 >/dev/null 2>&1; then
+      printf '%s:%s:%s' "/root/ygkkkca/cert.crt" "/root/ygkkkca/private.key" "Acme-yg 证书库 (/root/ygkkkca/)"
+      return 0
+    fi
+  fi
+  # 3. 检测 acme.sh 官方证书库
+  local _d
+  for _d in "$HOME/.acme.sh/${REALITY_DOMAIN:-}_ecc" "$HOME/.acme.sh/${REALITY_DOMAIN:-}"; do
+    if [[ -f "$_d/fullchain.cer" && -f "$_d/${REALITY_DOMAIN:-}.key" ]]; then
+      if openssl x509 -in "$_d/fullchain.cer" -noout -checkend 86400 >/dev/null 2>&1; then
+        printf '%s:%s:%s' "$_d/fullchain.cer" "$_d/${REALITY_DOMAIN:-}.key" "acme.sh 证书库 ($_d)"
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
+# 部署证书至生产目录并自动裁剪证书链与热重载服务
+deploy_cert_files() {
+  local src_cert="$1" src_key="$2"
+  [[ -f "$src_cert" && -f "$src_key" ]] || fail "指定的证书或私钥不存在: $src_cert / $src_key"
+
+  mkdir -p /etc/ssl/private
+  chmod 755 /etc/ssl/private 2>/dev/null || true
+
+  cp -f "$src_cert" /etc/ssl/private/fullchain.cer
+  cp -f "$src_key" /etc/ssl/private/private.key
+  chmod 644 /etc/ssl/private/fullchain.cer 2>/dev/null || true
+  chmod 640 /etc/ssl/private/private.key 2>/dev/null || true
+  chown root:xray /etc/ssl/private/private.key 2>/dev/null || chown root:root /etc/ssl/private/private.key 2>/dev/null || true
+
+  # 自动裁剪证书链提升 TLS / QUIC 握手速度
+  if [[ -x /usr/local/sbin/xh-trim-chain ]]; then
+    /usr/local/sbin/xh-trim-chain /etc/ssl/private/fullchain.cer 2>/dev/null || true
+  fi
+
+  # 安全重载 Nginx 与 Xray
+  if nginx -t 2>/dev/null; then
+    systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
+  fi
+  systemctl restart xray 2>/dev/null || true
+  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet hysteria-server 2>/dev/null; then
+    systemctl restart hysteria-server 2>/dev/null || true
+  fi
+  info "证书已成功应用至系统并完成证书链裁剪与服务热重载！"
+}
+
 cmd_cert() {
   local action="${1:-show}" conf
-  conf=$(acme_domain_conf) || fail "未找到 acme.sh 的域名配置（${REALITY_DOMAIN:-未设置}）"
+  conf=$(acme_domain_conf || true)
   local acct="$HOME/.acme.sh/account.conf"
   case "$action" in
     show|status)
-      local wr nr
-      wr=$(. "$conf" 2>/dev/null; printf '%s' "${Le_Webroot:-}")
-      nr=$(. "$conf" 2>/dev/null; printf '%s' "${Le_NextRenewTimeStr:-}")
-      echo "证书到期:   $(openssl x509 -in /etc/ssl/private/fullchain.cer -noout -enddate 2>/dev/null | cut -d= -f2)"
-      echo "下次续期:   ${nr:-未知}"
+      echo ""
+      echo -e "${CYAN}=== SSL / TLS 证书全生命周期状态 ===${NC}"
+      local cur_cert="/etc/ssl/private/fullchain.cer"
+      if [[ -f "$cur_cert" ]] && openssl x509 -in "$cur_cert" -noout >/dev/null 2>&1; then
+        local exp_date san_domains issuer
+        exp_date=$(openssl x509 -in "$cur_cert" -noout -enddate 2>/dev/null | cut -d= -f2)
+        san_domains=$(openssl x509 -in "$cur_cert" -noout -ext subjectAltName 2>/dev/null | grep -o 'DNS:[^,[:space:]]*' | sed 's/^DNS://' | tr '\n' ' ' || true)
+        issuer=$(openssl x509 -in "$cur_cert" -noout -issuer 2>/dev/null | sed 's/issuer= //')
+        echo -e "  当前证书:       ${GREEN}有效在用${NC}"
+        echo -e "  证书颁发者:     ${issuer:-未知}"
+        echo -e "  证书到期时间:   ${GREEN}${exp_date}${NC}"
+        echo -e "  覆盖域名(SAN):  ${san_domains:-${REALITY_DOMAIN:-}}"
+      else
+        echo -e "  当前证书:       ${RED}未安装或无效${NC}"
+      fi
+
+      local wr="未知" nr="未知"
+      if [[ -n "$conf" && -f "$conf" ]]; then
+        wr=$(. "$conf" 2>/dev/null; printf '%s' "${Le_Webroot:-}")
+        nr=$(. "$conf" 2>/dev/null; printf '%s' "${Le_NextRenewTimeStr:-}")
+      fi
       case "$wr" in
-        dns_*) echo "续期方式:   DNS-01（${wr}）" ;;
-        *)     echo "续期方式:   standalone（HTTP-01，续期时停 nginx 占用 80 端口）" ;;
+        dns_*) echo -e "  续期方式:       ${GREEN}Cloudflare DNS-01 (${wr})${NC}" ;;
+        *)     echo -e "  续期方式:       ${YELLOW}HTTP-01 standalone (需占 80 端口)${NC}" ;;
       esac
-      if cdn_behind_proxy; then echo "CDN 域名:   已走 CDN 代理"; else echo "CDN 域名:   直连本机（或解析失败）"; fi
-      grep -q '^SAVED_CF_Token=' "$acct" 2>/dev/null && echo "CF Token:   已保存（account.conf）" || echo "CF Token:   未保存"
+      [[ "$nr" != "未知" ]] && echo -e "  下次自动续期:   ${nr}"
+
+      if cdn_behind_proxy; then
+        echo -e "  CDN 域名代理:   ${GREEN}已走 Cloudflare CDN 代理 (橙云)${NC}"
+      else
+        echo -e "  CDN 域名代理:   ${YELLOW}直连本机或未开启代理 (灰云)${NC}"
+      fi
+
+      if grep -q '^SAVED_CF_Token=' "$acct" 2>/dev/null; then
+        echo -e "  CF API Token:   ${GREEN}已保存 (account.conf)${NC}"
+      else
+        echo -e "  CF API Token:   ${YELLOW}未保存 (可通过 xh cert dnscf 配置)${NC}"
+      fi
+
+      local detect_res
+      if detect_res=$(detect_existing_cert); then
+        local d_desc="${detect_res##*:}"
+        echo -e "  本地证书探测:   ${GREEN}已检测到有效证书: ${d_desc}${NC}"
+      fi
+
       if [[ "$wr" != dns_* ]] && cdn_behind_proxy; then
-        warn "CDN 已走代理，standalone 续期会失败：CF_Token=<API Token> ${MANAGE_CMD} cert dnscf"
+        echo ""
+        warn "警告: CDN 域名已开启代理，当前 HTTP-01 续期方式可能会失败！"
+        echo -e "  推荐执行: ${GREEN}${MANAGE_CMD} cert dnscf${NC} 切换为无感 DNS-01 续期"
+      fi
+      echo ""
+      ;;
+
+    import)
+      info "正在扫描本机可用证书..."
+      local detect_res
+      if detect_res=$(detect_existing_cert); then
+        local d_cert d_key d_desc
+        IFS=':' read -r d_cert d_key d_desc <<< "$detect_res"
+        echo -e "发现证书来源: ${GREEN}${d_desc}${NC}"
+        echo -e "  证书路径: $d_cert"
+        echo -e "  私钥路径: $d_key"
+        read -rp "是否立即导入并部署该证书？[Y/n]: " do_import
+        if [[ "${do_import:-y}" =~ ^[Yy]$ ]]; then
+          deploy_cert_files "$d_cert" "$d_key"
+        fi
+      else
+        echo -e "未自动检测到可用证书。请输入自定义证书绝对路径："
+        read -rp "证书文件 (fullchain.cer / cert.crt): " user_cert
+        read -rp "私钥文件 (private.key): " user_key
+        deploy_cert_files "$user_cert" "$user_key"
       fi
       ;;
+
+    apply|issue)
+      echo ""
+      echo -e "${CYAN}=== 一键申请 / 重新签发 SSL 证书 ===${NC}"
+      echo "  1) 调用 Acme-yg 全功能证书向导 (推荐: 支持单/泛/多域名与自动申请)"
+      echo "  2) 使用 Cloudflare DNS-01 静默申请 (免停 Nginx，不怕 CDN 代理)"
+      echo "  3) 使用 Standalone 80 端口自动申请 (需 80 端口空闲且域名直连)"
+      read -rp "请选择申请方式 [1/2/3]: " app_choice
+      case "$app_choice" in
+        1)
+          info "正在唤起 Acme-yg 证书向导..."
+          bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/acme-yg/main/acme.sh)
+          if [[ -f "/root/ygkkkca/cert.crt" && -f "/root/ygkkkca/private.key" ]]; then
+            info "检测到 Acme-yg 证书已生成，自动导入并应用至系统..."
+            deploy_cert_files "/root/ygkkkca/cert.crt" "/root/ygkkkca/private.key"
+          fi
+          ;;
+        2)
+          local tok="${CF_Token:-}"
+          if [[ -z "$tok" ]]; then
+            read -rp "请输入 Cloudflare API Token (需 Zone.DNS 编辑权限): " tok
+          fi
+          [[ -n "$tok" ]] || fail "Token 不能为空"
+          export CF_Token="$tok"
+          cmd_cert dnscf
+          info "开始通过 Cloudflare DNS-01 签发双域名证书..."
+          acme.sh --issue --dns dns_cf -d "${REALITY_DOMAIN}" -d "${CDN_DOMAIN}" --keylength ec-256 --force
+          deploy_cert_files "$HOME/.acme.sh/${REALITY_DOMAIN}_ecc/fullchain.cer" "$HOME/.acme.sh/${REALITY_DOMAIN}_ecc/${REALITY_DOMAIN}.key"
+          ;;
+        3)
+          info "使用 Standalone 申请证书（将临时释放 80 端口）..."
+          systemctl stop nginx 2>/dev/null || true
+          acme.sh --issue -d "${REALITY_DOMAIN}" -d "${CDN_DOMAIN}" --standalone --keylength ec-256 --force
+          systemctl start nginx 2>/dev/null || true
+          deploy_cert_files "$HOME/.acme.sh/${REALITY_DOMAIN}_ecc/fullchain.cer" "$HOME/.acme.sh/${REALITY_DOMAIN}_ecc/${REALITY_DOMAIN}.key"
+          ;;
+        *) warn "已取消" ;;
+      esac
+      ;;
+
+    yg)
+      info "正在唤起 Acme-yg 证书向导..."
+      bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/acme-yg/main/acme.sh)
+      if [[ -f "/root/ygkkkca/cert.crt" && -f "/root/ygkkkca/private.key" ]]; then
+        info "检测到 Acme-yg 证书已生成，自动导入并应用至系统..."
+        deploy_cert_files "/root/ygkkkca/cert.crt" "/root/ygkkkca/private.key"
+      fi
+      ;;
+
+    renew)
+      info "正在强制执行证书续期测试..."
+      local c_domain="${REALITY_DOMAIN:-}"
+      if [[ -n "$conf" ]]; then
+        acme.sh --renew -d "$c_domain" --ecc --force
+        if [[ -x /usr/local/sbin/xh-trim-chain ]]; then
+          /usr/local/sbin/xh-trim-chain /etc/ssl/private/fullchain.cer 2>/dev/null || true
+        fi
+        nginx -t 2>/dev/null && systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
+        systemctl restart xray 2>/dev/null || true
+        info "证书续期已完成并完成全链路热重载！"
+      else
+        fail "未检测到 acme.sh 配置文件，如使用外部证书请直接通过 xh cert import 重新导入"
+      fi
+      ;;
+
     dnscf)
       # Token 来源：环境变量 CF_Token 优先，否则沿用 account.conf 里已保存的
       local tok="${CF_Token:-}"
@@ -60,14 +242,14 @@ cmd_cert() {
         printf "SAVED_CF_Token='%s'\n" "$CF_Token" >> "$acct"
         chmod 600 "$acct"
       fi
-      cp -a "$conf" "${conf}.bak-$(date +%Y%m%d%H%M%S)"
-      # 续期模式记在 Le_Webroot；DNS-01 不需要停 nginx，清空 Pre/PostHook
-      sed -i -E "s/^Le_Webroot=.*/Le_Webroot='dns_cf'/; s/^Le_PreHook=.*/Le_PreHook=''/; s/^Le_PostHook=.*/Le_PostHook=''/" "$conf"
-      grep -q "^Le_Webroot='dns_cf'" "$conf" || fail "写入续期方式失败：$conf"
+      if [[ -n "$conf" && -f "$conf" ]]; then
+        cp -a "$conf" "${conf}.bak-$(date +%Y%m%d%H%M%S)"
+        sed -i -E "s/^Le_Webroot=.*/Le_Webroot='dns_cf'/; s/^Le_PreHook=.*/Le_PreHook=''/; s/^Le_PostHook=.*/Le_PostHook=''/" "$conf"
+        grep -q "^Le_Webroot='dns_cf'" "$conf" || fail "写入续期方式失败：$conf"
+      fi
       info "已切换为 DNS-01 续期（dns_cf），续期时不再停 nginx"
-      info "可用 LE 测试环境演练：acme.sh --issue --server letsencrypt_test --dns dns_cf -d ${REALITY_DOMAIN} -d ${CDN_DOMAIN} --keylength ec-256 --config-home /tmp/acme-test --cert-home /tmp/acme-test/certs"
       ;;
-    *) fail "用法: ${MANAGE_CMD} cert [show|dnscf]" ;;
+    *) fail "用法: ${MANAGE_CMD} cert [show | apply | import | renew | dnscf | yg]" ;;
   esac
 }
 

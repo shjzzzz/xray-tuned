@@ -788,7 +788,9 @@ for idx, (name, raw_line, parsed) in enumerate(nodes, 1):
             "server": "127.0.0.1",
             "server_port": parsed.port or 443,
             "password": urllib.parse.unquote(parsed.username or ""),
-            "tls": {"enabled": True, "server_name": q("sni", ""), "alpn": ["h3"]}
+            "tls": {"enabled": True, "server_name": q("sni", ""), "alpn": ["h3"]},
+            "up_mbps": 1000,
+            "down_mbps": 1000
         }
         if q("obfs") == "salamander":
             ob["obfs"] = {"type": "salamander", "password": q("obfs-password", "")}
@@ -845,8 +847,10 @@ for idx, (name, raw_line, parsed) in enumerate(nodes, 1):
                 except: pass
             ob["streamSettings"]["xhttpSettings"] = xh
 
+        ob["streamSettings"]["sockopt"] = {"tcpFastOpen": True, "tcpNoDelay": True}
         cfg = {
             "log": {"loglevel": "error"},
+            "policy": {"levels": {"0": {"bufferSize": 4096, "handshake": 10, "connIdle": 1800}}},
             "inbounds": [{"tag": "socks-in", "listen": "127.0.0.1", "port": port, "protocol": "socks", "settings": {"udp": True}}],
             "outbounds": [ob],
             "routing": {"rules": [{"type": "field", "inboundTag": ["socks-in"], "outboundTag": "proxy-out"}]}

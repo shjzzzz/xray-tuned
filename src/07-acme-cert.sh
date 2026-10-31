@@ -62,23 +62,73 @@ issue_dual_cert() {
   fi
 }
 
-if have_existing_dual_cert; then
-  info "检测到已存在的双域名证书，跳过重新签发，直接复用"
+detect_install_cert() {
+  # 1. 优先检查 /root/ygkkkca/ (Acme-yg 证书库)
+  if [[ -f "/root/ygkkkca/cert.crt" && -f "/root/ygkkkca/private.key" ]]; then
+    if openssl x509 -in "/root/ygkkkca/cert.crt" -noout -checkend 86400 >/dev/null 2>&1; then
+      printf '%s:%s:%s' "/root/ygkkkca/cert.crt" "/root/ygkkkca/private.key" "Acme-yg 证书库 (/root/ygkkkca/)"
+      return 0
+    fi
+  fi
+  # 2. 检查 /etc/ssl/private/ (生产已有有效证书)
+  if [[ -f "/etc/ssl/private/fullchain.cer" && -f "/etc/ssl/private/private.key" ]]; then
+    if openssl x509 -in "/etc/ssl/private/fullchain.cer" -noout -checkend 86400 >/dev/null 2>&1; then
+      printf '%s:%s:%s' "/etc/ssl/private/fullchain.cer" "/etc/ssl/private/private.key" "现有生产证书 (/etc/ssl/private/)"
+      return 0
+    fi
+  fi
+  # 3. 检查 acme.sh 官方双域名证书
+  if have_existing_dual_cert; then
+    printf '%s:%s:%s' "$ACME_CERT_HOME/fullchain.cer" "$ACME_CERT_HOME/${REALITY_DOMAIN}.key" "acme.sh 双域名证书"
+    return 0
+  fi
+  return 1
+}
+
+local_cert_meta=""
+if local_cert_meta=$(detect_install_cert); then
+  _c="${local_cert_meta%%:*}"
+  _rest="${local_cert_meta#*:}"
+  _k="${_rest%%:*}"
+  _desc="${_rest#*:}"
+  info "检测到可复用有效证书（${_desc}），自动复用并部署，跳过重新申请"
+  mkdir -p /etc/ssl/private
+  cp -f "$_c" /etc/ssl/private/fullchain.cer
+  cp -f "$_k" /etc/ssl/private/private.key
+  chmod 644 /etc/ssl/private/fullchain.cer 2>/dev/null || true
+  chmod 640 /etc/ssl/private/private.key 2>/dev/null || true
+  chown root:xray /etc/ssl/private/private.key 2>/dev/null || true
 else
   if [[ -n "${CF_Token:-}" ]]; then
-    info "未检测到可复用的双域名证书，使用 Cloudflare DNS-01 申请（CF_Token 已提供）..."
+    info "未检测到可复用证书，使用 Cloudflare DNS-01 申请（CF_Token 已提供）..."
   else
-    info "未检测到可复用的双域名证书，开始申请 (需要 80 端口空闲)..."
+    info "未检测到可复用证书，开始自动申请 (需要 80 端口空闲)..."
   fi
   if ! ISSUE_OUTPUT=$(issue_dual_cert 2>&1); then
     echo "$ISSUE_OUTPUT"
-    if [[ -n "${CF_Token:-}" ]]; then
-      error "双域名证书申请失败（DNS-01），请确认 CF_Token 对该 Zone 有 DNS 编辑权限"
+    warn "双域名证书自动申请未成功（通常是 80 端口占用或 CDN 域名已开启代理）"
+    if [[ "$AUTO" != "1" ]]; then
+      read -rp "是否立即调用 Acme-yg 证书全能向导完成申请？[Y/n]: " run_yg
+      if [[ "${run_yg:-y}" =~ ^[Yy]$ ]]; then
+        info "正在唤起 Acme-yg 证书向导..."
+        bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/acme-yg/main/acme.sh)
+        if [[ -f "/root/ygkkkca/cert.crt" && -f "/root/ygkkkca/private.key" ]]; then
+          info "Acme-yg 证书已生成，自动导入生产目录..."
+          mkdir -p /etc/ssl/private
+          cp -f /root/ygkkkca/cert.crt /etc/ssl/private/fullchain.cer
+          cp -f /root/ygkkkca/private.key /etc/ssl/private/private.key
+          chmod 644 /etc/ssl/private/fullchain.cer 2>/dev/null || true
+          chmod 640 /etc/ssl/private/private.key 2>/dev/null || true
+          chown root:xray /etc/ssl/private/private.key 2>/dev/null || true
+        fi
+      fi
     fi
-    error "双域名证书申请失败，请确认 80 端口未被占用、本机防火墙已放行 80 端口且域名 DNS 已正确解析"
+    if [[ ! -f "/etc/ssl/private/fullchain.cer" ]] && ! have_existing_dual_cert; then
+      error "证书申请失败且未获取到有效证书。装完后可通过 xh cert apply 重新配置"
+    fi
+  else
+    echo "$ISSUE_OUTPUT"
   fi
-  echo "$ISSUE_OUTPUT"
-  have_existing_dual_cert || error "证书申请流程已结束，但未能在 ${ACME_CERT_HOME} 找到有效的双域名证书"
 fi
 
 if [[ -z "${CF_Token:-}" ]] && ! grep -q "^Le_Webroot='dns_" "$ACME_CERT_CONF" 2>/dev/null; then

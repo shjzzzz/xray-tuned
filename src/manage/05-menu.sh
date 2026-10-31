@@ -145,7 +145,7 @@ cmd_menu() {
           echo "  7) 立即强制重新测速并更新 DNS (bestcf run)"
           echo "  8) Cloudflare DNS 全面规范性体检 (bestcf audit)"
           echo "  9) 配置 Cloudflare 凭据与域名 (bestcf setup)"
-          echo " 10) 证书续期方式查看 / 切换 DNS-01 (cert: show / dnscf)"
+          echo " 10) SSL 证书管理与自动续期 (cert: 申请 / 导入 / 续期 / DNS-01)"
           echo " 11) Cloudflare CDN ECH 加密 SNI 开关 (ech show / on / off)"
           echo "  0) 返回上一级菜单"
           read -rp "请选择 [0-11]: " c_sub
@@ -159,7 +159,28 @@ cmd_menu() {
             7) cmd_bestcf run ;;
             8) cmd_bestcf audit ;;
             9) cmd_bestcf setup ;;
-            10) read -rp "  show / dnscf: " a; cmd_cert "${a:-show}" ;;
+            10)
+              while true; do
+                echo ""
+                echo -e "${CYAN}=== SSL 证书全生命周期管理 ===${NC}"
+                echo "  1) 查看证书状态与到期时间 (show)"
+                echo "  2) 一键申请/重新签发证书 (apply / 调用 Acme-yg)"
+                echo "  3) 智能扫描并导入已有证书 (import / 复用 ygkkkca)"
+                echo "  4) 切换续期模式为 Cloudflare DNS-01 (dnscf)"
+                echo "  5) 立即测试证书自动续期 (renew)"
+                echo "  0) 返回上级"
+                read -rp "请选择 [0-5]: " cert_c
+                case "$cert_c" in
+                  1) cmd_cert show ;;
+                  2) cmd_cert apply ;;
+                  3) cmd_cert import ;;
+                  4) cmd_cert dnscf ;;
+                  5) cmd_cert renew ;;
+                  0) break ;;
+                  *) warn "无效选项" ;;
+                esac
+              done
+              ;;
             11) read -rp "  show / on / off: " a; cmd_ech "${a:-show}" ;;
             0) break ;;
             *) warn "无效选择" ;;
