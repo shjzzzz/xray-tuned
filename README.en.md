@@ -20,8 +20,7 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
   FEATURE_H2_DIRECT=false \
   FEATURE_CDN_UP_REALITY_DOWN=false \
   FEATURE_BRUTAL=false \
-  FEATURE_XPADDING=false \
-  FEATURE_REALITY_PQ_VISION=true
+  FEATURE_XPADDING=false
 ```
 
 ### 2. sbbox-tuned Automated Deployment

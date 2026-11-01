@@ -40,23 +40,20 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
   FEATURE_H2_DIRECT=false \
   FEATURE_CDN_UP_REALITY_DOWN=false \
   FEATURE_BRUTAL=false \
-  FEATURE_XPADDING=false \
-  FEATURE_REALITY_PQ_VISION=true
+  FEATURE_XPADDING=false
 ```
 
 ---
 
 ## 📡 核心节点矩阵与实机压测指标
 
-项目精选 **7 大全协议主力节点**，默认安装即启用，覆盖 TCP、UDP 及正反双向上下行分离链路：
+项目精选 **5 大全协议主力节点**（与上方静默部署命令的开关一致），覆盖 TCP、UDP 及上下行分离链路。其余节点（如 `VLESS-CDN-Up-Reality-Down`、`Hysteria2-H3-Direct`）可通过对应 `FEATURE_*` 开关或 `xh` 命令按需启用：
 
 | 节点名称 | 传输协议 / 端口 | 特色技术与混淆 | 实测握手 | 实测下行 | 实测上行 | 适用网络与推荐场景 |
 | :--- | :--- | :--- | :---: | :---: | :---: | :--- |
-| **`VLESS-CDN-Up-Reality-Down`** | VLESS + XHTTP (443) | **默认核心** / 上行 CDN 防封 + 下行 Reality 直连 | 60.3 ms | 583.9M | 301.9M | **主力首选**：彻底规避 GFW 审查与 QoS 限制 |
 | **`VLESS-Reality-XHTTP-Direct`** | VLESS + REALITY (443) | TCP Fast Open (TFO) + vlessenc 解密 | **7.0 ms** | **957.7M** | **541.3M** | **极速首选**：千兆跑满，游戏/秒级网页响应 |
 | **`VLESS-Reality-Up-CDN-Down`** | VLESS + XHTTP (443) | 上行直连低延时 + 下行 CDN 大带宽转发 | 23.6 ms | 735.2M | 537.5M | 直连上行保低延迟，突发下载走 CDN 保护 |
 | **`VLESS-XHTTP-Direct-H3`** | VLESS + XHTTP (8443) | 原生 QUIC (HTTP/3) / 64MB 窗口 | 17.7 ms | 681.2M | 419.2M | 跨洋链路高丢包环境直连极速加速 |
-| **`Hysteria2-H3-Direct`** | Hysteria2 (UDP 高端口) | 原生 BBRv3 / 128MB 连接流控窗口 | 57.4 ms | 818.7M | **764.4M** | 移动/校园网等严苛丢包网络千兆跑满 |
 | **`Hysteria2-TLS-BBR-Salamander`** | Hysteria2 (UDP 高端口) | Salamander 强混淆 + BBRv3 | 34.2 ms | 316.2M | 428.0M | 运营商严酷封锁 UDP 重灾区专用穿透通道 |
 | **`VLESS-TLS+PQ+XHTTP+CDN`** | VLESS + XHTTP (443) | ML-KEM-768 后量子抗破译 + Cloudflare CDN | 120 ms | 450.0M | 210.0M | 极度恶劣网络保活，抗量子破译与 IP 封锁 |
 
