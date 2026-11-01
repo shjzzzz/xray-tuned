@@ -149,6 +149,113 @@ cmd_resub() {
   [[ -d "$subdir" ]] || fail "未找到订阅目录 ${subdir}"
   [[ -f "${home}/client-config.txt" ]] || fail "未找到 ${home}/client-config.txt"
 
+  # 自动套用 bestcf 优选域名并校验修复全协议客户端配置
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "${home}/client-config.txt" "${home}/client-config-mihomo-nodes.yaml" "${home}/client-config-mihomo-full.yaml" "${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}" "${CDN_DOMAIN}" "${REALITY_DOMAIN}" "${VPS_IP}" << 'PYRESUB'
+import sys, os, re, urllib.parse
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+txt_file, nodes_file, full_file, cdn_addr, cdn_domain, reality_domain, vps_ip = sys.argv[1:8]
+
+if os.path.isfile(txt_file):
+    with open(txt_file, "r", encoding="utf-8") as f:
+        lines = [l.strip() for l in f if l.strip()]
+    new_lines = []
+    for line in lines:
+        p = urllib.parse.urlparse(line)
+        tag = urllib.parse.unquote(p.fragment or "")
+        is_cdn_node = ("-CDN-" in tag or "PQ+XHTTP+CDN" in tag or "XHTTP-CDN" in tag) and "Reality-Up" not in tag
+        if is_cdn_node and cdn_addr:
+            port_part = f":{p.port}" if p.port else ":443"
+            new_netloc = f"{p.username}@{cdn_addr}{port_part}" if p.username else f"{cdn_addr}{port_part}"
+            p = p._replace(netloc=new_netloc)
+            line = urllib.parse.urlunparse(p)
+        elif "Reality-Up-CDN-Down" in tag and "downloadSettings" in line and cdn_addr:
+            line = re.sub(r'(%22address%22%3A%22)(?:[0-9.]+|[^%"]+)(%22)', r'\g<1>' + urllib.parse.quote(cdn_addr) + r'\g<2>', line)
+            line = re.sub(r'("address":")[^"]+(")', r'\g<1>' + cdn_addr + r'\g<2>', line)
+        new_lines.append(line)
+    with open(txt_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(new_lines) + "\n")
+
+if yaml:
+    reality_xhttp_proxy = None
+    if os.path.isfile(txt_file):
+        with open(txt_file, "r", encoding="utf-8") as f:
+            for l in f:
+                if "#VLESS-Reality-XHTTP-Direct" in l:
+                    p = urllib.parse.urlparse(l)
+                    qs = urllib.parse.parse_qs(p.query)
+                    q = lambda k, d="": qs.get(k, [d])[0]
+                    reality_xhttp_proxy = {
+                        "name": urllib.parse.unquote(p.fragment or ""),
+                        "type": "vless",
+                        "server": vps_ip,
+                        "port": p.port or 443,
+                        "uuid": p.username or "",
+                        "udp": True,
+                        "flow": "",
+                        "tls": True,
+                        "tfo": True,
+                        "packet-encoding": "xudp",
+                        "encryption": "none",
+                        "network": "xhttp",
+                        "alpn": ["h2"],
+                        "servername": reality_domain,
+                        "client-fingerprint": "chrome",
+                        "reality-opts": {
+                            "public-key": q("pbk"),
+                            "short-id": q("sid"),
+                            "support-x25519mlkem768": True
+                        },
+                        "xhttp-opts": {
+                            "path": q("path", "/"),
+                            "mode": "stream-up",
+                            "reuse-settings": {
+                                "max-concurrency": "16-32",
+                                "c-max-reuse-times": "0",
+                                "h-max-request-times": "600-900",
+                                "h-max-reusable-secs": "1800-3000",
+                                "h-keep-alive-period": "15"
+                            }
+                        }
+                    }
+                    break
+
+    for yfile in [nodes_file, full_file]:
+        if not os.path.isfile(yfile):
+            continue
+        try:
+            with open(yfile, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f)
+            if not isinstance(cfg, dict):
+                continue
+            proxies = cfg.get("proxies", [])
+            has_direct_xhttp = any("Reality-XHTTP-Direct" in p.get("name", "") for p in proxies)
+            new_proxies = []
+            for p in proxies:
+                pname = p.get("name", "")
+                if "REALITY+PQ+Vision" in pname:
+                    continue
+                if ("-CDN-" in pname or "XHTTP-CDN" in pname or "PQ+XHTTP+CDN" in pname) and "Reality-Up" not in pname:
+                    if cdn_addr:
+                        p["server"] = cdn_addr
+                elif "Reality-Up-CDN-Down" in pname:
+                    if "xhttp-opts" in p and "download-settings" in p["xhttp-opts"] and cdn_addr:
+                        p["xhttp-opts"]["download-settings"]["server"] = cdn_addr
+                new_proxies.append(p)
+            if not has_direct_xhttp and reality_xhttp_proxy:
+                new_proxies.append(reality_xhttp_proxy)
+            cfg["proxies"] = new_proxies
+            with open(yfile, "w", encoding="utf-8") as f:
+                yaml.dump(cfg, f, allow_unicode=True, sort_keys=False)
+        except Exception:
+            pass
+PYRESUB
+  fi
+
   # 按节点名称升序排序
   if [[ -f "${home}/client-config.txt" ]] && command -v python3 >/dev/null 2>&1; then
     python3 -c "
@@ -656,12 +763,13 @@ for home in user_homes:
                 for line in lines:
                     if '#VLESS-XHTTP-CDN-H3' in line:
                         h2_line = line.replace('alpn=h3', 'alpn=h2').replace('#VLESS-XHTTP-CDN-H3', '#VLESS-XHTTP-CDN-H2')
+                        h2_line = re.sub(r'@[^:]+:[0-9]+', '@${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}:443', h2_line)
                         new_lines.append(h2_line)
                         added = True
                     elif not added and ('#VLESS-XHTTP-Direct-H3' in line or '#VLESS-Reality' in line):
                         # 兜底：从直连节点提取参数构造
                         h2_line = line.replace('alpn=h3', 'alpn=h2')
-                        h2_line = re.sub(r'@[^:]+:[0-9]+', '@${CDN_DOMAIN}:443', h2_line)
+                        h2_line = re.sub(r'@[^:]+:[0-9]+', '@${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}:443', h2_line)
                         h2_line = re.sub(r'sni=[^&]+', 'sni=${CDN_DOMAIN}', h2_line)
                         h2_line = re.sub(r'#[^#]+$', '#VLESS-XHTTP-CDN-H2', h2_line)
                         if '&host=' not in h2_line:
@@ -692,12 +800,13 @@ for home in user_homes:
                         h2_p = copy.deepcopy(p)
                         h2_p['name'] = p['name'].replace('VLESS-XHTTP-CDN-H3', 'VLESS-XHTTP-CDN-H2')
                         h2_p['alpn'] = ['h2']
+                        h2_p['server'] = '${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}'
                         new_proxies.append(h2_p)
                         added = True
                     elif not added and ('VLESS-XHTTP-Direct-H3' in p.get('name', '') or 'VLESS-Reality' in p.get('name', '')):
                         h2_p = copy.deepcopy(p)
                         h2_p['name'] = 'VLESS-XHTTP-CDN-H2'
-                        h2_p['server'] = '${CDN_DOMAIN}'
+                        h2_p['server'] = '${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}'
                         h2_p['port'] = 443
                         h2_p['servername'] = '${CDN_DOMAIN}'
                         h2_p['alpn'] = ['h2']
@@ -796,12 +905,14 @@ for home in user_homes:
                     new_lines.append(line)
                     if '#VLESS-XHTTP-CDN-H2' in line:
                         h3_line = line.replace('alpn=h2,http%2F1.1', 'alpn=h3').replace('alpn=h2,h3', 'alpn=h3').replace('alpn=h2', 'alpn=h3').replace('#VLESS-XHTTP-CDN-H2', '#VLESS-XHTTP-CDN-H3')
+                        h3_line = re.sub(r'@[^:]+:[0-9]+', '@${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}:443', h3_line)
                         new_lines.append(h3_line)
                         added = True
                 if not added:
                     for line in lines:
                         if '#VLESS-XHTTP-Direct-H3' in line:
-                            h3_line = line.replace('${REALITY_DOMAIN}', '${CDN_DOMAIN}').replace('${VPS_IP}', '${CDN_DOMAIN}').replace(':${H3_PORT}', ':443').replace('#VLESS-XHTTP-Direct-H3', '#VLESS-XHTTP-CDN-H3')
+                            h3_line = line.replace('${REALITY_DOMAIN}', '${CDN_DOMAIN}').replace('${VPS_IP}', '${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}').replace(':${H3_PORT}', ':443').replace('#VLESS-XHTTP-Direct-H3', '#VLESS-XHTTP-CDN-H3')
+                            h3_line = re.sub(r'@[^:]+:[0-9]+', '@${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}:443', h3_line)
                             new_lines.append(h3_line)
                         new_lines.append(line)
             else:
@@ -827,6 +938,7 @@ for home in user_homes:
                         h3_p = copy.deepcopy(p)
                         h3_p['name'] = p['name'].replace('VLESS-XHTTP-CDN-H2', 'VLESS-XHTTP-CDN-H3')
                         h3_p['alpn'] = ['h3']
+                        h3_p['server'] = '${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}'
                         new_proxies.append(h3_p)
                 cfg['proxies'] = new_proxies
             elif not enable and has_h3:

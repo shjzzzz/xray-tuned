@@ -52,11 +52,39 @@ CRON_TAG="# xray-xhttp"
 
 [[ $EUID -ne 0 ]] && fail "请使用 root 用户运行"
 
+update_node_env() {
+  local key="$1" val="$2"
+  [[ -f "$NODE_ENV_FILE" ]] || return 0
+  local tmp="${NODE_ENV_FILE}.tmp$$"
+  grep -v "^${key}=" "$NODE_ENV_FILE" > "$tmp" || true
+  printf "%s=%q\n" "$key" "$val" >> "$tmp"
+  mv -f "$tmp" "$NODE_ENV_FILE"
+}
+
 if [[ -f "$NODE_ENV_FILE" ]]; then
   # shellcheck disable=SC1090
   . "$NODE_ENV_FILE"
 else
   warn "未找到 ${NODE_ENV_FILE}，部分信息不可用（是否尚未运行安装脚本？）"
+fi
+
+# 优选域名自适应解析与环境变量注入
+if [[ -z "${BESTCF_DOMAIN:-}" && -f "/root/cf-bestip/dns_updater.py" ]]; then
+  _py_bestcf=$(grep -E '^\s*DOMAIN_NAME\s*=' "/root/cf-bestip/dns_updater.py" 2>/dev/null | cut -d'"' -f2 || true)
+  if [[ -n "$_py_bestcf" && "$_py_bestcf" != "bestcf.example.com" ]]; then
+    BESTCF_DOMAIN="$_py_bestcf"
+    update_node_env "BESTCF_DOMAIN" "$BESTCF_DOMAIN"
+  fi
+fi
+
+if [[ -n "${CDN_DOMAIN:-}" ]]; then
+  _candidate_bestcf="${BESTCF_DOMAIN:-bestcf.${CDN_DOMAIN#*.}}"
+  if command -v getent >/dev/null 2>&1 && getent ahostsv4 "$_candidate_bestcf" >/dev/null 2>&1; then
+    CDN_CONNECT_ADDR="$_candidate_bestcf"
+  else
+    CDN_CONNECT_ADDR="${CDN_DOMAIN}"
+  fi
+  export CDN_CONNECT_ADDR
 fi
 
 if [[ -z "${SERVICE_TYPE:-}" ]]; then
@@ -84,15 +112,6 @@ svc_active() {
   else
     systemctl is-active --quiet "$1"
   fi
-}
-
-update_node_env() {
-  local key="$1" val="$2"
-  [[ -f "$NODE_ENV_FILE" ]] || return 0
-  local tmp="${NODE_ENV_FILE}.tmp$$"
-  grep -v "^${key}=" "$NODE_ENV_FILE" > "$tmp" || true
-  printf "%s=%q\n" "$key" "$val" >> "$tmp"
-  mv -f "$tmp" "$NODE_ENV_FILE"
 }
 
 # ---------------- 子命令 ----------------

@@ -104,4 +104,9 @@ mkdir -p "$OUT_DIR"
 build_one "$OUT_DIR/install.sh"
 cp "$OUT_DIR/install.sh" "$OUT_DIR/install-xpadding.sh"
 
-echo "Generated $OUT_DIR/install.sh and $OUT_DIR/install-xpadding.sh"
+# 生成干净的 xh 独立可执行管理脚本
+sed -n '/cat > "\$MANAGE_BIN" << .XHMANAGEEOF./,/^XHMANAGEEOF$/p' "$OUT_DIR/install.sh" | sed '1d;$d' > "$OUT_DIR/xh"
+sed -i 's|@@XH_VERSION@@|5.3.2|' "$OUT_DIR/xh"
+chmod +x "$OUT_DIR/xh"
+
+echo "Generated $OUT_DIR/install.sh, $OUT_DIR/install-xpadding.sh, and $OUT_DIR/xh"

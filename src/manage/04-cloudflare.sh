@@ -754,12 +754,17 @@ HCTMREOF
       systemctl daemon-reload
       systemctl enable --now cf-bestip.timer
       systemctl enable --now cf-healthcheck.timer
+      update_node_env "BESTCF_DOMAIN" "$final_domain"
+      export BESTCF_DOMAIN="$final_domain"
+      export CDN_CONNECT_ADDR="$final_domain"
       info "服务已配置完成并启动："
       info "  1. 高峰期轮换定时器 (每日高峰时段: 12:30, 19:00-23:00 每整点, 04:00 自动测速与优选)"
       info "  2. 故障自愈监测定时器 (每 1 分钟检测握手与源站可达性，异常立刻自动换 IP)"
       read -rp "是否立即运行一次测速与 DNS 同步？[Y/n]: " run_now
       if [[ "${run_now:-y}" =~ ^[Yy]$ ]]; then
         cmd_bestcf run
+      else
+        cmd_resub
       fi
       ;;
     check)
@@ -864,6 +869,7 @@ print('')
         fi
       fi
       info "测速与 DNS 解析同步完成！"
+      cmd_resub
       ;;
     lock)
       mkdir -p "$dir"
@@ -956,6 +962,12 @@ else:
       systemctl disable cf-bestip.timer 2>/dev/null || true
       info "已更新 DNS 并锁定为目标 IP: ${input_ips}"
       info "后台定时轮换已停用，后续更新由您自主决定。"
+      if [[ -n "$cur_domain" ]]; then
+        update_node_env "BESTCF_DOMAIN" "$cur_domain"
+        export BESTCF_DOMAIN="$cur_domain"
+        export CDN_CONNECT_ADDR="$cur_domain"
+      fi
+      cmd_resub
       ;;
     interval)
       local int_val="${2:-}"
