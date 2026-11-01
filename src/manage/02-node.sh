@@ -1660,9 +1660,10 @@ cmd_hy2() {
         [[ -f "$f" ]] && grep -qF -- "$old" "$f" && sed -i "s/${old_re}/${new}/g" "$f"
       done
       export HY2_PASSWORD="$new"
-      systemctl restart xray || fail "xray 重启失败，请检查 ${XRAY_CONF}"
-      info "Hysteria2 认证密码已轮换，客户端需重新拉取订阅"
+      # 先刷新订阅再重启：重启失败（如拆分配置的并发写入）不应让订阅停在旧密码上
       cmd_resub
+      systemctl restart xray || warn "xray 重启失败，请检查 ${XRAY_CONF} 并手动 systemctl restart xray"
+      info "Hysteria2 认证密码已轮换，客户端需重新拉取订阅"
       ;;
     obfs-on) cmd_backup_server_node hy2obfs on ;;
     obfs-off) cmd_backup_server_node hy2obfs off ;;
