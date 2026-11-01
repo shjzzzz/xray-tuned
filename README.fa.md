@@ -16,8 +16,12 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
   REALITY_DOMAIN="reality.yourdomain.com" \
   CDN_DOMAIN="cdn.yourdomain.com" \
   NODE_TAG="US-Node" \
-  FEATURE_REALITY_VISION=true \
-  FEATURE_XHTTP_VLESSENC=true
+  FEATURE_HY2_H3=false \
+  FEATURE_H2_DIRECT=false \
+  FEATURE_CDN_UP_REALITY_DOWN=false \
+  FEATURE_BRUTAL=false \
+  FEATURE_XPADDING=false \
+  FEATURE_REALITY_PQ_VISION=true
 ```
 
 ### ۲. استقرار خودکار sbbox-tuned
