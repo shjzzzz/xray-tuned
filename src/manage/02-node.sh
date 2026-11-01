@@ -1578,6 +1578,8 @@ cmd_hy2() {
       echo -e "  常用指令:"
       echo -e "    ${MANAGE_CMD} hy2 on            # 开启 Hysteria2 直连节点（UDP ${port}）"
       echo -e "    ${MANAGE_CMD} hy2 off           # 关闭全部 Hysteria2 节点（直连与混淆）"
+      echo -e "    ${MANAGE_CMD} hy2 h3 off        # 只关闭直连节点，保留混淆节点"
+      echo -e "    ${MANAGE_CMD} hy2 rotate        # 轮换认证密码并刷新订阅"
       echo -e "    ${MANAGE_CMD} hy2 obfs on       # 开启 Hysteria2 混淆节点（UDP ${obfs_port}）"
       echo -e "    ${MANAGE_CMD} hy2 obfs off      # 关闭 Hysteria2 混淆节点"
       echo ""
@@ -1626,9 +1628,45 @@ cmd_hy2() {
       info "Hysteria2 已关闭"
       cmd_resub
       ;;
+    h3)
+      case "${2:-show}" in
+        on) cmd_hy2 on ;;
+        off)
+          # 只关直连节点：混淆节点依附总开关 FEATURE_HY2，开着时必须保留
+          if [[ "${FEATURE_HY2_H3:-false}" != true ]]; then info "Hysteria2 直连节点本来就是关闭状态"; return 0; fi
+          backup_store_check
+          info "正在关闭 Hysteria2 直连节点 ..."
+          backup_inbound_edit hy2h3 off "tag:hy2-h3"; rc=$?
+          [[ $rc -eq 0 || $rc -eq 3 ]] || fail "移除服务端入站失败（原因见上），未改动客户端文件和标志位"
+          backup_node_sync_files "Hysteria2-H3-Direct" off || warn "服务端入站已移除，但客户端文件没有同步（原因见上）。请手动运行 ${MANAGE_CMD} resub"
+          update_node_env FEATURE_HY2_H3 false
+          export FEATURE_HY2_H3=false
+          if [[ "${FEATURE_HY2_OBFS:-false}" != true ]]; then update_node_env FEATURE_HY2 false; export FEATURE_HY2=false; fi
+          info "Hysteria2 直连节点已关闭"
+          cmd_resub
+          ;;
+        *) echo "用法: ${MANAGE_CMD} hy2 h3 [on|off]" ;;
+      esac
+      ;;
+    rotate)
+      # 轮换认证密码：resub 只读 client-config*，不会从 node.env 重新生成，所以服务端、节点库、各 home 的客户端文件要一起改
+      [[ "${FEATURE_HY2:-false}" == true && -n "${HY2_PASSWORD:-}" ]] || fail "Hysteria2 未开启或缺少 HY2_PASSWORD"
+      [[ -f "$NODE_ENV_FILE" ]] || fail "未找到 ${NODE_ENV_FILE}"
+      local old="$HY2_PASSWORD" new old_re f
+      new=$(openssl rand -hex 32) || fail "生成新密码失败"
+      old_re=$(printf '%s' "$old" | sed 's#[].*[^$\\/]#\\&#g')
+      update_node_env HY2_PASSWORD "$new"
+      for f in "$XRAY_CONF" "${ALL_STORE_DIR}"/* "${USER_HOME:-/home/ubuntu}"/client-config* /home/ubuntu/client-config* /home/opc/client-config* /root/client-config*; do
+        [[ -f "$f" ]] && grep -qF -- "$old" "$f" && sed -i "s/${old_re}/${new}/g" "$f"
+      done
+      export HY2_PASSWORD="$new"
+      systemctl restart xray || fail "xray 重启失败，请检查 ${XRAY_CONF}"
+      info "Hysteria2 认证密码已轮换，客户端需重新拉取订阅"
+      cmd_resub
+      ;;
     obfs-on) cmd_backup_server_node hy2obfs on ;;
     obfs-off) cmd_backup_server_node hy2obfs off ;;
-    *) echo "用法: ${MANAGE_CMD} hy2 [show|on|off|obfs on|obfs off]" ;;
+    *) echo "用法: ${MANAGE_CMD} hy2 [show|on|off|h3 on|h3 off|rotate|obfs on|obfs off]" ;;
   esac
 }
 
