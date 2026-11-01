@@ -2467,6 +2467,8 @@ cmd_reality() {
       printf '  %-30s %s\n' "VLESS-Reality-XHTTP-Direct" "$([[ "$x" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  TCP 443  XHTTP + vlessenc       ${MANAGE_CMD} reality xhttp on|off"
       printf '  %-30s %s\n' "VLESS-Reality-Up-CDN-Down" "$([[ "$u" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  上行 Reality / 下行 CDN   ${MANAGE_CMD} reality updown on|off"
       echo ""
+      echo -e "  后量子节点独立管理: ${MANAGE_CMD} pq [show | xhttp on|off | vision on|off | reality on|off]"
+      echo ""
       ;;
     vision|xhttp)
       case "$act" in
@@ -2530,3 +2532,131 @@ cmd_split() {
     *) echo "用法: ${MANAGE_CMD} split ${which} on|off" ;;
   esac
 }
+
+# ==================================================
+# 后量子 PQ 核心节点管理 (ML-KEM-768 抗量子加密)
+# ==================================================
+cmd_pq() {
+  local target="${1:-show}" action="${2:-show}"
+  local cc="${USER_HOME:-/root}/client-config.txt"
+  local s_xhttp="${FEATURE_TLS_PQ_XHTTP:-false}"
+  local s_vision="${FEATURE_TLS_PQ_VISION:-false}"
+  local s_reality="${FEATURE_REALITY_PQ_VISION:-false}"
+
+  case "$target" in
+    show|status|list|"")
+      echo ""
+      echo -e "${CYAN}=== 后量子 PQ 核心节点状态 (ML-KEM-768 抗量子加密) ===${NC}"
+      printf '  %-38s %s\n' "1) VLESS-TLS+PQ+XHTTP+CDN" "$([[ "$s_xhttp" == "true" ]] && echo -e "${GREEN}已开启 (Enabled)${NC}" || echo -e "${YELLOW}未开启 (Disabled)${NC}")  CF CDN(443)  TLS+ML-KEM+XHTTP(16流)"
+      printf '  %-38s %s\n' "2) VLESS-TLS+PQ+Vision+XHTTP+CDN" "$([[ "$s_vision" == "true" ]] && echo -e "${GREEN}已开启 (Enabled)${NC}" || echo -e "${YELLOW}未开启 (Disabled)${NC}")  CF CDN(443)  TLS+ML-KEM+Vision+XHTTP"
+      printf '  %-38s %s\n' "3) VLESS-REALITY+PQ+Vision" "$([[ "$s_reality" == "true" ]] && echo -e "${GREEN}已开启 (Enabled)${NC}" || echo -e "${YELLOW}未开启 (Disabled)${NC}")  直连(443)    REALITY+ML-KEM+Vision(BBR)"
+      echo ""
+      echo -e "说明："
+      echo -e "  • 加密套件: ML-KEM-768 (X25519Kyber768 / mlkem768x25519plus)"
+      echo -e "  • 核心特性: 抗量子破译 (Post-Quantum Hybrid KEM) + BBR/FQ 反压流控"
+      echo -e "  • 快捷命令:"
+      echo -e "      ${MANAGE_CMD} pq xhttp on|off    # 开启/关闭 TLS+PQ+XHTTP+CDN 节点"
+      echo -e "      ${MANAGE_CMD} pq vision on|off   # 开启/关闭 TLS+PQ+Vision 节点"
+      echo -e "      ${MANAGE_CMD} pq reality on|off  # 开启/关闭 REALITY+PQ+Vision 节点"
+      echo ""
+
+      local link1 link2 link3
+      link1=$(grep -m1 -E '#VLESS-TLS\+(后量子|PQ)\+XHTTP\+CDN' "$cc" 2>/dev/null || true)
+      link2=$(grep -m1 -E '#VLESS-TLS\+(后量子|PQ)\+Vision\+XHTTP\+CDN' "$cc" 2>/dev/null || true)
+      link3=$(grep -m1 -E '#VLESS-REALITY\+(后量子|PQ)\+Vision' "$cc" 2>/dev/null || true)
+
+      if [[ -n "$link1" || -n "$link2" || -n "$link3" ]]; then
+        echo -e "${CYAN}--- 当前已启用的后量子核心节点链接 ---${NC}"
+        [[ -n "$link1" ]] && echo -e "  ${YELLOW}[1] VLESS-TLS+PQ+XHTTP+CDN:${NC}\n  ${link1}\n"
+        [[ -n "$link2" ]] && echo -e "  ${YELLOW}[2] VLESS-TLS+PQ+Vision+XHTTP+CDN:${NC}\n  ${link2}\n"
+        [[ -n "$link3" ]] && echo -e "  ${YELLOW}[3] VLESS-REALITY+PQ+Vision:${NC}\n  ${link3}\n"
+      fi
+      return 0
+      ;;
+    xhttp)
+      case "$action" in
+        on)
+          backup_store_check
+          info "正在开启 VLESS-TLS+PQ+XHTTP+CDN 节点 ..."
+          update_node_env "FEATURE_TLS_PQ_XHTTP" "true"
+          export FEATURE_TLS_PQ_XHTTP=true
+          backup_node_sync_files "VLESS-TLS+PQ+XHTTP+CDN" on || warn "客户端文件同步未完成"
+          cmd_resub
+          info "VLESS-TLS+PQ+XHTTP+CDN 节点已开启！"
+          ;;
+        off)
+          backup_store_check
+          info "正在关闭 VLESS-TLS+PQ+XHTTP+CDN 节点 ..."
+          update_node_env "FEATURE_TLS_PQ_XHTTP" "false"
+          export FEATURE_TLS_PQ_XHTTP=false
+          backup_node_sync_files "VLESS-TLS+PQ+XHTTP+CDN" off || warn "客户端文件同步未完成"
+          cmd_resub
+          info "VLESS-TLS+PQ+XHTTP+CDN 节点已关闭！"
+          ;;
+        show|status|"") cmd_pq show ;;
+        *) echo "用法: ${MANAGE_CMD} pq xhttp [on|off]" ;;
+      esac
+      ;;
+    vision)
+      case "$action" in
+        on)
+          backup_store_check
+          info "正在开启 VLESS-TLS+PQ+Vision+XHTTP+CDN 节点 ..."
+          update_node_env "FEATURE_TLS_PQ_VISION" "true"
+          export FEATURE_TLS_PQ_VISION=true
+          backup_node_sync_files "VLESS-TLS+PQ+Vision" on || warn "客户端文件同步未完成"
+          cmd_resub
+          info "VLESS-TLS+PQ+Vision+XHTTP+CDN 节点已开启！"
+          ;;
+        off)
+          backup_store_check
+          info "正在关闭 VLESS-TLS+PQ+Vision+XHTTP+CDN 节点 ..."
+          update_node_env "FEATURE_TLS_PQ_VISION" "false"
+          export FEATURE_TLS_PQ_VISION=false
+          backup_node_sync_files "VLESS-TLS+PQ+Vision" off || warn "客户端文件同步未完成"
+          cmd_resub
+          info "VLESS-TLS+PQ+Vision+XHTTP+CDN 节点已关闭！"
+          ;;
+        show|status|"") cmd_pq show ;;
+        *) echo "用法: ${MANAGE_CMD} pq vision [on|off]" ;;
+      esac
+      ;;
+    reality)
+      case "$action" in
+        on)
+          backup_store_check
+          info "正在开启 VLESS-REALITY+PQ+Vision 节点 ..."
+          if [[ -f "${ALL_STORE_DIR}/client-config.txt" ]] && ! grep -q "VLESS-REALITY+PQ+Vision" "${ALL_STORE_DIR}/client-config.txt"; then
+            local _spx_q=""
+            [[ -n "${REALITY_SPX_HASH:-}" ]] && _spx_q="&spx=%2F${REALITY_SPX_HASH}"
+            echo "vless://${UUID1}@${VPS_IP_URI:-${VPS_IP}}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${_spx_q}&type=raw&headerType=none&packetEncoding=xudp#VLESS-REALITY+PQ+Vision" >> "${ALL_STORE_DIR}/client-config.txt"
+          fi
+          update_node_env "FEATURE_REALITY_PQ_VISION" "true"
+          export FEATURE_REALITY_PQ_VISION=true
+          reality_server_edit vision on >/dev/null 2>&1 || true
+          backup_node_sync_files "VLESS-REALITY+PQ+Vision" on || warn "客户端文件同步未完成"
+          cmd_resub
+          info "VLESS-REALITY+PQ+Vision 节点已开启！"
+          ;;
+        off)
+          backup_store_check
+          info "正在关闭 VLESS-REALITY+PQ+Vision 节点 ..."
+          update_node_env "FEATURE_REALITY_PQ_VISION" "false"
+          export FEATURE_REALITY_PQ_VISION=false
+          if [[ "${FEATURE_REALITY_VISION:-false}" != "true" ]]; then
+            reality_server_edit vision off >/dev/null 2>&1 || true
+          fi
+          backup_node_sync_files "VLESS-REALITY+PQ+Vision" off || warn "客户端文件同步未完成"
+          cmd_resub
+          info "VLESS-REALITY+PQ+Vision 节点已关闭！"
+          ;;
+        show|status|"") cmd_pq show ;;
+        *) echo "用法: ${MANAGE_CMD} pq reality [on|off]" ;;
+      esac
+      ;;
+    *)
+      echo "用法: ${MANAGE_CMD} pq [show | xhttp on|off | vision on|off | reality on|off]"
+      ;;
+  esac
+}
+

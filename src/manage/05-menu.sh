@@ -76,6 +76,7 @@ _menu_define() {
     "查看全部节点参数与客户端链接 (info)::cmd_info"
     "查看订阅链接与全端二维码 (sub)::cmd_sub"
     "重新生成全量订阅文件 (resub)::cmd_resub"
+    "后量子 PQ 核心节点管理 (pq)::menu_choose MENU_PQ"
     "Reality 核心节点管理 (reality)::menu_choose MENU_REALITY"
     "上下行分离节点管理 (split)::menu_choose MENU_SPLIT"
     "Hysteria2 直连与混淆管理 (hy2)::menu_choose MENU_HY2"
@@ -85,6 +86,15 @@ _menu_define() {
     "Reality 兼容模式与最低版本 (minversion)::menu_choose MENU_MINVER"
     "Reality 时间差校验 (timediff)::menu_choose MENU_TIMEDIFF"
     "出站分流：屏蔽回国 IP / 广告域名 (block)::menu_choose MENU_BLOCK")
+
+  MENU_PQ=("后量子 PQ 核心节点管理"
+    "查看状态与后量子节点链接::cmd_pq show"
+    "TLS+PQ+XHTTP+CDN (16流)  开启::cmd_pq xhttp on"
+    "TLS+PQ+XHTTP+CDN (16流)  关闭::cmd_pq xhttp off"
+    "TLS+PQ+Vision+CDN  开启::cmd_pq vision on"
+    "TLS+PQ+Vision+CDN  关闭::cmd_pq vision off"
+    "REALITY+PQ+Vision (直连)  开启::cmd_pq reality on"
+    "REALITY+PQ+Vision (直连)  关闭::cmd_pq reality off")
 
   MENU_REALITY=("Reality 核心节点管理"
     "查看状态::cmd_reality show"
@@ -240,7 +250,7 @@ cmd_menu() {
     echo -e "  ${RED}[7]${NC} 卸载与清理 (Uninstall)"
     echo -e "  ${YELLOW}[0]${NC} 退出终端 (Exit)"
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
-    echo -e "  快捷直达: 11(状态) 12(节点) 13(订阅) 14(重启) 15(日志) 16(测速)"
+    echo -e "  快捷直达: 11(状态) 12(节点) 13(订阅) 14(重启) 15(日志) 16(测速) 17(后量子PQ)"
     read -rp "请选择操作分类 [0-7] 或快捷数字: " choice || break
 
     case "$choice" in
@@ -264,6 +274,7 @@ cmd_menu() {
       14) cmd_restart ;;
       15) cmd_log xray ;;
       16) cmd_bench ;;
+      17) cmd_pq show ;;
       *)
         warn "无效选择"
         ;;

@@ -26,6 +26,7 @@ xray-xhttp 全能管理命令 (v${XH_VERSION:-5.2.2})
   xh portconflict       系统端口占用排查
 
 【节点与协议矩阵管理】
+  xh pq [show|xhttp on|off|vision on|off|reality on|off]  后量子 PQ 核心节点管理
   xh reality [show|vision on|off|xhttp on|off]  Reality 核心节点管理
   xh split [show|reality-up on|off|cdn-up on|off] 上下行分离节点开关
   xh hy2 [show|on|off]  Hysteria2 原生直连节点开关
@@ -100,6 +101,7 @@ case "${1:-}" in
   h2direct)   shift; cmd_h2direct "$@" ;;
   hy2)        shift; cmd_hy2 "$@" ;;
   hy2obfs|hy2_obfs) shift; cmd_hy2obfs "$@" ;;
+  pq)         shift; cmd_pq "$@" ;;
   reality)    shift; cmd_reality "$@" ;;
   split)      shift; cmd_split "$@" ;;
   ech)        shift; cmd_ech "$@" ;;
