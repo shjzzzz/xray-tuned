@@ -18,7 +18,7 @@
 - [x] 6. 重新编译 `dist/install.sh` 与 `dist/install-xpadding.sh`，执行全量 `bash -n` 校验
 - [x] 7. 实机配置同步验证：在隔离测试环境与实机渲染验证 10 核心节点 100% 吻合，执行 `xh resub` 刷新订阅
 - [x] 8. 敏感信息脱敏审查（Sanitization Check）
-- [ ] 9. 向用户明确展示待推送仓库、分支及 commit 摘要，请求执行 `git push`（严格红线）
+- [x] 9. 向用户明确展示待推送仓库、分支及 commit 摘要，请求执行 `git push`（已批准并推送至 main 分支）
 
 ## Verification Results
 - V1: 隔离环境模拟渲染实测输出 10 行有效节点链接，与 README 权威 10 节点矩阵严格 1:1 对齐。
