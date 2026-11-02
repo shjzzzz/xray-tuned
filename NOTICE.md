@@ -11,7 +11,7 @@
 - `src/` 模块化安装流程与 `@@include` 模板拼装机制
 - `templates/` 全部模板（Nginx / Xray / 客户端 / Mihomo）
 - `extensions/` 三组扩展脚本（双 CDN、双 IP、QUIC）
-- `docs/1.md` – `docs/9.md`、`docs/llms-full.md`、客户端模板文件
+- `docs/1.md` – `docs/9.md`、客户端模板文件
 - `.github/scripts/build-*.sh` 与 release workflow
 
 **本项目新增或改写的部分**：

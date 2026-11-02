@@ -1,6 +1,6 @@
 # xray-tuned
 
-> بسته استقرار و بهینه‌سازی پروکسی با کارایی بالا مبتنی بر **Xray-core (v26.10.29 stable)**.
+> بسته استقرار و بهینه‌سازی پروکسی با کارایی بالا مبتنی بر **Xray-core (v26.10.31 stable)**.
 > پشتیبانی پیش‌فرض از **XHTTP + Cloudflare CDN + Reality + Hysteria2** همراه با BBRv3، شتاب TCP Fast Open، بافر ایمن ۶۴ مگابایتی و توزیع خودکار اشتراک.
 
 **زبان‌ها:** [简体中文](./README.md) · [English](./README.en.md) · **فارسی**
@@ -15,14 +15,7 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
   AUTO=1 \
   REALITY_DOMAIN="reality.yourdomain.com" \
   CDN_DOMAIN="cdn.yourdomain.com" \
-  NODE_TAG="US-Node" \
-  FEATURE_BRUTAL=false \
-  FEATURE_CDN_UP_REALITY_DOWN=false \
-  FEATURE_H2_DIRECT=false \
-  FEATURE_REALITY_UP_CDN_DOWN=false \
-  FEATURE_REALITY_VISION=false \
-  FEATURE_TLS_PQ_XHTTP=false \
-  FEATURE_XPADDING=false
+  NODE_TAG="US-Node"
 ```
 
 ### ۲. استقرار خودکار sbbox-tuned
@@ -37,10 +30,25 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
 
 ---
 
-## 📡 ماتریس ۱۰ نود اصلی
- 
-| ردیف | نام نود | پروتکل و انتقال | پورت / حالت | مبهم‌سازی / ویژگی | ویژگی و کاربرد پیشنهادی |
+## 📡 ماتریس نودهای پیش‌فرض (۶ نود)
+
+دستور نصب پیش‌فرض (بدون هیچ `FEATURE_*`) دقیقاً همین ۶ نود را می‌سازد:
+
+| ردیف | نام نود | پروتکل و انتقال | پورت / حالت | مبهم‌سازی / ویژگی | کاربرد پیشنهادی |
 | :---: | :--- | :--- | :--- | :--- | :--- |
+| **۱** | `VLESS-Reality-XHTTP-Direct` | VLESS + REALITY (RAW) | 443 و بازگشت به 8001 | XHTTP + vlessenc | استتار Reality روی پورت استاندارد همراه با مسیریابی پروتکل |
+| **۲** | `VLESS-REALITY+PQ+Vision` | VLESS + REALITY (RAW) | 443 / TCP (مستقیم) | ML-KEM-768 + xtls-rprx-vision | اتصال مستقیم مقاوم در برابر کوانتوم روی پورت 443 |
+| **۳** | `VLESS-Reality-Up-CDN-Down` | VLESS + XHTTP | 443 (آپلود: Reality مستقیم، دانلود: CDN) | جداسازی مسیر آپلود و دانلود | آپلود مستقیم با تأخیر کم و دانلود حجیم از طریق CDN |
+| **۴** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8443 / UDP (مستقیم) | QUIC (H3) بومی / پنجره ۶۴ مگابایت | توان عملیاتی بالا و تأخیر کم در مسیرهای فرااقیانوسی |
+| **۵** | `Hysteria2-H3-Direct` | Hysteria2 | پورت تصادفی UDP | BBRv3 / HTTP/3 استاندارد | سرعت گیگابیتی و بازیابی سریع از افت بسته |
+| **۶** | `Hysteria2-TLS-BBR-Salamander` | Hysteria2 | پورت تصادفی UDP | Salamander + BBR + پنجره ۶۴ مگابایت | عبور از محدودسازی شدید UDP و تشخیص فعال |
+
+> [!NOTE]
+> - نودهای اختیاری (به‌صورت پیش‌فرض خاموش): `VLESS-TLS+PQ+XHTTP+CDN`، `VLESS-CDN-Up-Reality-Down`، `VLESS-XHTTP-Direct-H2` (پورت 8445 TCP، دستور `xh h2direct on`)، `VLESS-Reality-Vision-Direct` (دستور `xh reality vision on`) و نودهای CDN H2/H3 (دستورهای `xh cdnh2 on` / `xh cdnh3 on`).
+> - نودهای هستریا با بافر ۶۴ مگابایت جریان و ۱۲۸ مگابایت اتصال بهینه‌سازی شده‌اند.
+> - هر نود را بعداً با `xh pq|reality|split|hy2|h3direct|h2direct|cdnh2|cdnh3` روشن یا خاموش کنید.
+
+---: | :--- | :--- | :--- | :--- | :--- |
 | **۱** | `VLESS-TLS+PQ+XHTTP+CDN` | VLESS + XHTTP (H2) | 443 (Cloudflare CDN) | رمزنگاری پساکوانتومی ML-KEM-768 + TLS 1.3 | **پیشنهاد اصلی روزمره**: شتاب امن جهانی CDN و مقاومت در برابر رمزگشایی کوانتومی |
 | **۲** | `VLESS-TLS+PQ+Vision+XHTTP+CDN` | VLESS + XHTTP (H2) | 443 (Cloudflare CDN) | جریان پویا Vision + ML-KEM-768 | حذف ردپای TLS-in-TLS و عبور از اختلالات شدید ساعات اوج |
 | **۳** | `VLESS-REALITY+PQ+Vision（自域名）` | VLESS + REALITY (RAW) | 8447 / TCP (مستقیم) | ML-KEM-768 + Vision (پوشش 0.05ms) | **حداکثر سرعت مستقیم**: فناوری Zero-Copy و سرعت گیگابیتی با کمترین پینگ |

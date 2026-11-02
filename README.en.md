@@ -1,6 +1,6 @@
 # xray-tuned
 
-> High-performance proxy and kernel-tuning deployment suite powered by **Xray-core (v26.10.29 stable)**.
+> High-performance proxy and kernel-tuning deployment suite powered by **Xray-core (v26.10.31 stable)**.
 > Features **XHTTP + Cloudflare CDN + Reality + Hysteria2** with native BBRv3, TCP Fast Open, 64MB buffer safety, and automated multi-platform subscription distribution.
 
 **Languages:** [简体中文](./README.md) · **English** · [فارسی](./README.fa.md)
@@ -15,14 +15,7 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
   AUTO=1 \
   REALITY_DOMAIN="reality.yourdomain.com" \
   CDN_DOMAIN="cdn.yourdomain.com" \
-  NODE_TAG="US-Node" \
-  FEATURE_BRUTAL=false \
-  FEATURE_CDN_UP_REALITY_DOWN=false \
-  FEATURE_H2_DIRECT=false \
-  FEATURE_REALITY_UP_CDN_DOWN=false \
-  FEATURE_REALITY_VISION=false \
-  FEATURE_TLS_PQ_XHTTP=false \
-  FEATURE_XPADDING=false
+  NODE_TAG="US-Node"
 ```
 
 ### 2. sbbox-tuned Automated Deployment
@@ -38,10 +31,25 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
 
 ---
 
-## 📡 10 Core Node Matrix
+## 📡 Default Node Matrix (6 nodes)
+
+The default install command (no `FEATURE_*` switches) generates exactly these 6 nodes:
 
 | # | Node Name | Protocol & Transport | Port / Mode | Obfuscation / Cipher | Recommended Use Case |
 | :---: | :--- | :--- | :--- | :--- | :--- |
+| **1** | `VLESS-Reality-XHTTP-Direct` | VLESS + REALITY (RAW) | 443 fallback to 8001 | XHTTP + vlessenc local fallback | Reality camouflage on the standard port with protocol routing |
+| **2** | `VLESS-REALITY+PQ+Vision` | VLESS + REALITY (RAW) | 443 / TCP (Direct) | ML-KEM-768 + xtls-rprx-vision | Quantum-resistant direct connection on port 443 |
+| **3** | `VLESS-Reality-Up-CDN-Down` | VLESS + XHTTP | 443 (up: Reality direct, down: CDN) | Split up/down links | Low-latency direct upload, CDN-carried bulk download |
+| **4** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8443 / UDP (Direct) | Native QUIC (H3) / 64MB window | Direct low-latency cross-ocean high throughput |
+| **5** | `Hysteria2-H3-Direct` | Hysteria2 | UDP Dynamic Port | BBRv3 / Standard HTTP/3 | Gigabit line-rate throughput & fast recovery from packet loss |
+| **6** | `Hysteria2-TLS-BBR-Salamander` | Hysteria2 | UDP Dynamic Port | Salamander Obfs + BBR + 64MB window | Extreme ISP UDP throttling & active-probing evasion |
+
+> [!NOTE]
+> - **Optional nodes** (off by default): `VLESS-TLS+PQ+XHTTP+CDN`, `VLESS-CDN-Up-Reality-Down`, `VLESS-XHTTP-Direct-H2` (8445 TCP, `xh h2direct on`), `VLESS-Reality-Vision-Direct` (`xh reality vision on`), CDN H2/H3 nodes (`xh cdnh2 on` / `xh cdnh3 on`).
+> - **Hysteria2 nodes** use dynamic high UDP ports and declare 64MB stream / 128MB connection receive windows to eliminate BDP bottlenecks.
+> - **Turn any node on or off later** with `xh pq|reality|split|hy2|h3direct|h2direct|cdnh2|cdnh3`.
+
+---: | :--- | :--- | :--- | :--- | :--- |
 | **1** | `VLESS-TLS+PQ+XHTTP+CDN` | VLESS + XHTTP (H2) | 443 (Cloudflare CDN) | ML-KEM-768 Post-Quantum + TLS 1.3 | **Daily Driver**: Universal CDN acceleration, quantum-resistant forward secrecy |
 | **2** | `VLESS-TLS+PQ+Vision+XHTTP+CDN` | VLESS + XHTTP (H2) | 443 (Cloudflare CDN) | ML-KEM-768 + Vision dynamic flow | Eliminates TLS-in-TLS fingerprinting, QoS-evasive |
 | **3** | `VLESS-REALITY+PQ+Vision（自域名）` | VLESS + REALITY (RAW) | 8447 / TCP (Direct) | ML-KEM-768 + Vision (0.05ms local gateway) | **High-Speed Direct**: Linux kernel `splice()` zero-copy, line-rate Gigabit throughput |
