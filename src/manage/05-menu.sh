@@ -80,6 +80,7 @@ _menu_define() {
     "Reality 核心节点管理 (reality)::menu_choose MENU_REALITY"
     "上下行分离节点管理 (split)::menu_choose MENU_SPLIT"
     "Hysteria2 直连与混淆管理 (hy2)::menu_choose MENU_HY2"
+    "XHTTP-Direct-H3 直连管理 (h3direct)::menu_onoff cmd_h3direct"
     "XHTTP-Direct-H2 直连管理 (h2direct)::menu_onoff cmd_h2direct"
     "CDN TCP(h2) 节点开关 (cdnh2)::menu_onoff cmd_cdnh2"
     "CDN QUIC(h3) 节点开关 (cdnh3)::menu_onoff cmd_cdnh3"
@@ -116,6 +117,8 @@ _menu_define() {
     "查看状态::cmd_hy2 show"
     "开启 Hysteria2 直连节点::cmd_hy2 on"
     "关闭全部 Hysteria2 节点::cmd_hy2 off"
+    "只关闭直连节点，保留混淆节点::cmd_hy2 h3 off"
+    "轮换认证密码并刷新订阅::cmd_hy2 rotate"
     "开启 Hysteria2 混淆节点::cmd_hy2 obfs on"
     "关闭 Hysteria2 混淆节点::cmd_hy2 obfs off")
 

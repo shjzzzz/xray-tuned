@@ -285,8 +285,9 @@ if [[ ! -s "${ACME_CERT_HOME}/fullchain.cer" ]]; then
 fi
 [[ "$FEATURE_HY2" == true ]] || FEATURE_HY2_H3=false
 
-if [[ "$FEATURE_H3_DIRECT" == true ]]; then
-  XRAY_H3_DIRECT_INBOUND="$(cat <<H3EOF
+# 供 xh h3direct 开关复用：同一份文本，开关开启时直接插进线上配置（与 xray_h2_direct_inbound 同构）
+xray_h3_direct_inbound() {
+  cat <<H3EOF
 ,
         {
             "listen": "${XRAY_LISTEN}",
@@ -336,7 +337,11 @@ if [[ "$FEATURE_H3_DIRECT" == true ]]; then
             }
         }
 H3EOF
-)"$'\n'
+}
+
+if [[ "$FEATURE_H3_DIRECT" == true ]]; then
+  # 带 xh 开关使用的成对标记，xh h3direct off 才能整块删除安装时写入的入站
+  XRAY_H3_DIRECT_INBOUND=$(printf '\n        // >>xh:h3direct\n%s\n        // <<xh:h3direct\n' "$(xray_h3_direct_inbound)")$'\n'
   info "已启用 h3-direct 直连节点: UDP ${H3_PORT}"
 fi
 
@@ -828,6 +833,7 @@ chmod 600 "$NODE_ENV_FILE"
 # 备用节点库的服务端部分：备用入站的完整文本（带前导逗号），xh 开启时插入 inbounds 末尾
 mkdir -p /etc/xhttp-cdn/all
 xray_h2_direct_inbound  > /etc/xhttp-cdn/all/inbound-h2direct.json
+xray_h3_direct_inbound  > /etc/xhttp-cdn/all/inbound-h3direct.json
 xray_hy2_obfs_inbound   > /etc/xhttp-cdn/all/inbound-hy2obfs.json
 xray_hy2_h3_inbound     > /etc/xhttp-cdn/all/inbound-hy2h3.json
 xray_masque_inbound     > /etc/xhttp-cdn/all/inbound-masque.json

@@ -31,6 +31,7 @@ xray-xhttp 全能管理命令 (v${XH_VERSION:-5.2.2})
   xh split [show|reality-up on|off|cdn-up on|off] 上下行分离节点开关
   xh hy2 [show|on|off]  Hysteria2 原生直连节点开关
   xh hy2 obfs [on|off]  Hysteria2 Salamander 混淆节点开关 (别名: xh hy2obfs)
+  xh h3direct [on|off]  XHTTP-Direct-H3 (QUIC/UDP) 直连节点开关
   xh h2direct [on|off]  XHTTP-Direct-H2 直连节点开关
   xh cdnh2 [on|off]     CDN TCP(h2) 节点开关
   xh cdnh3 [on|off]     CDN QUIC(h3) 节点开关
@@ -98,6 +99,7 @@ case "${1:-}" in
   minversion) shift; cmd_minversion "$@" ;;
   cdnh2)      shift; cmd_cdnh2 "$@" ;;
   cdnh3)      shift; cmd_cdnh3 "$@" ;;
+  h3direct)   shift; cmd_h3direct "$@" ;;
   h2direct)   shift; cmd_h2direct "$@" ;;
   hy2)        shift; cmd_hy2 "$@" ;;
   hy2obfs|hy2_obfs) shift; cmd_hy2obfs "$@" ;;

@@ -515,10 +515,19 @@ def sort_proxies_in_file(fpath):
             return
         header = match.group(1)
         body = match.group(2)
-        proxy_chunks = re.split(r'\n(?=- name:)', '\n' + body)
-        proxy_chunks = [c.strip() for c in proxy_chunks if c.strip()]
+        proxy_chunks = re.split(r'\n(?=\s*- name:)', '\n' + body)
+        proxy_chunks = [c.rstrip() for c in proxy_chunks if c.strip()]
+        def fix_chunk(c):
+            ls = c.split('\n')
+            body_ls = [l for l in ls[1:] if l.strip() and not l.lstrip().startswith('#')]
+            if body_ls:
+                want = len(body_ls[0]) - len(body_ls[0].lstrip()) - 2
+                if want >= 0:
+                    ls[0] = ' ' * want + ls[0].lstrip()
+            return '\n'.join(ls)
+        proxy_chunks = [fix_chunk(c) for c in proxy_chunks]
         def get_proxy_name(chunk):
-            m = re.search(r'^- name:\s*([^\n]+)', chunk)
+            m = re.search(r'^\s*- name:\s*([^\n]+)', chunk)
             return m.group(1).strip() if m else ''
         sorted_chunks = sorted(proxy_chunks, key=get_proxy_name)
         sorted_body = '\n'.join(sorted_chunks) + '\n'

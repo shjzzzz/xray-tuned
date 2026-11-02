@@ -130,6 +130,49 @@ mihomo_tun_variants() {
 }
 
 # 手工改过 ~/client-config.txt 后，用它把订阅文件重新生成，无需重跑安装脚本
+# 修复并排序 Mihomo 文件里的 proxies（节点缩进被写坏时能自愈；文件不存在则跳过）。
+# 排序/生成逻辑曾假定节点顶格 `- name:`，而模板是缩进两格，导致首个节点缩进丢失、YAML 失效，所有开关的「同步客户端文件」随之失败。
+mihomo_heal_files() {
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 -c "
+import sys, re
+
+def sort_proxies_in_file(fpath):
+    try:
+        with open(fpath, 'r', encoding='utf-8') as f:
+            text = f.read()
+        match = re.search(r'(proxies:\n)(.*?)(?=\n[a-z\-]+:|\Z)', text, re.DOTALL)
+        if not match:
+            return
+        header = match.group(1)
+        body = match.group(2)
+        proxy_chunks = re.split(r'\n(?=\s*- name:)', '\n' + body)
+        proxy_chunks = [c.rstrip() for c in proxy_chunks if c.strip()]
+        def fix_chunk(c):
+            ls = c.split('\n')
+            body_ls = [l for l in ls[1:] if l.strip() and not l.lstrip().startswith('#')]
+            if body_ls:
+                want = len(body_ls[0]) - len(body_ls[0].lstrip()) - 2
+                if want >= 0:
+                    ls[0] = ' ' * want + ls[0].lstrip()
+            return '\n'.join(ls)
+        proxy_chunks = [fix_chunk(c) for c in proxy_chunks]
+        def get_proxy_name(chunk):
+            m = re.search(r'^\s*- name:\s*([^\n]+)', chunk)
+            return m.group(1).strip() if m else ''
+        sorted_chunks = sorted(proxy_chunks, key=get_proxy_name)
+        sorted_body = '\n'.join(sorted_chunks) + '\n'
+        new_text = text[:match.start()] + header + sorted_body + text[match.end():]
+        with open(fpath, 'w', encoding='utf-8') as f:
+            f.write(new_text)
+    except Exception:
+        pass
+
+for p in sys.argv[1:]:
+    sort_proxies_in_file(p)
+" "$@" 2>/dev/null || true
+}
+
 cmd_resub() {
   [[ -f "$SUB_TOKEN_FILE" ]] || fail "未找到订阅 token，请先运行安装脚本"
   local home token subdir
@@ -284,36 +327,8 @@ with open(fpath, 'w', encoding='utf-8') as f:
 " "${home}/client-config.txt" 2>/dev/null || true
   fi
 
-  if [[ -f "${home}/client-config-mihomo-nodes.yaml" || -f "${home}/client-config-mihomo-full.yaml" ]] && command -v python3 >/dev/null 2>&1; then
-    python3 -c "
-import sys, re
-
-def sort_proxies_in_file(fpath):
-    try:
-        with open(fpath, 'r', encoding='utf-8') as f:
-            text = f.read()
-        match = re.search(r'(proxies:\n)(.*?)(?=\n[a-z\-]+:|\Z)', text, re.DOTALL)
-        if not match:
-            return
-        header = match.group(1)
-        body = match.group(2)
-        proxy_chunks = re.split(r'\n(?=- name:)', '\n' + body)
-        proxy_chunks = [c.strip() for c in proxy_chunks if c.strip()]
-        def get_proxy_name(chunk):
-            m = re.search(r'^- name:\s*([^\n]+)', chunk)
-            return m.group(1).strip() if m else ''
-        sorted_chunks = sorted(proxy_chunks, key=get_proxy_name)
-        sorted_body = '\n'.join(sorted_chunks) + '\n'
-        new_text = text[:match.start()] + header + sorted_body + text[match.end():]
-        with open(fpath, 'w', encoding='utf-8') as f:
-            f.write(new_text)
-    except Exception:
-        pass
-
-for p in sys.argv[1:]:
-    sort_proxies_in_file(p)
-" "${home}/client-config-mihomo-nodes.yaml" "${home}/client-config-mihomo-full.yaml" 2>/dev/null || true
-  fi
+  mihomo_heal_files "${home}/client-config-mihomo-nodes.yaml" "${home}/client-config-mihomo-full.yaml" \
+    "${ALL_STORE_DIR}/client-config-mihomo-nodes.yaml" "${ALL_STORE_DIR}/client-config-mihomo-full.yaml"
 
   cp "${home}/client-config.txt" "${subdir}/v2rayn-raw.txt"
   base64 "${home}/client-config.txt" | tr -d '\n' > "${subdir}/v2rayn.txt"
@@ -1087,6 +1102,10 @@ backup_store_check() {
 # 先在内存里算好所有文件的新内容，全部成功才写盘（逐个 tmp + rename）。失败返回非零，不留半改状态。
 # 返回 0 = 已处理，2 = 节点库里没有该节点（on）或本机没有该节点（off）。
 backup_node_sync_files() {
+  local h; for h in "${USER_HOME:-/home/ubuntu}" /home/ubuntu /home/opc /root; do
+    mihomo_heal_files "${h}/client-config-mihomo-nodes.yaml" "${h}/client-config-mihomo-full.yaml"
+  done
+  mihomo_heal_files "${ALL_STORE_DIR}/client-config-mihomo-nodes.yaml" "${ALL_STORE_DIR}/client-config-mihomo-full.yaml"
   python3 - "$ALL_STORE_DIR" "$1" "$2" "${USER_HOME:-/home/ubuntu}" /home/ubuntu /home/opc /root <<'SYNCPY'
 import copy, os, sys
 
@@ -1225,7 +1244,7 @@ backup_inbound_edit() {
   local key="$1" act="$2" port="$3" tmp="${XRAY_CONF%.json}.bk-tmp.json" bak="${XRAY_CONF}.bk.bak" rc err   # 临时文件必须以 .json 结尾
   [[ -f "$XRAY_CONF" ]] || { backup_error "未找到 Xray 配置文件: $XRAY_CONF"; return 1; }
   python3 - "$XRAY_CONF" "$tmp" "${ALL_STORE_DIR}/inbound-${key}.json" "$key" "$act" "$port" <<'INBPY'
-import re, sys
+import os, re, sys
 
 src, dst, store, key, act, port = sys.argv[1:7]
 s = open(src, encoding='utf-8').read()
@@ -1279,14 +1298,109 @@ def inbounds_close(s):
 def strip_comments(t):
     return re.sub(r'(?m)^\s*//.*$', '', t)
 
+def inbound_objects(s):
+    """inbounds 数组里每个元素对象的 (起, 止) 下标；止为 } 之后。跳过字符串与注释。"""
+    close = inbounds_close(s)
+    if close < 0:
+        return []
+    i, n, depth, out, start = 0, close, 0, [], None
+    # 先走到 inbounds 数组的 [ 之后
+    m = re.search(r'"inbounds"\s*:\s*\[', s)
+    i = m.end() if m else 0
+    while i < n:
+        c = s[i]
+        if c == '"':
+            j = i + 1
+            while j < n and s[j] != '"':
+                j += 2 if s[j] == '\\' else 1
+            i = j + 1
+            continue
+        if s.startswith('//', i):
+            while i < n and s[i] != '\n':
+                i += 1
+            continue
+        if s.startswith('/*', i):
+            i = s.index('*/', i) + 2
+            continue
+        if c in '{[':
+            if depth == 0 and c == '{':
+                start = i
+            depth += 1
+        elif c in '}]':
+            depth -= 1
+            if depth == 0 and c == '}':
+                out.append((start, i + 1))
+        i += 1
+    return out
+
+def comma_before(s, a):
+    """从下标 a 往回跳过空白与整行注释，返回停下的位置 k；s[k-1] == ',' 说明它前面有逗号。"""
+    k = a
+    while True:
+        while k > 0 and s[k - 1] in ' \t\r\n':
+            k -= 1
+        ls = s.rfind('\n', 0, k) + 1
+        if s[ls:k].lstrip().startswith('//'):
+            k = ls
+            continue
+        return k
+
+def drop_unmarked(s, pat):
+    """按端口删掉一个没有 xh 标记的入站（节点由老版本安装脚本写入）；返回 (新文本, 被删原文)，找不到返回 (None, None)。"""
+    for a, b in inbound_objects(s):
+        if not re.search(pat, strip_comments(s[a:b])):
+            continue
+        # 优先连同前面的逗号一起删；它是第一个元素时连同后面的逗号。
+        k = comma_before(s, a)
+        if k > 0 and s[k - 1] == ',':
+            return s[:k - 1] + s[b:], s[a:b]
+        t = b
+        while t < len(s) and s[t] in ' \t\r\n':
+            t += 1
+        return (s[:a] + s[t + 1:] if t < len(s) and s[t] == ',' else s[:a] + s[b:]), s[a:b]
+    return None, None
+
+def save_store(text):
+    """节点库里没有这个入站的原文时存一份（老版本装机没生成），之后 on 才能原样恢复。text 以逗号开头。"""
+    if os.path.isfile(store) and os.path.getsize(store) > 0:
+        return
+    os.makedirs(os.path.dirname(store), exist_ok=True)
+    with open(store, 'w', encoding='utf-8') as sf:
+        sf.write(text.rstrip('\n') + '\n')
+    os.chmod(store, 0o600)
+
+if act == 'adopt':
+    # 给老版本装机写入的无标记入站补上标记，之后 off/on 就能整块增删；只动注释，不改行为。
+    if has:
+        sys.exit(3)
+    for a, b in inbound_objects(s):
+        if re.search(pat, strip_comments(s[a:b])):
+            k = comma_before(s, a)
+            if k == 0 or s[k - 1] != ',':
+                sys.stderr.write('入站是 inbounds 数组的第一个元素，无法自动补标记。\n')
+                sys.exit(4)
+            k -= 1
+            save_store(s[k:b])
+            s = s[:k] + '\n' + begin + '\n' + s[k:b] + '\n' + end + '\n' + s[b:]   # end 后必须换行：下一个元素的逗号不能被注释吞掉
+            open(dst, 'w', encoding='utf-8').write(s)
+            sys.exit(0)
+    sys.exit(3)
+
 if act == 'off':
     if not has:
         if re.search(pat, strip_comments(s)):
-            sys.stderr.write('配置里有 %s 的入站，但没有 xh 标记（不是由 xh 开关写入）。请手动删除该入站后再关闭。\n' % port)
-            sys.exit(4)
+            r, removed = drop_unmarked(s, pat)
+            if r is None:
+                sys.stderr.write('配置里有 %s 的入站，但没有 xh 标记且无法定位其边界。请手动删除该入站后再关闭。\n' % port)
+                sys.exit(4)
+            s = r
+            save_store(',\n        ' + removed)
+            open(dst, 'w', encoding='utf-8').write(s)
+            sys.exit(0)
         sys.exit(3)
     a = s.index('\n' + begin)
     b = s.index(end, a) + len(end)
+    save_store(s[a + len('\n' + begin + '\n'):b - len('\n' + end)])
     s = s[:a] + s[b:]
 else:
     if has:
@@ -1314,6 +1428,7 @@ INBPY
   chown --reference="$XRAY_CONF" "$tmp" 2>/dev/null || true
   chmod --reference="$XRAY_CONF" "$tmp" 2>/dev/null || true
   mv -f "$tmp" "$XRAY_CONF" || { backup_error "无法替换 $XRAY_CONF"; return 1; }
+  [[ "$act" == adopt ]] && return 0   # 只加了注释标记，行为不变，不必重启 xray
   if ! svc restart xray; then
     cp -a "$bak" "$XRAY_CONF"
     if svc restart xray >/dev/null 2>&1; then
@@ -1382,6 +1497,7 @@ backup_port_busy() {   # $1 = tcp|udp，$2 = 端口，$3 = key (可选，如 h2d
 cmd_backup_server_node() {
   local key="$1" action="${2:-show}" flag name label proto port cur rc
   case "$key" in
+    h3direct) flag=FEATURE_H3_DIRECT; name="VLESS-XHTTP-Direct-H3"; label="XHTTP-Direct-H3（UDP QUIC/HTTP3 直连）";               proto=udp; port="${H3_PORT:-8443}" ;;
     h2direct) flag=FEATURE_H2_DIRECT; name="VLESS-XHTTP-Direct-H2"; label="XHTTP-Direct-H2（TCP 直连，h3-direct 的孪生体）"; proto=tcp; port="${H2_PORT:-8445}" ;;
     hy2obfs)  flag=FEATURE_HY2_OBFS;  name="Hysteria2-TLS-BBR-Salamander"; label="Hysteria2-TLS-BBR-Salamander（salamander 混淆）";       proto=udp; port="${HY2_PORT}" ;;
     masque)   flag=FEATURE_MASQUE;    name="MASQUE-CONNECT-IP";     label="MASQUE 标准 L3 隧道 (RFC 9484 CONNECT-IP)";        proto=udp; port="${MASQUE_PORT:-8447}" ;;
@@ -1413,7 +1529,17 @@ cmd_backup_server_node() {
     on)
       local has_inbound=false
       [[ -f "$XRAY_CONF" ]] && grep -q "// >>xh:${key}" "$XRAY_CONF" && has_inbound=true
-      [[ "$cur" == true && "$has_inbound" == true ]] && { info "${label} 已经是开启状态"; return 0; }
+      # 老版本装机写入的入站没有 xh 标记：先补上标记（只加注释，不重启），后续 off/on 才能整块增删
+      if [[ "$cur" == true && "$has_inbound" != true && -f "$XRAY_CONF" ]] && backup_inbound_edit "$key" adopt "$port"; then
+        has_inbound=true
+      fi
+      if [[ "$cur" == true && "$has_inbound" == true ]]; then
+        # 已开启也顺手把客户端文件补齐（订阅里缺这个节点时，这是唯一的修复入口）
+        backup_store_check
+        backup_node_sync_files "$name" on >/dev/null 2>&1 && cmd_resub
+        info "${label} 已经是开启状态"
+        return 0
+      fi
       backup_store_check
       [[ -f "$NODE_ENV_FILE" ]] || fail "未找到 ${NODE_ENV_FILE}，无法保存开关状态"
       if [[ ! -s "${ALL_STORE_DIR}/inbound-${key}.json" ]]; then
@@ -1473,6 +1599,7 @@ cmd_backup_server_node() {
 }
 
 cmd_h2direct() { cmd_backup_server_node h2direct "$@"; }
+cmd_h3direct() { cmd_backup_server_node h3direct "$@"; }
 cmd_hy2obfs()  { cmd_hy2 obfs "$@"; }
 
 render_masque_inbound() {
