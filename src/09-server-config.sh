@@ -173,7 +173,7 @@ fi
 # 而不是 Reality —— Hysteria2 与标准 h3 客户端都要求可验证的证书链。
 # 证书不存在时跳过这两个节点，不中断安装（L1 best-effort）。
 #
-# 配置字段依据 docs/llms-full.md（Xray 官方文档离线副本），非凭记忆书写（L3）：
+# 配置字段依据 Xray 官方文档（https://xtls.github.io/），非凭记忆书写（L3）：
 #   Hysteria2 inbound  : :3001  protocol=hysteria / settings.clients[].auth
 #   HysteriaObject     : :3102  hysteriaSettings.masquerade
 #   FinalMaskObject    : :8211  finalmask.udp[].type / .settings
@@ -198,7 +198,7 @@ if [[ "${FEATURE_HY2_OBFS:-false}" == true ]] && _port_taken_by_other udp "$HY2_
   warn "UDP ${HY2_PORT} 已被其他进程占用，已关闭 Hysteria2-Obfs 节点（占用者：$(ss -lunpH "sport = :${HY2_PORT}" 2>/dev/null | grep -o 'users:(([^)]*' | head -1)）。腾出端口后可用 xh hy2obfs on 开启"
   FEATURE_HY2_OBFS=false
 fi
-if [[ "${FEATURE_H2_DIRECT:-true}" == true ]] && _port_taken_by_other tcp "$H2_PORT"; then
+if [[ "${FEATURE_H2_DIRECT:-false}" == true ]] && _port_taken_by_other tcp "$H2_PORT"; then
   warn "TCP ${H2_PORT} 已被其他进程占用，已关闭 h2-direct 节点。腾出端口后可用 xh h2direct on 开启"
   FEATURE_H2_DIRECT=false
 fi
@@ -811,9 +811,9 @@ info "写入 ${NODE_ENV_FILE} ..."
   printf 'XDRIVE_DECRYPTION=%q\n'     "${XDRIVE_DECRYPTION:-}"
   printf 'FEATURE_NOISE_EXP=%q\n'      "${FEATURE_NOISE_EXP:-false}"
   printf 'FEATURE_NOISE_LINKS=%q\n'    "${FEATURE_NOISE_LINKS:-false}"
-  printf 'FEATURE_REALITY_VISION=%q\n'  "${FEATURE_REALITY_VISION:-true}"
+  printf 'FEATURE_REALITY_VISION=%q\n'  "${FEATURE_REALITY_VISION:-false}"
   printf 'FEATURE_REALITY_XHTTP=%q\n'   "${FEATURE_REALITY_XHTTP:-true}"
-  printf 'FEATURE_TLS_PQ_XHTTP=%q\n'    "${FEATURE_TLS_PQ_XHTTP:-true}"
+  printf 'FEATURE_TLS_PQ_XHTTP=%q\n'    "${FEATURE_TLS_PQ_XHTTP:-false}"
   printf 'FEATURE_TLS_PQ_VISION=%q\n'   "${FEATURE_TLS_PQ_VISION:-false}"
   printf 'FEATURE_REALITY_PQ_VISION=%q\n' "${FEATURE_REALITY_PQ_VISION:-true}"
   printf 'XRAY_CHANNEL=%q\n'   "${XRAY_CHANNEL:-stable}"

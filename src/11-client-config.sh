@@ -274,7 +274,7 @@ fi
 # 写成 stream-up 会拒绝 auto / packet-up 的上传（实测这两种客户端全部不通），用户把链接改回 auto 就会断。
 # 直连入站只收 stream-up。
 # 10 大核心节点之三大后量子 (ML-KEM-768) 节点（默认开启）
-if [[ "${FEATURE_TLS_PQ_XHTTP:-true}" == true ]]; then
+if [[ "${FEATURE_TLS_PQ_XHTTP:-false}" == true ]]; then
   TLS_PQ_XHTTP_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=auto&extra=%7B%22scMinPostsIntervalMs%22%3A30%2C%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D%7D&packetEncoding=xudp#VLESS-TLS+PQ+XHTTP+CDN"
 else
   TLS_PQ_XHTTP_NODE_LINE=""

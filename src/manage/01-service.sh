@@ -147,7 +147,7 @@ cmd_update() {
         | grep -m1 '"tag_name"' | cut -d'"' -f4)
     fi
     latest="${latest#v}"
-    [[ -z "$latest" ]] && latest="${XRAY_DEFAULT_VERSION:-26.10.21}"
+    [[ -z "$latest" ]] && latest="${XRAY_DEFAULT_VERSION:-26.10.31}"
   fi
 
   if [[ -z "$latest" ]]; then

@@ -54,7 +54,7 @@ PROJECT_VERSION="5.3.1"
 PROJECT_REPO="shjzzzz/xray-tuned"
 # 默认推荐的 Xray-core 版本：回退版本 v26.10.21（含 v26.9.30 起的 XDRIVE / MASQUE / Noise / WFP 特性，并移除了 3 张被攻破的中间 CA 根证书；
 # v26.10.10 / v26.10.17 已被官方撤版）。正常情况下按通道（stable=/releases/latest）自适应取最新，查询失败才用它。
-XRAY_DEFAULT_VERSION="26.10.21"
+XRAY_DEFAULT_VERSION="26.10.31"
 MANAGE_CMD="xh"
 MANAGE_BIN="/usr/local/bin/${MANAGE_CMD}"
 STATE_DIR="/etc/xhttp-cdn"
@@ -150,18 +150,18 @@ REALITY_MAX_TIME_DIFF=${REALITY_MAX_TIME_DIFF:-}
 FEATURE_REALITY_SPX=${FEATURE_REALITY_SPX:-true}
 
 # FEATURE_H2_DIRECT（v4.7.0 新增）：h3-direct 的 TCP 孪生体（监听 TCP 8445）。
-# 默认开启（与实机当前节点集一致）；不需要时 FEATURE_H2_DIRECT=false 或装好后 xh h2direct off。
-FEATURE_H2_DIRECT=${FEATURE_H2_DIRECT:-true}
+# 默认关闭（本机节点集不含它）；需要时 FEATURE_H2_DIRECT=true 或装好后 xh h2direct on。
+FEATURE_H2_DIRECT=${FEATURE_H2_DIRECT:-false}
 
-# FEATURE_REALITY_UP_CDN_DOWN（默认开启，与当前实机节点集一致）：上下行分离节点
+# FEATURE_REALITY_UP_CDN_DOWN（默认开启，与当前实机节点集一致；关闭用 FEATURE_REALITY_UP_CDN_DOWN=false 或 xh split reality-up off）：上下行分离节点
 # VLESS-Reality-Up-CDN-Down（上行 Reality 直连 443 / 下行 CDN H2 443）。
 FEATURE_REALITY_UP_CDN_DOWN=${FEATURE_REALITY_UP_CDN_DOWN:-true}
 FEATURE_UP_CDN_DOWN_MIHOMO=${FEATURE_UP_CDN_DOWN_MIHOMO:-${FEATURE_REALITY_UP_CDN_DOWN}}
 
-# FEATURE_CDN_UP_REALITY_DOWN（默认开启，与当前实机节点集一致）：反向的上下行分离节点
+# FEATURE_CDN_UP_REALITY_DOWN（默认关闭，可用 FEATURE_CDN_UP_REALITY_DOWN=true 或 xh split cdn-up on 开启）：反向的上下行分离节点
 # VLESS-CDN-Up-Reality-Down —— 上行 XHTTP+TLS 经 Cloudflare CDN，下行 XHTTP+Reality 直连。
 # 与 Reality-Up-CDN-Down 一样落到同一个 8001 入站（Reality 443 回落 / Nginx 8003 回源）。
-FEATURE_CDN_UP_REALITY_DOWN=${FEATURE_CDN_UP_REALITY_DOWN:-true}
+FEATURE_CDN_UP_REALITY_DOWN=${FEATURE_CDN_UP_REALITY_DOWN:-false}
 
 # FEATURE_XHTTP_VLESSENC（v4.9.29）：8001 XHTTP 入站启用 VLESS Encryption（默认关闭设为 none，杜绝客户端 -1 报错）。
 FEATURE_XHTTP_VLESSENC=${FEATURE_XHTTP_VLESSENC:-false}
@@ -170,11 +170,11 @@ FEATURE_XHTTP_VLESSENC=${FEATURE_XHTTP_VLESSENC:-false}
 # 避免客户端在服务端未配置 nat/iptables 端口段重定向时握手失败，或劫持同机其他 UDP 服务。
 FEATURE_PORT_HOPPING=${FEATURE_PORT_HOPPING:-false}
 
-# FEATURE_BRUTAL：TCP Brutal (HyNetworks/tcp-brutal) 极速拥塞控制（默认开启）。
+# FEATURE_BRUTAL：TCP Brutal (HyNetworks/tcp-brutal) 极速拥塞控制（默认关闭：需要 DKMS 编译内核模块，新内核上容易失败；FEATURE_BRUTAL=true 或 xh brutal on 开启）。
 # 当系统内核存在 brutal 模块时，自动为 Xray TCP 入站启用 Brutal 拥塞控制。
 # 记下用户是否显式传了 FEATURE_BRUTAL：平台识别（05-base-env.sh）要在小内存机上改默认，但不能覆盖用户的明确选择。
 FEATURE_BRUTAL_EXPLICIT="${FEATURE_BRUTAL+set}"
-FEATURE_BRUTAL=${FEATURE_BRUTAL:-true}
+FEATURE_BRUTAL=${FEATURE_BRUTAL:-false}
 BRUTAL_DEFAULT_MBPS=${BRUTAL_DEFAULT_MBPS:-auto}
 
 # REALITY_MIN_CLIENT_VER：Reality 客户端最低版本，默认 1.8.0（兼容 Shadowrocket / mihomo / sing-box 等非 Xray 内核客户端，它们的版本字段为 0，会被内核默认下限 26.3.27 拒绝）。
@@ -206,15 +206,15 @@ FEATURE_NOISE_EXP=${FEATURE_NOISE_EXP:-false}
 # FEATURE_NOISE_LINKS（v4.9.81，默认关闭）：客户端链接的 fm 里是否也带 noise 项。服务端入站的 noise 只是发送方行为，
 # 老客户端不受影响；但链接里的 noise.exp 在 Xray < 26.9.30 的客户端内核里无法解析，v2rayN 会报「运行内核失败」。
 # 确认所有客户端内核都 >= 26.9.30 后再开：xh noise links on。
-# 10 大核心节点之三大后量子 (ML-KEM-768) 节点开关（默认全部开启）
-FEATURE_TLS_PQ_XHTTP=${FEATURE_TLS_PQ_XHTTP:-true}
+# 三个后量子 (ML-KEM-768) 节点开关：TLS_PQ_XHTTP（CDN）默认关闭，REALITY_PQ_VISION（直连 443）默认开启，TLS_PQ_VISION 默认关闭。
+FEATURE_TLS_PQ_XHTTP=${FEATURE_TLS_PQ_XHTTP:-false}
 FEATURE_TLS_PQ_VISION=${FEATURE_TLS_PQ_VISION:-false}
 FEATURE_REALITY_PQ_VISION=${FEATURE_REALITY_PQ_VISION:-true}
 
 # FEATURE_REALITY_VISION / FEATURE_REALITY_XHTTP：Reality 443 入站上的两个直连节点。
-# 默认启用 REALITY_VISION（xtls-rprx-vision 零拷贝直通）与 REALITY_XHTTP（标口 443 + XHTTP）。
+# 默认启用 REALITY_XHTTP（标口 443 + XHTTP）；REALITY_VISION（Vision-Direct）默认关闭，REALITY+PQ+Vision 仍共用 443 上的 Vision 客户端项。
 # 关闭 = 服务端去掉对应的 clients 项 / fallback 项并从订阅里移除节点；装好后用 xh reality vision|xhttp on|off 切换。
-FEATURE_REALITY_VISION=${FEATURE_REALITY_VISION:-true}
+FEATURE_REALITY_VISION=${FEATURE_REALITY_VISION:-false}
 FEATURE_REALITY_XHTTP=${FEATURE_REALITY_XHTTP:-true}
 NOISE_EXP_PACKET=${NOISE_EXP_PACKET:-"<b 16030100><r 32><t><c><rd 8>"}
 NOISE_EXP_DELAY=${NOISE_EXP_DELAY:-"10-50"}

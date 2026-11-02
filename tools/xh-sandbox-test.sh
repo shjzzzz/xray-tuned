@@ -22,6 +22,13 @@ cp -a /etc/xhttp-cdn "$S/etc/"
 cp /usr/local/etc/xray/config.json "$S/xray/"
 for f in /root/client-config*; do [[ -f "$f" ]] && cp "$f" "$S/home/"; done
 mkdir -p "$S/nginx/sub/$(tr -d '\r\n' < "$S/etc/xhttp-cdn/sub_token")"
+# node.env 里的 USER_HOME 指向真实家目录，xh 据此读写 client-config*；必须改到沙箱，否则会改动线上订阅文件。
+sed -i -E "s#^USER_HOME=.*#USER_HOME=$S/home#" "$S/etc/xhttp-cdn/node.env"
+grep -q "^USER_HOME=$S/home\$" "$S/etc/xhttp-cdn/node.env" || { echo "无法隔离 USER_HOME，已中止"; exit 2; }
+
+# 防护：跑完后线上这些文件必须一字未动
+guard() { sha256sum /root/client-config* /usr/local/etc/xray/config.json /etc/xhttp-cdn/node.env /etc/xhttp-cdn/all/* 2>/dev/null; }
+BEFORE="$(guard)"
 
 # 替身：这些命令只回显，不做事。ss 输出为空，避免被线上正在运行的 xray 占用端口干扰「开启」检查。
 for c in systemctl ufw iptables ip6tables nft firewall-cmd nginx netfilter-persistent; do
@@ -77,5 +84,6 @@ for f in glob.glob(s + '/home/client-config-mihomo-*.yaml') + glob.glob(s + '/et
 print('ok   Mihomo YAML（订阅目录 + 节点库）全部合法')
 PY
 
+[[ "$(guard)" == "$BEFORE" ]] || { echo "FAIL 沙箱泄漏：线上文件被改动"; fail=$((fail + 1)); }
 echo "失败数=$fail"
 exit $((fail > 0))
