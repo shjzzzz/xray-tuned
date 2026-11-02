@@ -22,9 +22,9 @@
 ## ⚡ 快速一键部署
 
 ### 1. 交互式部署（推荐）
-适合全新 VPS 快速初始化，根据终端中文向导一键完成证书申请与节点配置：
+适合全新 VPS 快速初始化，根据终端中文向导一键完成证书申请：
 ```bash
-bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/acme-yg/main/acme.sh)
 ```
 > **前置准备**：准备 2 个解析到本 VPS 的域名（直连域名仅 DNS 灰云解析；CDN 域名开启 Cloudflare 黄云代理）。
 
