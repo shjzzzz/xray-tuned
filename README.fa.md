@@ -16,10 +16,12 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
   REALITY_DOMAIN="reality.yourdomain.com" \
   CDN_DOMAIN="cdn.yourdomain.com" \
   NODE_TAG="US-Node" \
-  FEATURE_HY2_H3=false \
-  FEATURE_H2_DIRECT=false \
-  FEATURE_CDN_UP_REALITY_DOWN=false \
   FEATURE_BRUTAL=false \
+  FEATURE_CDN_UP_REALITY_DOWN=false \
+  FEATURE_H2_DIRECT=false \
+  FEATURE_REALITY_UP_CDN_DOWN=false \
+  FEATURE_REALITY_VISION=false \
+  FEATURE_TLS_PQ_XHTTP=false \
   FEATURE_XPADDING=false
 ```
 
