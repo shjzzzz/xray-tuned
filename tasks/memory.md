@@ -950,3 +950,26 @@
   - 修正 `xh warp` 用法：实现只支持 `status|update`，此前 usage 与菜单误称支持 `on|off`。
   - 删除 `src/06-tuning-lib.sh` 中与 `src/manage/00-header.sh` 完全重复的 `try_sysctl`。
   - 验证：改前改后对 25 项只读命令的输出逐项一致（`info` / `sub` 因含密钥只比对哈希）；120 个菜单用例（旧菜单与新菜单驱动到同一 `cmd_*` 调用）全部通过；`shellcheck -S error` 通过且 warning 数不增加。
+
+## 51. 节点 5, 6, 7 连通性排障与 xh bench 健壮性加固 (v5.3.2) - 2026-11-02
+- **节点 5, 6, 7 连通性修复**：
+  - **CDN 下行模式对齐**：`src/11-client-config.sh` 将 CDN 节点的下行 `mode` 纠正为 `auto`，消除因 `stream-up` 引发的 CDN 回源拒绝。
+  - **Direct-H3 客户端参数瘦身**：移除无效的 `XH3_FM_PARAM` 冗余混淆，Direct-H3 恢复标准 QUIC 握手。
+  - **Mihomo 与 Shadowrocket 协议规范**：Mihomo 模板中 CDN 节点与 QUIC 节点移除不适用的 `tfo: true`；Shadowrocket 仅在 CDN 节点（443 端口）将 ALPN 改写为 `h2`，保留 Direct-H3 在 8443 上的原生 `alpn=h3`。
+- **xh bench 压测韧性与兜底源**：
+  - 针对 Cloudflare 429 Rate Limit 引发的 `TypeError: unsupported format string`，在 `src/manage/03-network.sh` 中对所有带宽与延迟变量添加严格的 `None` 保护与空值兜底。
+  - 增加 OVH 10MB 备用测试测速源，单源失败时自动无缝降级。
+
+## 52. Reality 全量节点提速与内核零拷贝直通落地 (v5.3.3) - 2026-11-02
+- **XTLS Vision 内核零拷贝直通与双层架构落地**：
+  - 针对原 Reality-XHTTP 需经 443 ➔ 127.0.0.1:8001 双跳用户态解析导致的 CPU 与吞吐损耗，全面启用 `FEATURE_REALITY_VISION=true` 与 `FEATURE_REALITY_PQ_VISION=true`。
+  - 服务端 443 入站挂载 `UUID1` + `flow: xtls-rprx-vision`，与 XHTTP fallback 形成双层架构：Vision 流量直接触发 Linux 内核 `splice()` 桥接出站，首字节延时压缩至 **6.9ms**，上行吞吐达 **690.6 Mbps (82.3 MB/s)**；非 Vision/XHTTP 客户端继续回落 8001，完美兼容。
+- **多路复用流并发上限放宽与连接保活**：
+  - Reality-XHTTP 直连及上下行分离节点（`VLESS-Reality-XHTTP-Direct` 与 `VLESS-Reality-Up-CDN-Down`）的 `maxConcurrency` 由 `16-32` 放宽升级为 `32-64`，彻底规避高并发网络资源加载队列拥塞。
+  - 固化 `hKeepAlivePeriod: 15`（15秒 HTTP/2 Ping 帧心跳），保持运营商 NAT 表项不被老化清理，实现后续请求 0-RTT 瞬间响应。
+  - 直连 Reality 节点全量注入 `&tfo=1` 与 `tfo: true`（TCP Fast Open）。
+- **默认安装基线与全端订阅闭环**：
+  - 更新 `src/01-env.sh`、`src/09-server-config.sh`、`templates/` 及 `.github/scripts/build-install.sh`，全新安装默认输出全量 Reality 节点矩阵。
+  - 重新构建 `dist/install.sh` 与 `dist/xh`，更新 `/etc/xhttp-cdn/node.env` 并执行 `xh resub` 刷新订阅。
+  - 实测 `xh bench`（全 9 节点 100% PASS）与 `xray_compat_test.py`（v2rayN/TUN 全量 100% PASS）。
+
