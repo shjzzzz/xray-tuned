@@ -61,6 +61,11 @@ for t in "h3direct on" "h3direct off" "h3direct on" \
   case "$t" in
     "h3direct on")  [[ $(n_inb) -eq 1 && $(n_sub) -eq 1 ]] || { echo "FAIL $t：入站=$(n_inb) 订阅行=$(n_sub)，期望 1/1"; fail=$((fail + 1)); } ;;
     "h3direct off") [[ $(n_inb) -eq 0 && $(n_sub) -eq 0 ]] || { echo "FAIL $t：入站=$(n_inb) 订阅行=$(n_sub)，期望 0/0"; fail=$((fail + 1)); } ;;
+    "reality vision off")  # PQ-Vision 与 Vision-Direct 共用 443 的 Vision 客户端项，PQ-Vision 开着时不能被删
+      if grep -q "^FEATURE_REALITY_PQ_VISION=.\?true" "$S/etc/xhttp-cdn/node.env" \
+         && ! grep -q '>>xh:realityvision' "$S/xray/config.json"; then
+        echo "FAIL $t：PQ-Vision 开着，但 443 的 Vision 客户端项被删了（客户端会测速 -1）"; fail=$((fail + 1))
+      fi ;;
   esac
 done
 

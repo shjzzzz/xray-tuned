@@ -2588,7 +2588,13 @@ reality_toggle() {
     other_cur="${!other_flag:-true}"
     [[ "$other_cur" == true ]] || warn "另一个 Reality 节点已经关了：关掉这个以后，443 上不再有可用的 Reality 节点（CDN 回源不受影响）"
     info "正在关闭 ${label} ..."
-    reality_server_edit "$key" off; rc=$?
+    if [[ "$key" == vision && "${FEATURE_REALITY_PQ_VISION:-false}" == true ]]; then
+      # REALITY+PQ+Vision 与 Vision-Direct 共用 443 上这一个 clients 项，删了 PQ-Vision 就会认证失败（客户端测速 -1）
+      info "REALITY+PQ+Vision 仍在使用 443 上的 Vision 客户端，服务端项保留，仅从订阅移除 ${name}"
+      rc=3
+    else
+      reality_server_edit "$key" off; rc=$?
+    fi
     [[ $rc -eq 0 || $rc -eq 3 ]] || fail "移除服务端项失败（原因见上），未改动订阅文件和标志位"
     backup_node_sync_files "$name" off || warn "服务端项已移除，但订阅文件没有同步（原因见上）。请手动检查 client-config.txt 与订阅"
     update_node_env "$flag" "false"
