@@ -168,17 +168,20 @@ if os.path.isfile(txt_file):
         p = urllib.parse.urlparse(line)
         tag = urllib.parse.unquote(p.fragment or "")
         is_cdn_node = ("-CDN-" in tag or "PQ+XHTTP+CDN" in tag or "XHTTP-CDN" in tag) and "Reality-Up" not in tag
-        if is_cdn_node and cdn_addr:
-            port_part = f":{p.port}" if p.port else ":443"
-            new_netloc = f"{p.username}@{cdn_addr}{port_part}" if p.username else f"{cdn_addr}{port_part}"
-            p = p._replace(netloc=new_netloc)
-            line = urllib.parse.urlunparse(p)
+        if is_cdn_node:
+            if cdn_addr:
+                port_part = f":{p.port}" if p.port else ":443"
+                new_netloc = f"{p.username}@{cdn_addr}{port_part}" if p.username else f"{cdn_addr}{port_part}"
+                p = p._replace(netloc=new_netloc)
+                line = urllib.parse.urlunparse(p)
             line = line.replace("mode=stream-up", "mode=auto")
-            if "alpn=h3" in line:
-                line = re.sub(r'[&?]tfo=[0-9]+', '', line)
+            line = re.sub(r'[&?]tfo=[0-9]+', '', line)
         elif "Reality-Up-CDN-Down" in tag and "downloadSettings" in line and cdn_addr:
             line = re.sub(r'(%22address%22%3A%22)(?:[0-9.]+|[^%"]+)(%22)', r'\g<1>' + urllib.parse.quote(cdn_addr) + r'\g<2>', line)
             line = re.sub(r'("address":")[^"]+(")', r'\g<1>' + cdn_addr + r'\g<2>', line)
+        elif "Direct-H3" in tag:
+            line = re.sub(r'[&?]tfo=[0-9]+', '', line)
+            line = re.sub(r'&fm=[^&#]*', '', line)
         new_lines.append(line)
     with open(txt_file, "w", encoding="utf-8") as f:
         f.write("\n".join(new_lines) + "\n")
@@ -242,16 +245,18 @@ if yaml:
                 pname = p.get("name", "")
                 if "REALITY+PQ+Vision" in pname:
                     continue
-                if ("-CDN-" in pname or "XHTTP-CDN" in pname or "PQ+XHTTP+CDN" in pname) and "Reality-Up" not in pname:
+                is_cdn = ("-CDN-" in pname or "XHTTP-CDN" in pname or "PQ+XHTTP+CDN" in pname) and "Reality-Up" not in pname
+                if is_cdn:
                     if cdn_addr:
                         p["server"] = cdn_addr
                     if "xhttp-opts" in p:
                         p["xhttp-opts"]["mode"] = "auto"
-                    if "alpn" in p and "h3" in p["alpn"]:
-                        p.pop("tfo", None)
+                    p.pop("tfo", None)
                 elif "Reality-Up-CDN-Down" in pname:
                     if "xhttp-opts" in p and "download-settings" in p["xhttp-opts"] and cdn_addr:
                         p["xhttp-opts"]["download-settings"]["server"] = cdn_addr
+                if "alpn" in p and "h3" in p["alpn"]:
+                    p.pop("tfo", None)
                 new_proxies.append(p)
             if not has_direct_xhttp and reality_xhttp_proxy:
                 new_proxies.append(reality_xhttp_proxy)
@@ -358,7 +363,7 @@ for line in lines:
             if "Reality-Up" in tag:
                 sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=reality&sni={sni}&fp={fp}&alpn=h2&pbk={pbk}&sid={sid}&type=xhttp&path={path}&mode=stream-up&tfo=1#{tag}-Direct")
             elif "CDN-Up" in tag:
-                sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=tls&sni={sni}&fp={fp}&alpn=h2&type=xhttp&host={host_hdr}&path={path}&mode=stream-up&tfo=1#{tag}-CDN")
+                sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=tls&sni={sni}&fp={fp}&alpn=h2&type=xhttp&host={host_hdr}&path={path}&mode=auto#{tag}-CDN")
         else:
             clean_qs = {
                 "encryption": q("encryption", "none"),
@@ -373,11 +378,13 @@ for line in lines:
             if sid: clean_qs["sid"] = sid
             if host_hdr: clean_qs["host"] = host_hdr
             if path: clean_qs["path"] = path
+            is_cdn = ("CDN" in tag or "-CDN-" in tag or "PQ+XHTTP+CDN" in tag or "XHTTP-CDN" in tag) and "Reality-Up" not in tag
             if net == "xhttp":
-                clean_qs["mode"] = "auto" if "CDN" in tag else q("mode", "stream-up")
+                clean_qs["mode"] = "auto" if is_cdn else q("mode", "stream-up")
             if "h3" in clean_qs.get("alpn", ""):
-                clean_qs["alpn"] = "h2"
-            else:
+                if port == 443 or is_cdn:
+                    clean_qs["alpn"] = "h2"
+            elif not is_cdn:
                 clean_qs["tfo"] = "1"
             new_q = urllib.parse.urlencode(clean_qs)
             sr_lines.append(f"vless://{uid}@{host}:{port}?{new_q}#{tag}")

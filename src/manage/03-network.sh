@@ -733,6 +733,14 @@ def get_stats(proxy=None):
     dl_mbytes = (float(o2[1]) / 1024 / 1024) if len(o2) >= 3 and o2[0] == "200" else None
     dl_time = float(o2[2]) if len(o2) >= 3 and o2[0] == "200" else None
 
+    if dl_mbps is None:
+        r2_backup = subprocess.run(f"curl -s -o /dev/null --max-time 20 {proxy_arg} -w '%{{http_code}} %{{speed_download}} %{{time_total}}' 'https://proof.ovh.net/files/10Mb.dat'", shell=True, capture_output=True, text=True)
+        o2_b = r2_backup.stdout.split()
+        if len(o2_b) >= 3 and o2_b[0] == "200":
+            dl_mbps = (float(o2_b[1]) * 8 / 1e6)
+            dl_mbytes = (float(o2_b[1]) / 1024 / 1024)
+            dl_time = float(o2_b[2])
+
     r3 = subprocess.run(f"curl -s -o /dev/null --max-time 20 {proxy_arg} -X POST --data-binary @{UPFILE} -w '%{{http_code}} %{{speed_upload}} %{{time_total}}' https://speed.cloudflare.com/__up", shell=True, capture_output=True, text=True)
     o3 = r3.stdout.split()
     ul_mbps = (float(o3[1]) * 8 / 1e6) if len(o3) >= 3 and o3[0] == "200" else None
@@ -742,10 +750,12 @@ def get_stats(proxy=None):
     return {"ttfb_ms": ttfb, "dl_mbps": dl_mbps, "dl_mbytes": dl_mbytes, "dl_time": dl_time, "ul_mbps": ul_mbps, "ul_mbytes": ul_mbytes, "ul_time": ul_time}
 
 base = get_stats(None)
-if base["ttfb_ms"]:
+if base.get("ttfb_ms") is not None:
+    dl_str = f"{base['dl_mbps']:.1f} Mbps ({base['dl_mbytes']:.1f} MB/s, 耗时 {base['dl_time']:.2f}s)" if base.get('dl_mbps') is not None else "超时/失败"
+    ul_str = f"{base['ul_mbps']:.1f} Mbps ({base['ul_mbytes']:.1f} MB/s, 耗时 {base['ul_time']:.2f}s)" if base.get('ul_mbps') is not None else "超时/失败"
     print(f"服务器直连延时 (RTT):   {base['ttfb_ms']:.2f} ms")
-    print(f"服务器直连下行带宽:     {base['dl_mbps']:.1f} Mbps ({base['dl_mbytes']:.1f} MB/s, 耗时 {base['dl_time']:.2f}s)")
-    print(f"服务器直连上行带宽:     {base['ul_mbps']:.1f} Mbps ({base['ul_mbytes']:.1f} MB/s, 耗时 {base['ul_time']:.2f}s)")
+    print(f"服务器直连下行带宽:     {dl_str}")
+    print(f"服务器直连上行带宽:     {ul_str}")
 else:
     print("基础物理测速超时或异常")
 
@@ -866,8 +876,10 @@ for idx, (name, raw_line, parsed) in enumerate(nodes, 1):
         data["name"] = name
         data["core"] = core_type
         results.append(data)
-        if data["dl_mbps"]:
-            print(f" -> 握手: {data['ttfb_ms']:.1f}ms | 下行: {data['dl_mbps']:.1f} Mbps ({data['dl_mbytes']:.1f}MB/s) | 上行: {data['ul_mbps']:.1f} Mbps", flush=True)
+        if data.get("dl_mbps") is not None:
+            ttfb_s = f"{data['ttfb_ms']:.1f}ms" if data.get('ttfb_ms') is not None else "—"
+            ul_s = f"{data['ul_mbps']:.1f} Mbps" if data.get('ul_mbps') is not None else "—"
+            print(f" -> 握手: {ttfb_s} | 下行: {data['dl_mbps']:.1f} Mbps ({data['dl_mbytes']:.1f}MB/s) | 上行: {ul_s}", flush=True)
         else:
             print(" -> 失败/超时", flush=True)
     finally:
@@ -880,10 +892,10 @@ print("\n" + "="*112)
 print(f"{'节点名称':<38} {'核心':<9} {'握手延时':>9} {'下行带宽(50MB)':>20} {'上行带宽(10MB)':>20} {'状态':>8}")
 print("="*112)
 for r in results:
-    ttfb_s = f"{r['ttfb_ms']:.1f} ms" if r['ttfb_ms'] else "TIMEOUT"
-    dl_s = f"{r['dl_mbps']:.1f} Mbps ({r['dl_mbytes']:.1f}MB/s)" if r['dl_mbps'] else "FAIL"
-    ul_s = f"{r['ul_mbps']:.1f} Mbps ({r['ul_mbytes']:.1f}MB/s)" if r['ul_mbps'] else "FAIL"
-    st = "PASS" if r['dl_mbps'] else "FAIL"
+    ttfb_s = f"{r['ttfb_ms']:.1f} ms" if r.get('ttfb_ms') is not None else "TIMEOUT"
+    dl_s = f"{r['dl_mbps']:.1f} Mbps ({r['dl_mbytes']:.1f}MB/s)" if r.get('dl_mbps') is not None else "FAIL"
+    ul_s = f"{r['ul_mbps']:.1f} Mbps ({r['ul_mbytes']:.1f}MB/s)" if r.get('ul_mbps') is not None else "FAIL"
+    st = "PASS" if r.get('dl_mbps') is not None else "FAIL"
     print(f"{r['name']:<38} {r['core']:<9} {ttfb_s:>9} {dl_s:>20} {ul_s:>20} {st:>8}")
 print("="*112)
 PYBENCH

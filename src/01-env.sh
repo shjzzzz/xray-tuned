@@ -15,7 +15,13 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 # 支持 `bash install.sh key=value ...` 位置参数传入（与环境变量前缀等价，且彻底规避终端换行/转义断行报错）
 for arg in "$@"; do
   case "$arg" in
-    [A-Za-z_]*=*) export "$arg" ;;
+    [A-Za-z_]*=*)
+      _k="${arg%%=*}"
+      _v="${arg#*=}"
+      _v="${_v#\"}"; _v="${_v%\"}"
+      _v="${_v#\'}"; _v="${_v%\'}"
+      export "${_k}=${_v}"
+      ;;
     *=*) warn "忽略无法识别的参数: $arg" ;;
   esac
 done
