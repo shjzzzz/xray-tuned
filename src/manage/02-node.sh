@@ -220,7 +220,7 @@ if yaml:
                             "path": q("path", "/"),
                             "mode": "stream-up",
                             "reuse-settings": {
-                                "max-concurrency": "16-32",
+                                "max-concurrency": "32-64",
                                 "c-max-reuse-times": "0",
                                 "h-max-request-times": "600-900",
                                 "h-max-reusable-secs": "1800-3000",

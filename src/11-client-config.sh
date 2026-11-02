@@ -113,7 +113,7 @@ HY2_UP_MBPS=${HY2_UP_MBPS:-1000}
 HY2_DOWN_MBPS=${HY2_DOWN_MBPS:-1000}
 MIHOMO_HY2_BW_BLOCK=$(printf '\n    up: "%s Mbps"\n    down: "%s Mbps"\n    recv-window-conn: 134217728\n    recv-window: 67108864' "${HY2_UP_MBPS}" "${HY2_DOWN_MBPS}")
 
-XMUX_ENC="%22xmux%22%3A%7B%22maxConcurrency%22%3A%2216-32%22%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A15%7D"
+XMUX_ENC="%22xmux%22%3A%7B%22maxConcurrency%22%3A%2232-64%22%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A15%7D"
 # 经 CDN 的腿用 maxConnections=16，拉满并发以彻底突破 Cloudflare 边缘单流限速（支持多线程下载极限跑满）。
 XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A15%7D"
 # XHTTP/3（Direct-H3、CDN-H3）下载方向吃的是**客户端**的 QUIC 接收窗口：长 RTT + 丢包时，默认窗口会把吞吐卡住。
@@ -287,7 +287,7 @@ else
 fi
 
 if [[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
-  REALITY_PQ_VISION_NODE_LINE="vless://${UUID1}@${VPS_IP_URI}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=raw&headerType=none&packetEncoding=xudp#VLESS-REALITY+PQ+Vision"
+  REALITY_PQ_VISION_NODE_LINE="vless://${UUID1}@${VPS_IP_URI}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=raw&headerType=none&packetEncoding=xudp&tfo=1#VLESS-REALITY+PQ+Vision"
 else
   REALITY_PQ_VISION_NODE_LINE=""
 fi
