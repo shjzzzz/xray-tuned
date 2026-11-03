@@ -55,7 +55,7 @@ def put(name, obj):
         try: os.remove(p)
         except FileNotFoundError: pass
         return
-    tmp = p + ".tmp"
+    tmp = f"{p}.{os.getpid()}.tmp"
     with open(tmp, "w", encoding="utf-8") as f: json.dump(obj, f, ensure_ascii=False, indent=2)
     os.chown(tmp, 0, gid); os.chmod(tmp, 0o640)
     os.replace(tmp, p)

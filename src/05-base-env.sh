@@ -321,7 +321,20 @@ check_udp_port_conflict
 ensure_firewall_ports
 
 if [[ "$XRAY_DEFAULTS" == true ]]; then
-  XRAY_XHTTP_PADDING_JSON=""   # 官方默认：xPaddingBytes 100-1000、scStreamUpServerSecs 20-80 均不写
+  # 即使在默认模式下，也必须显式声明 scStreamUpServerSecs=300-600 与缓冲上限，
+  # 否则 Xray 内核默认 20-80 秒强制切断 stream-up 上行流，导致 Reality-XHTTP 周期性断流卡顿。
+  XRAY_XHTTP_PADDING_JSON=$(cat <<EOF
+,
+                    "scStreamUpServerSecs": "300-600",
+                    "scMaxEachPostBytes": 100000000,
+                    "scMaxBufferedPosts": 100,
+                    "extra": {
+                        "scMaxBufferedPosts": 100,
+                        "scMaxEachPostBytes": 100000000,
+                        "scStreamUpServerSecs": "300-600"
+                    }
+EOF
+)
 elif [[ "$FEATURE_XPADDING" == true ]]; then
   XRAY_XHTTP_PADDING_JSON=$(cat <<EOF
 ,
@@ -331,14 +344,18 @@ elif [[ "$FEATURE_XPADDING" == true ]]; then
                     "xPaddingHeader": "${XHTTP_PADDING_HEADER}",
                     "xPaddingPlacement": "${XHTTP_PADDING_PLACEMENT}",
                     "xPaddingMethod": "${XHTTP_PADDING_METHOD}",
-                    "scStreamUpServerSecs": "300-600"
+                    "scStreamUpServerSecs": "300-600",
+                    "scMaxEachPostBytes": 100000000,
+                    "scMaxBufferedPosts": 100
 EOF
 )
 else
   XRAY_XHTTP_PADDING_JSON=$(cat <<EOF
 ,
                     "xPaddingBytes": "100-1000",
-                    "scStreamUpServerSecs": "300-600"
+                    "scStreamUpServerSecs": "300-600",
+                    "scMaxEachPostBytes": 100000000,
+                    "scMaxBufferedPosts": 100
 EOF
 )
 fi

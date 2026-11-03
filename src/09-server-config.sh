@@ -108,7 +108,7 @@ elif [[ "$AVAIL" == *bbr* ]]; then
 fi
 
 if [[ -n "$XRAY_TCP_CC" ]]; then
-  XRAY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpMptcp":true,"tcpcongestion":"'"${XRAY_TCP_CC}"'","tcpKeepAliveIdle":30,"tcpKeepAliveInterval":5,"tcpUserTimeout":300000}'
+  XRAY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpcongestion":"'"${XRAY_TCP_CC}"'","tcpKeepAliveIdle":30,"tcpKeepAliveInterval":10,"tcpUserTimeout":60000}'
   # Reality 443 入站（Reality-Vision / Reality-XHTTP 共用）默认用自适应的 BBR，不用 Brutal：
   # Brutal 按 /etc/tcp-brutal.rules 的固定速率（auto = 网卡速率，常见 3800 Mbps）发包、不看丢包与线路容量。
   # v5.0.2 netns 实测（RTT 160ms / 丢包 1% / 300 Mbps）：Brutal 下行 87~88 Mbps，BBR 51~108 Mbps，
@@ -116,14 +116,16 @@ if [[ -n "$XRAY_TCP_CC" ]]; then
   # REALITY_TCP_CC=brutal 可改回 Brutal（需要内核 brutal 模块）。
   REALITY_CC="${REALITY_TCP_CC:-bbr}"
   [[ "$AVAIL" == *"$REALITY_CC"* ]] || REALITY_CC="$XRAY_TCP_CC"
-  REALITY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpMptcp":true,"tcpcongestion":"'"${REALITY_CC}"'","tcpKeepAliveIdle":30,"tcpKeepAliveInterval":5,"tcpUserTimeout":300000}'
+  REALITY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpcongestion":"'"${REALITY_CC}"'","tcpKeepAliveIdle":30,"tcpKeepAliveInterval":10,"tcpUserTimeout":60000}'
 else
   warn "BBR / Brutal 均不可用，Xray Reality 入站不写 tcpcongestion（TFO / keepalive 照常写入）"
-  XRAY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpMptcp":true,"tcpKeepAliveIdle":30,"tcpKeepAliveInterval":5,"tcpUserTimeout":300000}'
-  REALITY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpMptcp":true,"tcpKeepAliveIdle":30,"tcpKeepAliveInterval":5,"tcpUserTimeout":300000}'
+  XRAY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpKeepAliveIdle":30,"tcpKeepAliveInterval":10,"tcpUserTimeout":60000}'
+  REALITY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpKeepAliveIdle":30,"tcpKeepAliveInterval":10,"tcpUserTimeout":60000}'
 fi
 
 # 模板里内联的 sockopt 调优字段（trustedXForwardedFor 是功能项，始终保留）。
+# 注意：8001/8002 仅监听 127.0.0.1 回环（RTT 0.007ms），回环上启用 BBR + MPTCP 会在公网背压时触发
+# 虚假重传（ss -tinp 实测 dsack_dups: 32），故回环入站只开 tcpNoDelay，不挂 BBR/MPTCP。
 XRAY_SERVER_MODE=stream-up
 if [[ "$XRAY_DEFAULTS" == true ]]; then
   XRAY_SERVER_MODE=auto   # 官方默认；auto 同时接受 auto / packet-up / stream-up 客户端
@@ -136,12 +138,12 @@ if [[ "$XRAY_DEFAULTS" == true ]]; then
   HY2_SOCKOPT_JSON=""
   H3_SOCKOPT_JSON=""
   if [[ "$XRAY_TCP_CC" == "brutal" ]]; then
-    XRAY_SOCKOPT_TUNE=$',\n                    "tcpcongestion": "brutal"'
+    XRAY_SOCKOPT_TUNE=$',\n                    "tcpNoDelay": true'
     XRAY_FREEDOM_SOCKOPT_TUNE=$',\n                    "tcpcongestion": "bbr"'
   fi
 else
-  XRAY_SOCKOPT_TUNE=$',\n                    "tcpFastOpen": true,\n                    "tcpMptcp": true,\n                    "tcpcongestion": "'"${XRAY_TCP_CC:-bbr}"$'",\n                    "tcpKeepAliveIdle": 30,\n                    "tcpKeepAliveInterval": 5,\n                    "tcpUserTimeout": 300000'
-  XRAY_FREEDOM_SOCKOPT_TUNE=$',\n                    "tcpFastOpen": true,\n                    "tcpMptcp": false,\n                    "tcpcongestion": "bbr",\n                    "tcpKeepAliveIdle": 30,\n                    "tcpKeepAliveInterval": 5,\n                    "tcpUserTimeout": 300000'
+  XRAY_SOCKOPT_TUNE=$',\n                    "tcpNoDelay": true'
+  XRAY_FREEDOM_SOCKOPT_TUNE=$',\n                    "tcpFastOpen": true,\n                    "tcpNoDelay": true,\n                    "tcpMptcp": false,\n                    "tcpcongestion": "bbr",\n                    "tcpKeepAliveIdle": 30,\n                    "tcpKeepAliveInterval": 10,\n                    "tcpUserTimeout": 60000'
   HY2_SOCKOPT_BLOCK=$'"sockopt": {\n                    "tcpFastOpen": true,\n                    "tcpcongestion": "'"${XRAY_TCP_CC:-bbr}"$'"\n                },'
   HY2_UDP_IDLE_JSON=$'                    "udpIdleTimeout": 60,\n'
   HY2_SOCKOPT_JSON=$',\n                "sockopt": {\n                    "tcpFastOpen": true,\n                    "tcpcongestion": "'"${XRAY_TCP_CC:-bbr}"$'"\n                }'

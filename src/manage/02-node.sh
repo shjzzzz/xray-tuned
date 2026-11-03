@@ -263,10 +263,10 @@ if yaml:
                             "path": q("path", "/"),
                             "mode": "stream-up",
                             "reuse-settings": {
-                                "max-concurrency": "32-64",
-                                "c-max-reuse-times": "0",
-                                "h-max-request-times": "600-900",
-                                "h-max-reusable-secs": "1800-3000",
+                                "max-concurrency": "8-16",
+                                "c-max-reuse-times": "16-32",
+                                "h-max-request-times": "100-200",
+                                "h-max-reusable-secs": "300-600",
                                 "h-keep-alive-period": "15"
                             }
                         }
@@ -286,8 +286,10 @@ if yaml:
             new_proxies = []
             for p in proxies:
                 pname = p.get("name", "")
-                if "REALITY+PQ+Vision" in pname:
-                    continue
+                if "REALITY+PQ+Vision" in pname or "Reality-Vision-Direct" in pname:
+                    p["tfo"] = True
+                    p["packet-encoding"] = "xudp"
+                    p["alpn"] = ["h2", "http/1.1"]
                 is_cdn = ("-CDN-" in pname or "XHTTP-CDN" in pname or "PQ+XHTTP+CDN" in pname) and "Reality-Up" not in pname
                 if is_cdn:
                     if cdn_addr:
@@ -296,14 +298,51 @@ if yaml:
                         p["xhttp-opts"]["mode"] = "auto"
                     p.pop("tfo", None)
                 elif "Reality-Up-CDN-Down" in pname:
-                    if "xhttp-opts" in p and "download-settings" in p["xhttp-opts"] and cdn_addr:
-                        p["xhttp-opts"]["download-settings"]["server"] = cdn_addr
+                    if "xhttp-opts" in p:
+                        p["xhttp-opts"]["reuse-settings"] = {
+                            "max-concurrency": "8-16",
+                            "c-max-reuse-times": "16-32",
+                            "h-max-request-times": "100-200",
+                            "h-max-reusable-secs": "300-600",
+                            "h-keep-alive-period": 15
+                        }
+                        if "download-settings" in p["xhttp-opts"]:
+                            if cdn_addr:
+                                p["xhttp-opts"]["download-settings"]["server"] = cdn_addr
+                            p["xhttp-opts"]["download-settings"]["reuse-settings"] = {
+                                "max-concurrency": "16-32",
+                                "c-max-reuse-times": "0",
+                                "h-max-request-times": "200-400",
+                                "h-max-reusable-secs": "600-1200",
+                                "h-keep-alive-period": 15
+                            }
+                elif "CDN-Up-Reality-Down" in pname:
+                    if cdn_addr:
+                        p["server"] = cdn_addr
+                    p.pop("tfo", None)
+                    if "xhttp-opts" in p and "download-settings" in p["xhttp-opts"]:
+                        p["xhttp-opts"]["download-settings"]["reuse-settings"] = {
+                            "max-concurrency": "8-16",
+                            "c-max-reuse-times": "16-32",
+                            "h-max-request-times": "100-200",
+                            "h-max-reusable-secs": "300-600",
+                            "h-keep-alive-period": 15
+                        }
                 if "alpn" in p and "h3" in p["alpn"]:
                     p.pop("tfo", None)
                 new_proxies.append(p)
             if not has_direct_xhttp and reality_xhttp_proxy:
                 new_proxies.append(reality_xhttp_proxy)
             cfg["proxies"] = new_proxies
+            valid_names = {p.get("name") for p in new_proxies if isinstance(p, dict)}
+            for g in (cfg.get("proxy-groups") or []):
+                if isinstance(g, dict) and g.get("name") == "直连择优" and isinstance(g.get("proxies"), list):
+                    gp = [x for x in g["proxies"] if x in valid_names]
+                    for rname in ("VLESS-REALITY+PQ+Vision", "VLESS-Reality-Vision-Direct", "VLESS-Reality-XHTTP-Direct"):
+                        for vn in sorted(valid_names):
+                            if vn.startswith(rname) and vn not in gp:
+                                gp.append(vn)
+                    g["proxies"] = gp
             with open(yfile, "w", encoding="utf-8") as f:
                 yaml.dump(cfg, f, allow_unicode=True, sort_keys=False)
         except Exception:
@@ -2808,7 +2847,7 @@ cmd_pq() {
           if [[ -f "${ALL_STORE_DIR}/client-config.txt" ]] && ! grep -q "VLESS-REALITY+PQ+Vision" "${ALL_STORE_DIR}/client-config.txt"; then
             local _spx_q=""
             [[ -n "${REALITY_SPX_HASH:-}" ]] && _spx_q="&spx=%2F${REALITY_SPX_HASH}"
-            echo "vless://${UUID1}@${VPS_IP_URI:-${VPS_IP}}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${_spx_q}&type=raw&headerType=none&packetEncoding=xudp#VLESS-REALITY+PQ+Vision" >> "${ALL_STORE_DIR}/client-config.txt"
+            echo "vless://${UUID1}@${VPS_IP_URI:-${VPS_IP}}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2,http/1.1&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${_spx_q}&type=raw&headerType=none&packetEncoding=xudp&tfo=1#VLESS-REALITY+PQ+Vision" >> "${ALL_STORE_DIR}/client-config.txt"
           fi
           update_node_env "FEATURE_REALITY_PQ_VISION" "true"
           export FEATURE_REALITY_PQ_VISION=true

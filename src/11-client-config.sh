@@ -113,9 +113,12 @@ HY2_UP_MBPS=${HY2_UP_MBPS:-1000}
 HY2_DOWN_MBPS=${HY2_DOWN_MBPS:-1000}
 MIHOMO_HY2_BW_BLOCK=$(printf '\n    up: "%s Mbps"\n    down: "%s Mbps"\n    recv-window-conn: 134217728\n    recv-window: 67108864' "${HY2_UP_MBPS}" "${HY2_DOWN_MBPS}")
 
-XMUX_ENC="%22xmux%22%3A%7B%22maxConcurrency%22%3A%2232-64%22%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A15%7D"
-# 经 CDN 的腿用 maxConnections=16，拉满并发以彻底突破 Cloudflare 边缘单流限速（支持多线程下载极限跑满）。
-XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A15%7D"
+# Reality XHTTP 直连与上行腿：maxConcurrency 设为 8-16（替代原先的 32-64），
+# 避免单条 TCP 连接承载 64 路并发流引发严重 TCP 队头阻塞（HoL Blocking）及单连接流量过大触发运营商 QoS 限速；
+# 当并发流超过 8-16 时客户端自动开启多条并行 TCP+REALITY 连接，配合 5-10 分钟（300-600s / 100-200 次请求）平滑轮换五元组。
+XMUX_ENC="%22xmux%22%3A%7B%22maxConcurrency%22%3A%228-16%22%2C%22cMaxReuseTimes%22%3A%2216-32%22%2C%22hMaxRequestTimes%22%3A%22100-200%22%2C%22hMaxReusableSecs%22%3A%22300-600%22%2C%22hKeepAlivePeriod%22%3A15%7D"
+# 经 CDN 的腿用 maxConnections=16（严禁与 maxConcurrency 混用），拉满并发突破 Cloudflare 边缘单流限速。
+XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22200-400%22%2C%22hMaxReusableSecs%22%3A%22600-1200%22%2C%22hKeepAlivePeriod%22%3A15%7D"
 # XHTTP/3（Direct-H3、CDN-H3）下载方向吃的是**客户端**的 QUIC 接收窗口：长 RTT + 丢包时，默认窗口会把吞吐卡住。
 # 用链接的 fm（finalmask）参数把窗口拉满放大：流 初始 8MB / 上限 64MB，连接 初始 16MB / 上限 128MB（兼顾极限吞吐与移动端 50MB 内存安全上限）。
 XH3_FM_PARAM="&fm=$(rawurlencode '{"quicParams":{"initStreamReceiveWindow":8388608,"maxStreamReceiveWindow":67108864,"initConnectionReceiveWindow":16777216,"maxConnectionReceiveWindow":134217728}}')"
@@ -206,7 +209,7 @@ else
 fi
 
 if [[ "${FEATURE_REALITY_UP_CDN_DOWN:-false}" == true || "${FEATURE_UP_CDN_DOWN_MIHOMO:-false}" == true ]]; then
-  REALITY_UP_CDN_DOWN_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:443?encryption=${XHTTP_ENCRYPTION}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=xhttp&path=${XHTTP_PATH}&mode=stream-up${XPAD_SPLIT_EXTRA_ENC:+&extra=${XPAD_SPLIT_EXTRA_ENC}}#VLESS-Reality-Up-CDN-Down${NODE_SUFFIX}"
+  REALITY_UP_CDN_DOWN_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:443?encryption=${XHTTP_ENCRYPTION}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=xhttp&path=${XHTTP_PATH}&mode=stream-up${XPAD_SPLIT_EXTRA_ENC:+&extra=${XPAD_SPLIT_EXTRA_ENC}}&packetEncoding=xudp&tfo=1#VLESS-Reality-Up-CDN-Down${NODE_SUFFIX}"
 else
   REALITY_UP_CDN_DOWN_NODE_LINE=""
 fi
@@ -218,10 +221,10 @@ fi
 # 因此共用 UUID2 / path / XHTTP_ENCRYPTION。下行腿的 extra 与 Reality-XHTTP 直连节点一致；
 # 上行腿的 extra 与 CDN 节点一致（含 scMinPostsIntervalMs，packet-up 经 CDN 需要）。
 # IPv6 地址在 JSON 里不加方括号，但冒号要编码。
-REALITY_DOWNLOAD_ENC="%22downloadSettings%22%3A%7B%22address%22%3A%22${VPS_IP//:/%3A}%22%2C%22port%22%3A443%2C%22network%22%3A%22xhttp%22%2C%22security%22%3A%22reality%22%2C%22realitySettings%22%3A%7B%22serverName%22%3A%22${REALITY_DOMAIN}%22%2C%22fingerprint%22%3A%22chrome%22%2C%22publicKey%22%3A%22${PUBLIC_KEY}%22%2C%22shortId%22%3A%22${SHORT_ID}%22%2C%22spiderX%22%3A%22%22%7D%2C%22xhttpSettings%22%3A%7B%22path%22%3A%22${XHTTP_PATH_ENC}%22%2C%22mode%22%3A%22stream-up%22%2C%22extra%22%3A${XPAD_EXTRA_ENC}%7D%7D"
+REALITY_DOWNLOAD_ENC="%22downloadSettings%22%3A%7B%22address%22%3A%22${VPS_IP//:/%3A}%22%2C%22port%22%3A443%2C%22network%22%3A%22xhttp%22%2C%22security%22%3A%22reality%22%2C%22realitySettings%22%3A%7B%22serverName%22%3A%22${REALITY_DOMAIN}%22%2C%22fingerprint%22%3A%22chrome%22%2C%22publicKey%22%3A%22${PUBLIC_KEY}%22%2C%22shortId%22%3A%22${SHORT_ID}%22%2C%22spiderX%22%3A%22%22%7D%2C%22xhttpSettings%22%3A%7B%22path%22%3A%22${XHTTP_PATH_ENC}%22%2C%22mode%22%3A%22stream-up%22%2C%22extra%22%3A${XPAD_EXTRA_ENC}%7D%2C%22sockopt%22%3A%7B%22tcpFastOpen%22%3Atrue%2C%22tcpNoDelay%22%3Atrue%7D%7D"
 XPAD_REV_SPLIT_EXTRA_ENC="${XPAD_CDN_EXTRA_ENC%\%7D}%2C${REALITY_DOWNLOAD_ENC}%7D"
 if [[ "${FEATURE_CDN_UP_REALITY_DOWN:-false}" == true ]]; then
-  CDN_UP_REALITY_DOWN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}:443?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=auto&extra=${XPAD_REV_SPLIT_EXTRA_ENC}#VLESS-CDN-Up-Reality-Down${NODE_SUFFIX}"
+  CDN_UP_REALITY_DOWN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}:443?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=auto&extra=${XPAD_REV_SPLIT_EXTRA_ENC}&packetEncoding=xudp#VLESS-CDN-Up-Reality-Down${NODE_SUFFIX}"
 else
   CDN_UP_REALITY_DOWN_NODE_LINE=""
 fi
@@ -275,19 +278,19 @@ fi
 # 直连入站只收 stream-up。
 # 10 大核心节点之三大后量子 (ML-KEM-768) 节点（默认开启）
 if [[ "${FEATURE_TLS_PQ_XHTTP:-false}" == true ]]; then
-  TLS_PQ_XHTTP_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=auto&extra=%7B%22scMinPostsIntervalMs%22%3A30%2C%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D%7D&packetEncoding=xudp#VLESS-TLS+PQ+XHTTP+CDN"
+  TLS_PQ_XHTTP_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=auto&extra=%7B%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D&packetEncoding=xudp#VLESS-TLS+PQ+XHTTP+CDN"
 else
   TLS_PQ_XHTTP_NODE_LINE=""
 fi
 
 if [[ "${FEATURE_TLS_PQ_VISION:-false}" == true ]]; then
-  TLS_PQ_VISION_NODE_LINE="vless://${UUID1}@${CDN_CONNECT_ADDR}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=auto&extra=%7B%22scMinPostsIntervalMs%22%3A30%2C%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A0%7D%7D&packetEncoding=xudp#VLESS-TLS+PQ+Vision+XHTTP+CDN"
+  TLS_PQ_VISION_NODE_LINE="vless://${UUID1}@${CDN_CONNECT_ADDR}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=auto&extra=%7B%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D&packetEncoding=xudp#VLESS-TLS+PQ+Vision+XHTTP+CDN"
 else
   TLS_PQ_VISION_NODE_LINE=""
 fi
 
 if [[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
-  REALITY_PQ_VISION_NODE_LINE="vless://${UUID1}@${VPS_IP_URI}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=raw&headerType=none&packetEncoding=xudp&tfo=1#VLESS-REALITY+PQ+Vision"
+  REALITY_PQ_VISION_NODE_LINE="vless://${UUID1}@${VPS_IP_URI}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2,http/1.1&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=raw&headerType=none&packetEncoding=xudp&tfo=1#VLESS-REALITY+PQ+Vision"
 else
   REALITY_PQ_VISION_NODE_LINE=""
 fi

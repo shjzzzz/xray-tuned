@@ -44,6 +44,7 @@ proxies:
     network: tcp
     alpn:
       - h2
+      - http/1.1
     servername: ${REALITY_DOMAIN}
     client-fingerprint: chrome
     encryption: none
@@ -216,6 +217,7 @@ proxies:
     network: tcp
     alpn:
       - h2
+      - http/1.1
     servername: ${REALITY_DOMAIN}
     client-fingerprint: chrome
     reality-opts:
@@ -249,10 +251,10 @@ proxies:
       path: ${XHTTP_PATH}
       mode: stream-up${MIHOMO_XPADDING_XHTTP_BLOCK}
       reuse-settings:
-        max-concurrency: "32-64"
-        c-max-reuse-times: "0"
-        h-max-request-times: "600-900"
-        h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
+        max-concurrency: "8-16"
+        c-max-reuse-times: "16-32"
+        h-max-request-times: "100-200"
+        h-max-reusable-secs: "300-600"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
   #>>FEATURE_REALITY_XHTTP
 
   #<<FEATURE_UP_CDN_DOWN_MIHOMO
@@ -280,10 +282,10 @@ proxies:
       path: ${XHTTP_PATH}
       mode: stream-up${MIHOMO_XPADDING_XHTTP_BLOCK}
       reuse-settings:
-        max-concurrency: "32-64"
-        c-max-reuse-times: "0"
-        h-max-request-times: "600-900"
-        h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
+        max-concurrency: "8-16"
+        c-max-reuse-times: "16-32"
+        h-max-request-times: "100-200"
+        h-max-reusable-secs: "300-600"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
       # 下行腿（经 CDN）在 Mihomo 里没有独立的 mode 字段，随父级 stream-up；URI 版的下行腿是 auto。
       download-settings:
         server: ${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}
@@ -298,10 +300,10 @@ proxies:
         path: ${XHTTP_PATH}
         host: ${CDN_DOMAIN}
         reuse-settings:
-          max-concurrency: "32-64"
+          max-concurrency: "16-32"
           c-max-reuse-times: "0"
-          h-max-request-times: "600-900"
-          h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_DOWNLOAD}
+          h-max-request-times: "200-400"
+          h-max-reusable-secs: "600-1200"${MIHOMO_REUSE_KEEPALIVE_DOWNLOAD}
   #>>FEATURE_UP_CDN_DOWN_MIHOMO
 
   #<<FEATURE_CDN_UP_REALITY_DOWN
@@ -316,6 +318,7 @@ proxies:
     udp: true
     flow: ""
     tls: true
+    packet-encoding: xudp
     encryption: none
     network: xhttp
     # 上行腿 h2 走 TCP 经 CDN（抗运营商 UDP QoS 阻断，握手稳定）
@@ -330,8 +333,8 @@ proxies:
       reuse-settings:
         max-concurrency: "16-32"
         c-max-reuse-times: "0"
-        h-max-request-times: "600-900"
-        h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
+        h-max-request-times: "200-400"
+        h-max-reusable-secs: "600-1200"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
       download-settings:
         server: ${VPS_IP}
         port: 443
@@ -349,9 +352,9 @@ proxies:
         path: ${XHTTP_PATH}
         host: ""
         reuse-settings:
-          max-concurrency: "16-32"
-          c-max-reuse-times: "0"
-          h-max-request-times: "600-900"
-          h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_DOWNLOAD}
+          max-concurrency: "8-16"
+          c-max-reuse-times: "16-32"
+          h-max-request-times: "100-200"
+          h-max-reusable-secs: "300-600"${MIHOMO_REUSE_KEEPALIVE_DOWNLOAD}
   #>>FEATURE_CDN_UP_REALITY_DOWN
 
