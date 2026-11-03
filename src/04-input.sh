@@ -127,8 +127,8 @@ INITIAL_HTML_EOF
     ;;
   2)
     FALLBACK_MODE="proxy"
-    ask REALITY_FALLBACK_ORIGIN "请输入 Reality 域名回落网站 [默认 https://www.sjsu.edu]: " "https://www.sjsu.edu"
-    REALITY_FALLBACK_ORIGIN=$(normalize_proxy_origin "${REALITY_FALLBACK_ORIGIN:-https://www.sjsu.edu}") ||
+    ask REALITY_FALLBACK_ORIGIN "请输入 Reality 域名回落网站 [默认 https://www.stanford.edu]: " "https://www.stanford.edu"
+    REALITY_FALLBACK_ORIGIN=$(normalize_proxy_origin "${REALITY_FALLBACK_ORIGIN:-https://www.stanford.edu}") ||
       error "Reality 回落网站格式无效"
     ask CDN_FALLBACK_ORIGIN "请输入 CDN 域名回落网站 [默认 https://www.harvard.edu]: " "https://www.harvard.edu"
     CDN_FALLBACK_ORIGIN=$(normalize_proxy_origin "${CDN_FALLBACK_ORIGIN:-https://www.harvard.edu}") ||
