@@ -285,7 +285,12 @@ H3_PORT="${H3_PORT:-8443}"
 # H2_PORT（v4.7.0）：h3-direct 的 TCP 孪生体，见 01-env.sh 的 FEATURE_H2_DIRECT。
 # 它是**真 TCP**，和 Reality 的 TCP 443 属于同一协议族，必须独立端口。
 H2_PORT="${H2_PORT:-8445}"
-# v4.9.73: Hysteria2 直连与混淆节点默认随机分配高端口，支持环境变量自定义覆盖
+# v4.9.73: Hysteria2 直连与混淆节点默认随机分配高端口，重装时优先复用已落盘端口避免云安全组与防火墙漂移
+if [[ -f "${NODE_ENV_FILE:-/etc/xhttp-cdn/node.env}" ]]; then
+  [[ -n "${HY2_H3_PORT:-}" ]] || HY2_H3_PORT=$(grep -E '^HY2_H3_PORT=' "${NODE_ENV_FILE:-/etc/xhttp-cdn/node.env}" 2>/dev/null | cut -d= -f2 | tr -d "'\"" || true)
+  [[ -n "${HY2_PORT:-}" ]]    || HY2_PORT=$(grep -E '^HY2_PORT=' "${NODE_ENV_FILE:-/etc/xhttp-cdn/node.env}" 2>/dev/null | cut -d= -f2 | tr -d "'\"" || true)
+  [[ -n "${MASQUE_PORT:-}" ]] || MASQUE_PORT=$(grep -E '^MASQUE_PORT=' "${NODE_ENV_FILE:-/etc/xhttp-cdn/node.env}" 2>/dev/null | cut -d= -f2 | tr -d "'\"" || true)
+fi
 HY2_H3_PORT="${HY2_H3_PORT:-$(get_random_port udp)}"
 HY2_PORT="${HY2_PORT:-$(get_random_port udp)}"
 if [[ "$HY2_H3_PORT" == "$HY2_PORT" ]]; then

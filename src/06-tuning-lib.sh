@@ -166,8 +166,8 @@ MTUHOOK
       done
       iptables -t nat -A PREROUTING -p udp --dport 443 -j REDIRECT --to-ports "$_hy2_h3" 2>/dev/null || true
     fi
-    # 彻底清理旧的 UDP 8443 重定向规则，杜绝与 VLESS-XHTTP-Direct-H3 端口冲突
-    iptables-save -t nat 2>/dev/null | grep -E '^-[AI] PREROUTING.*--dport 8443.*REDIRECT' | while read -r _r; do
+    # 彻底清理旧的 UDP 8443 与 TCP 8447 重定向规则，杜绝与直连入站端口冲突
+    iptables-save -t nat 2>/dev/null | grep -E '^-[AI] PREROUTING.*--dport (8443|8447).*REDIRECT' | while read -r _r; do
       _ra="${_r#-A PREROUTING }"; _ra="${_ra#-I PREROUTING }"
       iptables -t nat -D PREROUTING $_ra 2>/dev/null || true
     done
@@ -412,7 +412,14 @@ apply_system_tuning() {
   try_sysctl net.ipv4.tcp_max_syn_backlog "$NETDEV_BACKLOG"
   try_sysctl net.ipv4.tcp_max_tw_buckets 65536
   try_sysctl net.ipv4.ip_local_port_range "1024 65535"
-  try_sysctl net.ipv4.ip_local_reserved_ports "8001,8002,8003,8443,8445,8446,8447,10489,10723,10800-10809,11801-11806,13547,16387,17781,18048,18448,18793,19142,23106,25742,27295,27668,27802,28443,29390,29879,38969,62808"
+  local _res_ports="8001,8002,8003,8443,8445,8446,8447,10489,10800-10809,11801-11806,13547,16387,17247,17781,18048,18448,18793,19142,23106,25742,27295,27668,27802,28443,29390,29879,38969"
+  if [[ -f "/etc/xhttp-cdn/node.env" ]]; then
+    local _p
+    for _p in $(grep -E '^(HY2_H3_PORT|HY2_PORT|H3_PORT|H2_PORT)=' /etc/xhttp-cdn/node.env 2>/dev/null | cut -d= -f2 | tr -d "'\""); do
+      [[ "$_p" =~ ^[0-9]+$ && "$_p" -ge 1024 ]] && [[ ",${_res_ports}," != *",${_p},"* ]] && _res_ports="${_res_ports},${_p}"
+    done
+  fi
+  try_sysctl net.ipv4.ip_local_reserved_ports "$_res_ports"
 
   # conntrack 仅在模块已加载时调整；未加载时写入会失败并留下无用告警。
   # 开机时 systemd-sysctl 早于 iptables / Docker 加载 nf_conntrack，键还不存在就被静默跳过，
@@ -430,8 +437,8 @@ apply_system_tuning() {
   # MTU 已经通过物理网卡锁定 1500、存量路由钉回 1500 及防火墙 TCPMSS 钳制多重兜底，设为 0 关闭多余探测
   try_sysctl net.ipv4.tcp_mtu_probing 0
   try_sysctl net.ipv4.tcp_slow_start_after_idle 0
-  # 套接字未发送数据上限：设为 512KB (524288)，在千兆高带宽 BDP 下保证大吞吐，同时有效控制多路复用队头延迟
-  try_sysctl net.ipv4.tcp_notsent_lowat 524288
+  # 套接字未发送数据上限：设为 128KB (131072，最大 64KB TSO 分片的 2 倍)，在千兆/万兆高 BDP 下保证大吞吐，同时消除 XHTTP/H2 多路复用在内核发送缓冲区的队头延迟
+  try_sysctl net.ipv4.tcp_notsent_lowat 131072
   # 移动网络无线跳频与高抖动优化（RFC 8985 TLP / F-RTO）：
   # tcp_frto = 2: 开启 Forward RTO 探测，避免移动蜂窝网络偶发无线重传误触发 cwnd 骤降
   # tcp_early_retrans = 3: 开启 Tail Loss Probe (TLP)，尾包丢失快速重传，避免长 RTO 超时

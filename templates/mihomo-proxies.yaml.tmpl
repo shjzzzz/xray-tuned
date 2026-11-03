@@ -188,7 +188,7 @@ proxies:
   #<<FEATURE_HY2_OBFS
   # 3. Hysteria2 + Salamander 混淆（UDP ${HY2_PORT}）：由 Xray 原生 hysteria
   #    inbound 提供，支持 0-RTT 握手与连接迁移。默认 BBR；只有设置 HY2_UP_MBPS / HY2_DOWN_MBPS 才声明带宽并启用 Brutal。
-  - name: Hysteria2-Obfs-Direct${NODE_SUFFIX}
+  - name: Hysteria2-TLS-BBR-Salamander${NODE_SUFFIX}
     type: hysteria2
     server: ${REALITY_DOMAIN}
     port: ${HY2_PORT}${MIHOMO_HY2_PORTS_LINE}
@@ -251,10 +251,10 @@ proxies:
       path: ${XHTTP_PATH}
       mode: stream-up${MIHOMO_XPADDING_XHTTP_BLOCK}
       reuse-settings:
-        max-concurrency: "8-16"
-        c-max-reuse-times: "16-32"
-        h-max-request-times: "100-200"
-        h-max-reusable-secs: "300-600"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
+        max-concurrency: "32-64"
+        c-max-reuse-times: "0"
+        h-max-request-times: "600-900"
+        h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
   #>>FEATURE_REALITY_XHTTP
 
   #<<FEATURE_UP_CDN_DOWN_MIHOMO
@@ -282,10 +282,10 @@ proxies:
       path: ${XHTTP_PATH}
       mode: stream-up${MIHOMO_XPADDING_XHTTP_BLOCK}
       reuse-settings:
-        max-concurrency: "8-16"
-        c-max-reuse-times: "16-32"
-        h-max-request-times: "100-200"
-        h-max-reusable-secs: "300-600"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
+        max-concurrency: "32-64"
+        c-max-reuse-times: "0"
+        h-max-request-times: "600-900"
+        h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
       # 下行腿（经 CDN）在 Mihomo 里没有独立的 mode 字段，随父级 stream-up；URI 版的下行腿是 auto。
       download-settings:
         server: ${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}
@@ -300,10 +300,10 @@ proxies:
         path: ${XHTTP_PATH}
         host: ${CDN_DOMAIN}
         reuse-settings:
-          max-concurrency: "16-32"
+          max-concurrency: "32-64"
           c-max-reuse-times: "0"
-          h-max-request-times: "200-400"
-          h-max-reusable-secs: "600-1200"${MIHOMO_REUSE_KEEPALIVE_DOWNLOAD}
+          h-max-request-times: "600-900"
+          h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_DOWNLOAD}
   #>>FEATURE_UP_CDN_DOWN_MIHOMO
 
   #<<FEATURE_CDN_UP_REALITY_DOWN
@@ -333,8 +333,8 @@ proxies:
       reuse-settings:
         max-concurrency: "16-32"
         c-max-reuse-times: "0"
-        h-max-request-times: "200-400"
-        h-max-reusable-secs: "600-1200"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
+        h-max-request-times: "600-900"
+        h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
       download-settings:
         server: ${VPS_IP}
         port: 443
@@ -352,9 +352,9 @@ proxies:
         path: ${XHTTP_PATH}
         host: ""
         reuse-settings:
-          max-concurrency: "8-16"
-          c-max-reuse-times: "16-32"
-          h-max-request-times: "100-200"
-          h-max-reusable-secs: "300-600"${MIHOMO_REUSE_KEEPALIVE_DOWNLOAD}
+          max-concurrency: "32-64"
+          c-max-reuse-times: "0"
+          h-max-request-times: "600-900"
+          h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_DOWNLOAD}
   #>>FEATURE_CDN_UP_REALITY_DOWN
 

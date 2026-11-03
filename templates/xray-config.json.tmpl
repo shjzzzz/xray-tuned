@@ -16,15 +16,13 @@
         // 原来服务器上的每条域名查询都以明文发给机房网络，能被云厂商/上游看到。IP 型 DoH 地址的证书对 IP 有效（curl 已校验）。
         // 本机实测（随机不存在子域，各 6 次中位数）：9.9.9.10 UDP 4.2ms → DoH 复用连接 6.6ms（新建连接约 14ms，只付一次）；
         // 1.1.1.1 4.3 → 7.1ms；8.8.8.8 13.7 → 14.9ms。顺序不变。抓包确认：服务器侧不再有发往 53 端口的明文包。
-        // 2026-11-03 优化：移除高延迟 8.8.8.8 DoH（实测偶发 1s 抖动及 empty response），
-        // 首选低延迟 1.1.1.1 与 9.9.9.10 DoH，并以本机 VPC 内网 DNS 169.254.169.254 (<1ms) 与 1.1.1.1/9.9.9.10 兜底，
-        // 彻底消除 features/dns: empty response 导致的出站断流。
+        // 2026-11-03 优化：移除高延迟 8.8.8.8 DoH（实测偶发 1s 抖动及 empty response）及本机 169.254.169.254
+        // （OCI 元数据 DNS 对无 A 记录的 IPv6 域名返回非标准报文触发 Go dnsmessage "segment prefix is reserved" 解析报错与 8s 阻塞），
+        // 首选低延迟 1.1.1.1 与 9.9.9.10 DoH，并以 1.1.1.1 UDP 兜底。
         "servers": [
             "https+local://1.1.1.1/dns-query",
             "https+local://9.9.9.10/dns-query",
-            "169.254.169.254",
-            "1.1.1.1",
-            "9.9.9.10"
+            "1.1.1.1"
         ],
         "queryStrategy": "UseIPv4"
     },
@@ -175,7 +173,7 @@
                 "metadataOnly": false,
                 "routeOnly": false
             }
-        }${XRAY_REALITY_PQ_VISION_INBOUND}
+        }
 ${XRAY_H3_DIRECT_INBOUND}
 ${XRAY_H2_DIRECT_INBOUND}
 ${XRAY_HY2_INBOUND}

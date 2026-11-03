@@ -108,17 +108,21 @@ rm -f /etc/xhttp-cdn/dual-cdn-domains /etc/xhttp-cdn/dual-ip-domains 2>/dev/null
 XHTTP_SC_MIN_POSTS_MS=${XHTTP_SC_MIN_POSTS_MS:-10}
 
 # ---------- Hysteria2 客户端带宽与接收窗口声明 ----------
-# 为客户端注入 1000 Mbps 与 128MB 连接流控接收窗口，跑满千兆高吞吐链路
-HY2_UP_MBPS=${HY2_UP_MBPS:-1000}
-HY2_DOWN_MBPS=${HY2_DOWN_MBPS:-1000}
-MIHOMO_HY2_BW_BLOCK=$(printf '\n    up: "%s Mbps"\n    down: "%s Mbps"\n    recv-window-conn: 134217728\n    recv-window: 67108864' "${HY2_UP_MBPS}" "${HY2_DOWN_MBPS}")
+# 默认不写死固定带宽（启用自适应 BBR 拥塞控制，避免客户端上行不足 1000M 时 Brutal 盲发导致严重丢包抖动），
+# 同时注入 64MB 流窗口与 128MB 连接流控接收窗口；仅当显式传入 HY2_UP_MBPS / HY2_DOWN_MBPS 时启用 Brutal。
+HY2_UP_MBPS=${HY2_UP_MBPS:-}
+HY2_DOWN_MBPS=${HY2_DOWN_MBPS:-}
+if [[ -n "${HY2_UP_MBPS}" && -n "${HY2_DOWN_MBPS}" ]]; then
+  MIHOMO_HY2_BW_BLOCK=$(printf '\n    up: "%s Mbps"\n    down: "%s Mbps"\n    recv-window-conn: 134217728\n    recv-window: 67108864' "${HY2_UP_MBPS}" "${HY2_DOWN_MBPS}")
+else
+  MIHOMO_HY2_BW_BLOCK=$(printf '\n    recv-window-conn: 134217728\n    recv-window: 67108864')
+fi
 
-# Reality XHTTP 直连与上行腿：maxConcurrency 设为 8-16（替代原先的 32-64），
-# 避免单条 TCP 连接承载 64 路并发流引发严重 TCP 队头阻塞（HoL Blocking）及单连接流量过大触发运营商 QoS 限速；
-# 当并发流超过 8-16 时客户端自动开启多条并行 TCP+REALITY 连接，配合 5-10 分钟（300-600s / 100-200 次请求）平滑轮换五元组。
-XMUX_ENC="%22xmux%22%3A%7B%22maxConcurrency%22%3A%228-16%22%2C%22cMaxReuseTimes%22%3A%2216-32%22%2C%22hMaxRequestTimes%22%3A%22100-200%22%2C%22hMaxReusableSecs%22%3A%22300-600%22%2C%22hKeepAlivePeriod%22%3A15%7D"
+# Reality XHTTP 直连与上行腿：maxConcurrency 设为 32-64、cMaxReuseTimes 设为 0（无限复用主连接直至 hMaxRequestTimes=600-900 或 hMaxReusableSecs=1800-3000），
+# 配合 hKeepAlivePeriod=15 发送 HTTP/2 Ping 保活，消除高 RTT 跨境链路频繁重握 REALITY TLS（每次损失 2*RTT 约 300-400ms）与 TCP BBR 拥塞窗口重置。
+XMUX_ENC="%22xmux%22%3A%7B%22maxConcurrency%22%3A%2232-64%22%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A15%7D"
 # 经 CDN 的腿用 maxConnections=16（严禁与 maxConcurrency 混用），拉满并发突破 Cloudflare 边缘单流限速。
-XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22200-400%22%2C%22hMaxReusableSecs%22%3A%22600-1200%22%2C%22hKeepAlivePeriod%22%3A15%7D"
+XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A15%7D"
 # XHTTP/3（Direct-H3、CDN-H3）下载方向吃的是**客户端**的 QUIC 接收窗口：长 RTT + 丢包时，默认窗口会把吞吐卡住。
 # 用链接的 fm（finalmask）参数把窗口拉满放大：流 初始 8MB / 上限 64MB，连接 初始 16MB / 上限 128MB（兼顾极限吞吐与移动端 50MB 内存安全上限）。
 XH3_FM_PARAM="&fm=$(rawurlencode '{"quicParams":{"initStreamReceiveWindow":8388608,"maxStreamReceiveWindow":67108864,"initConnectionReceiveWindow":16777216,"maxConnectionReceiveWindow":134217728}}')"
@@ -184,9 +188,9 @@ EOF
 fi
 
 if [[ "$CDN_ECH_ENABLED" == true ]]; then
-  DOWNLOAD_TLS_ENC="%22tlsSettings%22%3A%7B%22serverName%22%3A%22${CDN_DOMAIN}%22%2C%22allowInsecure%22%3Afalse%2C%22alpn%22%3A%5B%22h2%22%2C%22h3%22%5D%2C%22fingerprint%22%3A%22chrome%22%2C%22ech%22%3A%22${CDN_ECH_QUERY_ENC}%22%7D"
+  DOWNLOAD_TLS_ENC="%22tlsSettings%22%3A%7B%22serverName%22%3A%22${CDN_DOMAIN}%22%2C%22allowInsecure%22%3Afalse%2C%22alpn%22%3A%5B%22h2%22%5D%2C%22fingerprint%22%3A%22chrome%22%2C%22ech%22%3A%22${CDN_ECH_QUERY_ENC}%22%7D"
 else
-  DOWNLOAD_TLS_ENC="%22tlsSettings%22%3A%7B%22serverName%22%3A%22${CDN_DOMAIN}%22%2C%22allowInsecure%22%3Afalse%2C%22alpn%22%3A%5B%22h2%22%2C%22h3%22%5D%2C%22fingerprint%22%3A%22chrome%22%7D"
+  DOWNLOAD_TLS_ENC="%22tlsSettings%22%3A%7B%22serverName%22%3A%22${CDN_DOMAIN}%22%2C%22allowInsecure%22%3Afalse%2C%22alpn%22%3A%5B%22h2%22%5D%2C%22fingerprint%22%3A%22chrome%22%7D"
 fi
 if [[ "$FEATURE_XPADDING" == true ]]; then
   DOWNLOAD_XHTTP_ENC="%22xhttpSettings%22%3A%7B%22host%22%3A%22${CDN_DOMAIN}%22%2C%22path%22%3A%22${XHTTP_PATH_ENC}%22%2C%22mode%22%3A%22auto%22%2C%22extra%22%3A%7B${XPAD_FIELDS_ENC}%2C%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D%7D"

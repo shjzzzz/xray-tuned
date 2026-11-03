@@ -54,7 +54,17 @@ ExecStartPre=+/usr/local/sbin/xh-split-config
 ExecStart=
 ExecStart=/usr/local/bin/xray run -config /run/xray-split/main.json
 SPLITDROPEOF
-  cat > /etc/systemd/system/xray-reality.service <<'REALITYUNITEOF'
+  local _cores _gm _gomem_line=""
+  _cores="${CPU_CORES:-$(nproc 2>/dev/null || echo 4)}"
+  _gm=$(awk '/^MemTotal:/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)
+  if [[ "$_gm" -gt 0 ]]; then
+    if [[ "$_gm" -lt 2048 ]]; then
+      _gomem_line="Environment=\"GOMEMLIMIT=$((_gm * 60 / 100))MiB\""
+    else
+      _gomem_line="Environment=\"GOMEMLIMIT=$((_gm * 75 / 100))MiB\""
+    fi
+  fi
+  cat > /etc/systemd/system/xray-reality.service <<REALITYUNITEOF
 [Unit]
 Description=Xray REALITY (legacy core, accepts clients without X25519MLKEM768)
 After=network.target nss-lookup.target
@@ -75,10 +85,12 @@ Restart=always
 RestartSec=2
 LimitNOFILE=1048576
 LimitNPROC=infinity
+LimitMEMLOCK=infinity
 Nice=-10
 Environment="GOGC=200"
-Environment="GOMAXPROCS=4"
+Environment="GOMAXPROCS=${_cores}"
 Environment="GODEBUG=madvdontneed=1"
+${_gomem_line}
 
 [Install]
 WantedBy=multi-user.target

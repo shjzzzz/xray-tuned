@@ -83,11 +83,10 @@ elif [[ "$MEM_MB" -ge 4096  ]]; then XRAY_BUFFER_KB=2048
 else XRAY_BUFFER_KB=512
 fi
 XRAY_POLICY_JSON="\"policy\":{\"levels\":{\"0\":{\"handshake\":10,\"connIdle\":1800,\"uplinkOnly\":15,\"downlinkOnly\":30,\"bufferSize\":${XRAY_BUFFER_KB}}}},"
-[[ "$XRAY_DEFAULTS" == true ]] && XRAY_POLICY_JSON=""   # 官方默认 policy
+[[ "${XRAY_NO_TUNE:-false}" == true ]] && XRAY_POLICY_JSON=""   # 仅在显式禁用调优时回退官方默认 policy
 
 
-# Reality 入站 sockopt：不启用 TFO 避免部分运营商/移动端网络丢弃带数据的 SYN 包导致 failed to read client hello
-# tcpUserTimeout 设为 300000 (5分钟)，杜绝因 20s/60s 瞬时抖动杀死健康连接
+# Reality 与 TCP 入站 sockopt：与客户端 tfo=1 对齐开启 tcpFastOpen/tcpNoDelay/BBR 与 30s KeepAlive
 AVAIL=$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null || true)
 if [[ "$AVAIL" != *brutal* ]]; then
   modprobe brutal 2>/dev/null || true
@@ -99,23 +98,19 @@ if [[ "$AVAIL" != *bbr* ]]; then
 fi
 
 XRAY_TCP_CC=""
-if [[ "$AVAIL" == *brutal* && "${FEATURE_BRUTAL:-true}" != false ]]; then
+if [[ "$AVAIL" == *brutal* && "${FEATURE_BRUTAL:-false}" == true ]]; then
   XRAY_TCP_CC="brutal"
-  info "检测到 TCP Brutal 内核模块，已为 Xray 入站启用 Brutal 极速拥塞控制"
+  info "检测到 TCP Brutal 内核模块且 FEATURE_BRUTAL=true，已为 Xray 入站启用 Brutal 拥塞控制"
   install_tcp_brutal_service "${BRUTAL_DEFAULT_MBPS:-auto}" 2>/dev/null || true
 elif [[ "$AVAIL" == *bbr* ]]; then
   XRAY_TCP_CC="bbr"
 fi
 
 if [[ -n "$XRAY_TCP_CC" ]]; then
-  XRAY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpcongestion":"'"${XRAY_TCP_CC}"'","tcpKeepAliveIdle":30,"tcpKeepAliveInterval":10,"tcpUserTimeout":60000}'
-  # Reality 443 入站（Reality-Vision / Reality-XHTTP 共用）默认用自适应的 BBR，不用 Brutal：
-  # Brutal 按 /etc/tcp-brutal.rules 的固定速率（auto = 网卡速率，常见 3800 Mbps）发包、不看丢包与线路容量。
-  # v5.0.2 netns 实测（RTT 160ms / 丢包 1% / 300 Mbps）：Brutal 下行 87~88 Mbps，BBR 51~108 Mbps，
-  # 差距在噪声内，没有测出谁更快；改 BBR 是因为它能随线路自适应，不会按固定速率压线路。只测了 Reality-XHTTP。
-  # REALITY_TCP_CC=brutal 可改回 Brutal（需要内核 brutal 模块）。
+  # Reality 443 与 TCP 直连入站默认用自适应的 BBR，不用固定速率发包的 Brutal
   REALITY_CC="${REALITY_TCP_CC:-bbr}"
   [[ "$AVAIL" == *"$REALITY_CC"* ]] || REALITY_CC="$XRAY_TCP_CC"
+  XRAY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpcongestion":"'"${XRAY_TCP_CC}"'","tcpKeepAliveIdle":30,"tcpKeepAliveInterval":10,"tcpUserTimeout":60000}'
   REALITY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpcongestion":"'"${REALITY_CC}"'","tcpKeepAliveIdle":30,"tcpKeepAliveInterval":10,"tcpUserTimeout":60000}'
 else
   warn "BBR / Brutal 均不可用，Xray Reality 入站不写 tcpcongestion（TFO / keepalive 照常写入）"
@@ -126,9 +121,9 @@ fi
 # 模板里内联的 sockopt 调优字段（trustedXForwardedFor 是功能项，始终保留）。
 # 注意：8001/8002 仅监听 127.0.0.1 回环（RTT 0.007ms），回环上启用 BBR + MPTCP 会在公网背压时触发
 # 虚假重传（ss -tinp 实测 dsack_dups: 32），故回环入站只开 tcpNoDelay，不挂 BBR/MPTCP。
-XRAY_SERVER_MODE=stream-up
-if [[ "$XRAY_DEFAULTS" == true ]]; then
-  XRAY_SERVER_MODE=auto   # 官方默认；auto 同时接受 auto / packet-up / stream-up 客户端
+# XHTTP 服务端入站 mode 统一用 auto（同时兼容 stream-up / auto / packet-up 客户端）。
+XRAY_SERVER_MODE=auto
+if [[ "${XRAY_NO_TUNE:-false}" == true ]]; then
   XRAY_SOCKOPT_JSON=""
   REALITY_SOCKOPT_JSON=""
   XRAY_SOCKOPT_TUNE=""
@@ -137,17 +132,13 @@ if [[ "$XRAY_DEFAULTS" == true ]]; then
   HY2_UDP_IDLE_JSON=""
   HY2_SOCKOPT_JSON=""
   H3_SOCKOPT_JSON=""
-  if [[ "$XRAY_TCP_CC" == "brutal" ]]; then
-    XRAY_SOCKOPT_TUNE=$',\n                    "tcpNoDelay": true'
-    XRAY_FREEDOM_SOCKOPT_TUNE=$',\n                    "tcpcongestion": "bbr"'
-  fi
 else
   XRAY_SOCKOPT_TUNE=$',\n                    "tcpNoDelay": true'
   XRAY_FREEDOM_SOCKOPT_TUNE=$',\n                    "tcpFastOpen": true,\n                    "tcpNoDelay": true,\n                    "tcpMptcp": false,\n                    "tcpcongestion": "bbr",\n                    "tcpKeepAliveIdle": 30,\n                    "tcpKeepAliveInterval": 10,\n                    "tcpUserTimeout": 60000'
-  HY2_SOCKOPT_BLOCK=$'"sockopt": {\n                    "tcpFastOpen": true,\n                    "tcpcongestion": "'"${XRAY_TCP_CC:-bbr}"$'"\n                },'
+  HY2_SOCKOPT_BLOCK=""
   HY2_UDP_IDLE_JSON=$'                    "udpIdleTimeout": 60,\n'
-  HY2_SOCKOPT_JSON=$',\n                "sockopt": {\n                    "tcpFastOpen": true,\n                    "tcpcongestion": "'"${XRAY_TCP_CC:-bbr}"$'"\n                }'
-  H3_SOCKOPT_JSON=$',\n                "sockopt": {\n                    "tcpcongestion": "bbr"\n                }'
+  HY2_SOCKOPT_JSON=""
+  H3_SOCKOPT_JSON=""
 fi
 
 # Reality maxTimeDiff（毫秒，XTLS/REALITY README 的可选项，默认不设）：客户端时间偏差超过该值则拒绝握手
@@ -218,60 +209,6 @@ if [[ "${FEATURE_REALITY_XHTTP:-true}" == true ]]; then
   REALITY_XHTTP_FALLBACK_JSON=$'\n        // >>xh:realityxhttp\n                    {\n                        "dest": "127.0.0.1:8001",\n                        "xver": 0\n                    }\n        // <<xh:realityxhttp\n'
 fi
 
-# REALITY-PQ-Vision 直连节点（TCP 8447，核心节点 3）
-xray_reality_pq_vision_inbound() {
-  cat <<PQEOF
-,
-        // >>xh:reality-pq-vision
-        {
-            "tag": "reality-pq-vision-in",
-            "listen": "${XRAY_LISTEN}",
-            "port": 8447,
-            "protocol": "vless",
-            "settings": {
-                "clients": [
-                    {
-                        "id": "${UUID1}",
-                        "level": 0,
-                        "flow": "xtls-rprx-vision"
-                    }
-                ],
-                "decryption": "${VLESSENC_DECRYPTION:-none}"
-            },
-            "streamSettings": {
-                "network": "raw",
-                "security": "reality",
-                "realitySettings": {
-                    "show": false,
-                    "target": "127.0.0.1:8003",
-                    "xver": 0,
-                    "serverNames": [
-                        "${REALITY_DOMAIN}",
-                        "${CDN_DOMAIN}"
-                    ],
-                    "privateKey": "${PRIVATE_KEY}",
-                    "shortIds": [
-                        "${SHORT_ID}"
-                    ]${REALITY_MAX_TIME_DIFF_JSON}${REALITY_MIN_CLIENT_VER_JSON}
-                }${REALITY_SOCKOPT_JSON}
-            },
-            "sniffing": {
-                "enabled": true,
-                "destOverride": ["http", "tls", "quic"],
-                "metadataOnly": false,
-                "routeOnly": false
-            }
-        }
-        // <<xh:reality-pq-vision
-
-PQEOF
-}
-
-XRAY_REALITY_PQ_VISION_INBOUND=""
-if [[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
-  XRAY_REALITY_PQ_VISION_INBOUND="$(xray_reality_pq_vision_inbound)"$'\n'
-fi
-
 XRAY_H3_DIRECT_INBOUND=""
 XRAY_H2_DIRECT_INBOUND=""
 XRAY_HY2_INBOUND=""
@@ -324,7 +261,7 @@ xray_h3_direct_inbound() {
                             "keyFile": "${CERT_KEY}"
                         }
                     ]
-                }${XRAY_SOCKOPT_JSON},
+                }${H3_SOCKOPT_JSON},
                 "xhttpSettings": {
                     "host": "",
                     "path": "${XHTTP_PATH}",

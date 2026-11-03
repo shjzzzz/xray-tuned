@@ -431,10 +431,9 @@ cmd_tuning() {
       return 0
       ;;
     on)
-      [[ -f "$SYSCTL_CONF" ]] && { info "系统层调优已处于开启状态（重跑请先 ${MANAGE_CMD} tuning off）"; return 0; }
       # v2.0.0：调优逻辑内联在本命令里，不再需要重跑安装脚本。
       # 全部 best-effort，逐项能力探测（BBR / 只读 sysctl / limits.d 是否存在），
-      # 任何一项失败只 warn，不影响已经跑通的节点。
+      # 且支持幂等刷新动态端口保留与网卡/NAT 重定向规则。
       apply_system_tuning
       ;;
     off)
