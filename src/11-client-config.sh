@@ -118,11 +118,12 @@ else
   MIHOMO_HY2_BW_BLOCK=$(printf '\n    recv-window-conn: 134217728\n    recv-window: 67108864')
 fi
 
-# Reality XHTTP 直连与上行腿：maxConcurrency 设为 32-64、cMaxReuseTimes 设为 0（无限复用主连接直至 hMaxRequestTimes=600-900 或 hMaxReusableSecs=1800-3000），
-# 配合 hKeepAlivePeriod=15 发送 HTTP/2 Ping 保活，消除高 RTT 跨境链路频繁重握 REALITY TLS（每次损失 2*RTT 约 300-400ms）与 TCP BBR 拥塞窗口重置。
-XMUX_ENC="%22xmux%22%3A%7B%22maxConcurrency%22%3A%2232-64%22%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A15%7D"
+# Reality XHTTP 直连与上行腿：maxConcurrency 设为 8-16（替代原先的 32-64），
+# 避免单条 TCP 连接承载 64 路并发流引发严重 TCP 队头阻塞（HoL Blocking）及单连接流量过大触发运营商 QoS 限速；
+# 当并发流超过 8-16 时客户端自动开启多条并行 TCP+REALITY 连接，配合 5-10 分钟（300-600s / 100-200 次请求）平滑轮换五元组。
+XMUX_ENC="%22xmux%22%3A%7B%22maxConcurrency%22%3A%228-16%22%2C%22cMaxReuseTimes%22%3A%2216-32%22%2C%22hMaxRequestTimes%22%3A%22100-200%22%2C%22hMaxReusableSecs%22%3A%22300-600%22%2C%22hKeepAlivePeriod%22%3A15%7D"
 # 经 CDN 的腿用 maxConnections=16（严禁与 maxConcurrency 混用），拉满并发突破 Cloudflare 边缘单流限速。
-XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A15%7D"
+XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22200-400%22%2C%22hMaxReusableSecs%22%3A%22600-1200%22%2C%22hKeepAlivePeriod%22%3A15%7D"
 # XHTTP/3（Direct-H3、CDN-H3）下载方向吃的是**客户端**的 QUIC 接收窗口：长 RTT + 丢包时，默认窗口会把吞吐卡住。
 # 用链接的 fm（finalmask）参数把窗口拉满放大：流 初始 8MB / 上限 64MB，连接 初始 16MB / 上限 128MB（兼顾极限吞吐与移动端 50MB 内存安全上限）。
 XH3_FM_PARAM="&fm=$(rawurlencode '{"quicParams":{"initStreamReceiveWindow":8388608,"maxStreamReceiveWindow":67108864,"initConnectionReceiveWindow":16777216,"maxConnectionReceiveWindow":134217728}}')"

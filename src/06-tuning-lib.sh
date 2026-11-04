@@ -437,8 +437,8 @@ apply_system_tuning() {
   # MTU 已经通过物理网卡锁定 1500、存量路由钉回 1500 及防火墙 TCPMSS 钳制多重兜底，设为 0 关闭多余探测
   try_sysctl net.ipv4.tcp_mtu_probing 0
   try_sysctl net.ipv4.tcp_slow_start_after_idle 0
-  # 套接字未发送数据上限：设为 128KB (131072，最大 64KB TSO 分片的 2 倍)，在千兆/万兆高 BDP 下保证大吞吐，同时消除 XHTTP/H2 多路复用在内核发送缓冲区的队头延迟
-  try_sysctl net.ipv4.tcp_notsent_lowat 131072
+  # 套接字未发送数据上限：设为 512KB (524288)，在千兆高带宽 BDP 下保证大吞吐，同时有效控制多路复用队头延迟
+  try_sysctl net.ipv4.tcp_notsent_lowat 524288
   # 移动网络无线跳频与高抖动优化（RFC 8985 TLP / F-RTO）：
   # tcp_frto = 2: 开启 Forward RTO 探测，避免移动蜂窝网络偶发无线重传误触发 cwnd 骤降
   # tcp_early_retrans = 3: 开启 Tail Loss Probe (TLP)，尾包丢失快速重传，避免长 RTO 超时

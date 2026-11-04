@@ -213,14 +213,13 @@ for tpath in [txt_file, "/etc/xhttp-cdn/all/client-config.txt"]:
         p = urllib.parse.urlparse(line)
         tag = urllib.parse.unquote(p.fragment or "")
         is_cdn_node = ("-CDN-" in tag or "PQ+XHTTP+CDN" in tag or "XHTTP-CDN" in tag) and "Reality-Up" not in tag
-        # 统一恢复高并发无限复用 xmux 参数（消除 cMaxReuseTimes=16-32 导致的频繁断连重握与 BBR 慢启动重置）
         line = line.replace(
-            "%22maxConcurrency%22%3A%228-16%22%2C%22cMaxReuseTimes%22%3A%2216-32%22%2C%22hMaxRequestTimes%22%3A%22100-200%22%2C%22hMaxReusableSecs%22%3A%22300-600%22",
-            "%22maxConcurrency%22%3A%2232-64%22%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22"
+            "%22maxConcurrency%22%3A%2232-64%22%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22",
+            "%22maxConcurrency%22%3A%228-16%22%2C%22cMaxReuseTimes%22%3A%2216-32%22%2C%22hMaxRequestTimes%22%3A%22100-200%22%2C%22hMaxReusableSecs%22%3A%22300-600%22"
         )
         line = line.replace(
-            "%22hMaxRequestTimes%22%3A%22200-400%22%2C%22hMaxReusableSecs%22%3A%22600-1200%22",
-            "%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22"
+            "%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22",
+            "%22hMaxRequestTimes%22%3A%22200-400%22%2C%22hMaxReusableSecs%22%3A%22600-1200%22"
         )
         if is_cdn_node:
             if cdn_addr:
@@ -231,7 +230,7 @@ for tpath in [txt_file, "/etc/xhttp-cdn/all/client-config.txt"]:
             line = line.replace("mode=stream-up", "mode=auto")
             line = re.sub(r'[&?]tfo=[0-9]+', '', line)
         elif "Reality-XHTTP-Direct" in tag:
-            line = line.replace("mode=stream-up", "mode=auto")
+            line = line.replace("mode=auto", "mode=stream-up")
         elif "Reality-Up-CDN-Down" in tag and "downloadSettings" in line and cdn_addr:
             line = re.sub(r'(%22address%22%3A%22)(?:[0-9.]+|[^%"]+)(%22)', r'\g<1>' + urllib.parse.quote(cdn_addr) + r'\g<2>', line)
             line = re.sub(r'("address":")[^"]+(")', r'\g<1>' + cdn_addr + r'\g<2>', line)
@@ -276,10 +275,10 @@ if yaml:
                             "path": q("path", "/"),
                             "mode": "stream-up",
                             "reuse-settings": {
-                                "max-concurrency": "32-64",
-                                "c-max-reuse-times": "0",
-                                "h-max-request-times": "600-900",
-                                "h-max-reusable-secs": "1800-3000",
+                                "max-concurrency": "8-16",
+                                "c-max-reuse-times": "16-32",
+                                "h-max-request-times": "100-200",
+                                "h-max-reusable-secs": "300-600",
                                 "h-keep-alive-period": 15
                             }
                         }
@@ -313,29 +312,29 @@ if yaml:
                 elif "Reality-XHTTP-Direct" in pname:
                     if "xhttp-opts" in p:
                         p["xhttp-opts"]["reuse-settings"] = {
-                            "max-concurrency": "32-64",
-                            "c-max-reuse-times": "0",
-                            "h-max-request-times": "600-900",
-                            "h-max-reusable-secs": "1800-3000",
+                            "max-concurrency": "8-16",
+                            "c-max-reuse-times": "16-32",
+                            "h-max-request-times": "100-200",
+                            "h-max-reusable-secs": "300-600",
                             "h-keep-alive-period": 15
                         }
                 elif "Reality-Up-CDN-Down" in pname:
                     if "xhttp-opts" in p:
                         p["xhttp-opts"]["reuse-settings"] = {
-                            "max-concurrency": "32-64",
-                            "c-max-reuse-times": "0",
-                            "h-max-request-times": "600-900",
-                            "h-max-reusable-secs": "1800-3000",
+                            "max-concurrency": "8-16",
+                            "c-max-reuse-times": "16-32",
+                            "h-max-request-times": "100-200",
+                            "h-max-reusable-secs": "300-600",
                             "h-keep-alive-period": 15
                         }
                         if "download-settings" in p["xhttp-opts"]:
                             if cdn_addr:
                                 p["xhttp-opts"]["download-settings"]["server"] = cdn_addr
                             p["xhttp-opts"]["download-settings"]["reuse-settings"] = {
-                                "max-concurrency": "32-64",
+                                "max-concurrency": "16-32",
                                 "c-max-reuse-times": "0",
-                                "h-max-request-times": "600-900",
-                                "h-max-reusable-secs": "1800-3000",
+                                "h-max-request-times": "200-400",
+                                "h-max-reusable-secs": "600-1200",
                                 "h-keep-alive-period": 15
                             }
                 elif "CDN-Up-Reality-Down" in pname:
@@ -344,10 +343,10 @@ if yaml:
                     p.pop("tfo", None)
                     if "xhttp-opts" in p and "download-settings" in p["xhttp-opts"]:
                         p["xhttp-opts"]["download-settings"]["reuse-settings"] = {
-                            "max-concurrency": "32-64",
-                            "c-max-reuse-times": "0",
-                            "h-max-request-times": "600-900",
-                            "h-max-reusable-secs": "1800-3000",
+                            "max-concurrency": "8-16",
+                            "c-max-reuse-times": "16-32",
+                            "h-max-request-times": "100-200",
+                            "h-max-reusable-secs": "300-600",
                             "h-keep-alive-period": 15
                         }
                 if "alpn" in p and "h3" in p["alpn"]:
