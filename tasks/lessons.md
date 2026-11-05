@@ -50,3 +50,11 @@
   2. 在容器里用只读挂载跑一遍，是发现泄漏最便宜的办法；
   3. 判断「默认值」「基线」前，先 `git pull` 并以当前 `origin/main` 为准，不要用落后的本地克隆（上一轮据此写错了 README 的开关列表）；
   4. REALITY+PQ+Vision 与 Vision-Direct 共用 443 上同一个 Vision 客户端项，任何关闭 Vision 的操作都要先检查 PQ-Vision 是否还在用。
+
+## 8. REALITY 后量子握手与内核版本兼容红线 (2026-11-05)
+- **错误现象**：客户端导入 `VLESS-REALITY+PQ+Vision` 后完全不通，连接握手直接超时；服务端报 `proxy/vless/inbound: fallback starts > proxy/vless/encoding: invalid request version`，随后进入 fallback 导致连接中断（`write: broken pipe`）。
+- **根本原因**：新版客户端（如 v2rayN >= 26.9+ 或配置了 `support-x25519mlkem768: true` 的 Mihomo）向 REALITY 发送了后量子混合密钥 `X25519MLKEM768`。若服务端 443 端口由兼容旧内核 `xray-legacy` (26.7.28) 承载，该旧内核不认识后量子扩展，导致 ECDH 共享密钥计算不一致引发认证失败。认证失败后作为普通 TLS 密文回落至 8001 XHTTP 入站被直接重置。
+- **治理与防范规则**：
+  1. 开启 `FEATURE_REALITY_PQ_VISION=true` 或客户端需要后量子抗量子破译时，443 端口必须使用原生最新版 Xray 内核（>= 26.9.30，实机当前 26.10.31），严禁绑定不支持 ML-KEM-768 的旧版 legacy 内核；
+  2. `src/09a-reality-legacy.sh` 需具备后量子感知逻辑，当 `FEATURE_REALITY_PQ_VISION=true` 且未强制指定 legacy 时自动选用原生最新内核承载；
+  3. 完成前验证：必须模拟带后量子 ClientHello 针对 443 发起端到端握手测试，断言返回 HTTP 200/204。

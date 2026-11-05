@@ -64,6 +64,10 @@ SPLITDROPEOF
       _gomem_line="Environment=\"GOMEMLIMIT=$((_gm * 75 / 100))MiB\""
     fi
   fi
+  local _reality_bin="/usr/local/bin/xray-legacy"
+  if [[ "${FEATURE_REALITY_PQ_VISION:-false}" == true && "${FEATURE_REALITY_LEGACY:-}" != "force" ]]; then
+    _reality_bin="/usr/local/bin/xray"
+  fi
   cat > /etc/systemd/system/xray-reality.service <<REALITYUNITEOF
 [Unit]
 Description=Xray REALITY (legacy core, accepts clients without X25519MLKEM768)
@@ -80,7 +84,7 @@ NoNewPrivileges=yes
 UMask=0077
 Environment=XRAY_LOCATION_ASSET=/usr/local/share/xray
 ExecStartPre=+/usr/local/sbin/xh-split-config
-ExecStart=/usr/local/bin/xray-legacy run -config /run/xray-split/reality.json
+ExecStart=${_reality_bin} run -config /run/xray-split/reality.json
 Restart=always
 RestartSec=2
 LimitNOFILE=1048576
