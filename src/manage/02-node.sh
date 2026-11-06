@@ -221,6 +221,12 @@ for tpath in [txt_file, "/etc/xhttp-cdn/all/client-config.txt"]:
             "%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22",
             "%22hMaxRequestTimes%22%3A%22200-400%22%2C%22hMaxReusableSecs%22%3A%22600-1200%22"
         )
+        # 规范化客户端链接：移除阻碍连接的 tfo，规范化 XHTTP path 带有末尾斜杠
+        line = re.sub(r'[&?]tfo=[0-9]+', '', line)
+        line = re.sub(r'(path=/[^&/]+)(?=[&#]|$)', r'\1/', line)
+        if "REALITY" in tag or "Reality" in tag:
+            line = line.replace("type=raw", "type=tcp")
+            line = line.replace("alpn=h2,http/1.1", "alpn=h2")
         if is_cdn_node:
             if cdn_addr:
                 port_part = f":{p.port}" if p.port else ":443"
@@ -228,14 +234,12 @@ for tpath in [txt_file, "/etc/xhttp-cdn/all/client-config.txt"]:
                 p = p._replace(netloc=new_netloc)
                 line = urllib.parse.urlunparse(p)
             line = line.replace("mode=stream-up", "mode=auto")
-            line = re.sub(r'[&?]tfo=[0-9]+', '', line)
         elif "Reality-XHTTP-Direct" in tag:
             line = line.replace("mode=auto", "mode=stream-up")
         elif "Reality-Up-CDN-Down" in tag and "downloadSettings" in line and cdn_addr:
             line = re.sub(r'(%22address%22%3A%22)(?:[0-9.]+|[^%"]+)(%22)', r'\g<1>' + urllib.parse.quote(cdn_addr) + r'\g<2>', line)
             line = re.sub(r'("address":")[^"]+(")', r'\g<1>' + cdn_addr + r'\g<2>', line)
         elif "Direct-H3" in tag:
-            line = re.sub(r'[&?]tfo=[0-9]+', '', line)
             line = re.sub(r'&fm=[^&#]*', '', line)
         new_lines.append(line)
     with open(tpath, "w", encoding="utf-8") as f:
@@ -250,6 +254,9 @@ if yaml:
                     p = urllib.parse.urlparse(l)
                     qs = urllib.parse.parse_qs(p.query)
                     q = lambda k, d="": qs.get(k, [d])[0]
+                    path_val = q("path", "/")
+                    if not path_val.endswith("/"):
+                        path_val += "/"
                     reality_xhttp_proxy = {
                         "name": urllib.parse.unquote(p.fragment or ""),
                         "type": "vless",
@@ -259,7 +266,6 @@ if yaml:
                         "udp": True,
                         "flow": "",
                         "tls": True,
-                        "tfo": True,
                         "packet-encoding": "xudp",
                         "encryption": "none",
                         "network": "xhttp",
@@ -272,7 +278,7 @@ if yaml:
                             "support-x25519mlkem768": True
                         },
                         "xhttp-opts": {
-                            "path": q("path", "/"),
+                            "path": path_val,
                             "mode": "stream-up",
                             "reuse-settings": {
                                 "max-concurrency": "8-16",
@@ -299,9 +305,9 @@ if yaml:
             for p in proxies:
                 pname = p.get("name", "")
                 if "REALITY+PQ+Vision" in pname or "Reality-Vision-Direct" in pname:
-                    p["tfo"] = True
+                    p.pop("tfo", None)
                     p["packet-encoding"] = "xudp"
-                    p["alpn"] = ["h2", "http/1.1"]
+                    p["alpn"] = ["h2"]
                 is_cdn = ("-CDN-" in pname or "XHTTP-CDN" in pname or "PQ+XHTTP+CDN" in pname) and "Reality-Up" not in pname
                 if is_cdn:
                     if cdn_addr:
@@ -310,6 +316,7 @@ if yaml:
                         p["xhttp-opts"]["mode"] = "auto"
                     p.pop("tfo", None)
                 elif "Reality-XHTTP-Direct" in pname:
+                    p.pop("tfo", None)
                     if "xhttp-opts" in p:
                         p["xhttp-opts"]["reuse-settings"] = {
                             "max-concurrency": "8-16",
@@ -319,6 +326,7 @@ if yaml:
                             "h-keep-alive-period": 15
                         }
                 elif "Reality-Up-CDN-Down" in pname:
+                    p.pop("tfo", None)
                     if "xhttp-opts" in p:
                         p["xhttp-opts"]["reuse-settings"] = {
                             "max-concurrency": "8-16",
@@ -349,6 +357,9 @@ if yaml:
                             "h-max-reusable-secs": "300-600",
                             "h-keep-alive-period": 15
                         }
+                if "xhttp-opts" in p and isinstance(p["xhttp-opts"], dict) and "path" in p["xhttp-opts"]:
+                    if not p["xhttp-opts"]["path"].endswith("/"):
+                        p["xhttp-opts"]["path"] += "/"
                 if "alpn" in p and "h3" in p["alpn"]:
                     p.pop("tfo", None)
                 new_proxies.append(p)
@@ -436,7 +447,7 @@ for line in lines:
 
         if "downloadSettings" in line:
             if "Reality-Up" in tag:
-                sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=reality&sni={sni}&fp={fp}&alpn=h2&pbk={pbk}&sid={sid}&type=xhttp&path={path}&mode=stream-up&tfo=1#{tag}-Direct")
+                sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=reality&sni={sni}&fp={fp}&alpn=h2&pbk={pbk}&sid={sid}&type=xhttp&path={path}&mode=stream-up#{tag}-Direct")
             elif "CDN-Up" in tag:
                 sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=tls&sni={sni}&fp={fp}&alpn=h2&type=xhttp&host={host_hdr}&path={path}&mode=auto#{tag}-CDN")
         else:
@@ -2868,7 +2879,7 @@ cmd_pq() {
           if [[ -f "${ALL_STORE_DIR}/client-config.txt" ]] && ! grep -q "VLESS-REALITY+PQ+Vision" "${ALL_STORE_DIR}/client-config.txt"; then
             local _spx_q=""
             [[ -n "${REALITY_SPX_HASH:-}" ]] && _spx_q="&spx=%2F${REALITY_SPX_HASH}"
-            echo "vless://${UUID1}@${VPS_IP_URI:-${VPS_IP}}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2,http/1.1&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${_spx_q}&type=raw&headerType=none&packetEncoding=xudp&tfo=1#VLESS-REALITY+PQ+Vision" >> "${ALL_STORE_DIR}/client-config.txt"
+            echo "vless://${UUID1}@${VPS_IP_URI:-${VPS_IP}}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${_spx_q}&type=tcp&headerType=none&packetEncoding=xudp#VLESS-REALITY+PQ+Vision" >> "${ALL_STORE_DIR}/client-config.txt"
           fi
           update_node_env "FEATURE_REALITY_PQ_VISION" "true"
           export FEATURE_REALITY_PQ_VISION=true

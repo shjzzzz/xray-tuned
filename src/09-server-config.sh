@@ -203,7 +203,11 @@ fi
 REALITY_VISION_CLIENT_JSON=""
 REALITY_XHTTP_FALLBACK_JSON=""
 if [[ "${FEATURE_REALITY_VISION:-true}" == true || "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
-  printf -v REALITY_VISION_CLIENT_JSON '\n        // >>xh:realityvision\n                    {\n                        "id": "%s",\n                        "level": 0,\n                        "flow": "%s"\n                    }\n        // <<xh:realityvision\n' "${UUID1}" "${VISION_FLOW:-xtls-rprx-vision}"
+  if [[ -n "${UUID2}" && "${UUID2}" != "${UUID1}" ]]; then
+    printf -v REALITY_VISION_CLIENT_JSON '\n        // >>xh:realityvision\n                    {\n                        "id": "%s",\n                        "level": 0,\n                        "flow": "%s"\n                    },\n                    {\n                        "id": "%s",\n                        "level": 0,\n                        "flow": "%s"\n                    }\n        // <<xh:realityvision\n' "${UUID1}" "${VISION_FLOW:-xtls-rprx-vision}" "${UUID2}" "${VISION_FLOW:-xtls-rprx-vision}"
+  else
+    printf -v REALITY_VISION_CLIENT_JSON '\n        // >>xh:realityvision\n                    {\n                        "id": "%s",\n                        "level": 0,\n                        "flow": "%s"\n                    }\n        // <<xh:realityvision\n' "${UUID1}" "${VISION_FLOW:-xtls-rprx-vision}"
+  fi
 fi
 if [[ "${FEATURE_REALITY_XHTTP:-true}" == true ]]; then
   REALITY_XHTTP_FALLBACK_JSON=$'\n        // >>xh:realityxhttp\n                    {\n                        "dest": "127.0.0.1:8001",\n                        "xver": 0\n                    }\n        // <<xh:realityxhttp\n'

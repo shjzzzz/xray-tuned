@@ -213,8 +213,10 @@ else
   REALITY_SPX_Q=""
 fi
 
+XHTTP_PATH_SLASH="${XHTTP_PATH%/}/"
+
 if [[ "${FEATURE_REALITY_UP_CDN_DOWN:-false}" == true || "${FEATURE_UP_CDN_DOWN_MIHOMO:-false}" == true ]]; then
-  REALITY_UP_CDN_DOWN_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:443?encryption=${XHTTP_ENCRYPTION}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=xhttp&path=${XHTTP_PATH}&mode=stream-up${XPAD_SPLIT_EXTRA_ENC:+&extra=${XPAD_SPLIT_EXTRA_ENC}}&packetEncoding=xudp&tfo=1#VLESS-Reality-Up-CDN-Down${NODE_SUFFIX}"
+  REALITY_UP_CDN_DOWN_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:443?encryption=${XHTTP_ENCRYPTION}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=xhttp&path=${XHTTP_PATH_SLASH}&mode=stream-up${XPAD_SPLIT_EXTRA_ENC:+&extra=${XPAD_SPLIT_EXTRA_ENC}}&packetEncoding=xudp#VLESS-Reality-Up-CDN-Down${NODE_SUFFIX}"
 else
   REALITY_UP_CDN_DOWN_NODE_LINE=""
 fi
@@ -295,7 +297,7 @@ else
 fi
 
 if [[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
-  REALITY_PQ_VISION_NODE_LINE="vless://${UUID1}@${VPS_IP_URI}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2,http/1.1&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=raw&headerType=none&packetEncoding=xudp&tfo=1#VLESS-REALITY+PQ+Vision"
+  REALITY_PQ_VISION_NODE_LINE="vless://${UUID1}@${VPS_IP_URI}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=tcp&headerType=none&packetEncoding=xudp#VLESS-REALITY+PQ+Vision"
 else
   REALITY_PQ_VISION_NODE_LINE=""
 fi

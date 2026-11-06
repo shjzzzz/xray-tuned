@@ -273,6 +273,7 @@ $(nginx_fallback_config "$CDN_DOMAIN" "$CDN_FALLBACK_ORIGIN" "$CDN_FALLBACK_HOST
         }
 
         location ${XHTTP_PATH} {
+            rewrite ^${XHTTP_PATH}$ ${XHTTP_PATH}/ break;
             grpc_pass grpc://xray_xhttp;
             add_header Alt-Svc 'clear' always;
             add_header X-Accel-Buffering 'no' always;
@@ -299,6 +300,7 @@ $(nginx_fallback_config "$CDN_DOMAIN" "$CDN_FALLBACK_ORIGIN" "$CDN_FALLBACK_HOST
         }
 
         location /sr${XHTTP_PATH#/} {
+            rewrite ^/sr${XHTTP_PATH#/}$ /sr${XHTTP_PATH#/}/ break;
             grpc_pass grpc://xray_xhttp_sr;
             add_header Alt-Svc 'clear' always;
             add_header X-Accel-Buffering 'no' always;

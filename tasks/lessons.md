@@ -58,3 +58,16 @@
   1. 开启 `FEATURE_REALITY_PQ_VISION=true` 或客户端需要后量子抗量子破译时，443 端口必须使用原生最新版 Xray 内核（>= 26.9.30，实机当前 26.10.31），严禁绑定不支持 ML-KEM-768 的旧版 legacy 内核；
   2. `src/09a-reality-legacy.sh` 需具备后量子感知逻辑，当 `FEATURE_REALITY_PQ_VISION=true` 且未强制指定 legacy 时自动选用原生最新内核承载；
   3. 完成前验证：必须模拟带后量子 ClientHello 针对 443 发起端到端握手测试，断言返回 HTTP 200/204。
+
+## 9. Reality 与 XHTTP 客户端链接标准规范与鉴权闭环 (2026-11-06)
+- **错误现象**：v2rayN 客户端对 `VLESS-REALITY+PQ+Vision`、`VLESS-Reality-XHTTP-Direct`、`VLESS-Reality-Up-CDN-Down` 测速报 `-1`，连接无法建立。
+- **根本原因**：
+  1. **UUID2 鉴权缺失**：443 端口 Reality 入站的 `settings.clients` 仅包含 UUID1，使用 UUID2 的 Reality-XHTTP 直连及上下行分离节点在解密后 VLESS 认证直接被拒；
+  2. **客户端链接非标准传输参数**：`type=raw` 无法被 v2rayN 正确解析为底层 tcp 流；`alpn=h2,http/1.1` 包含逗号在 v2rayN 中被解析为单一字面量导致 ALPN 协商失败；
+  3. **TFO 阻断**：Windows 套接字默认不支持客户端 TFO，且国内运营商中间设备丢弃带数据的 SYN 包导致连接挂起超时；
+  4. **路径尾斜杠与 Nginx 重写**：Xray XHTTP 期望尾部斜杠（`/path/`），缺少尾部斜杠且 Nginx 未做重写时导致 404/400 路由失效。
+- **治理与防范规则**：
+  1. **443 入站全量 UUID 注入**：443 入站的 clients 必须完整包含 UUID1 与 UUID2（flow 均为 `xtls-rprx-vision`）；
+  2. **协议传输标准规范**：直连 Vision 统一使用 `type=tcp` 与 `alpn=h2`，移除阻碍连接的 `tfo=1`；
+  3. **路径尾斜杠与 Nginx 兜底**：所有 XHTTP 链接路径统一规范为带尾部斜杠 `/path/`，且 Nginx location 中必须配置 `rewrite ^${XHTTP_PATH}$ ${XHTTP_PATH}/ break;` 做严格容错兜底；
+  4. **全端编译分发**：执行 `xh resub` 重新分发全量订阅并经真实握手测试。
