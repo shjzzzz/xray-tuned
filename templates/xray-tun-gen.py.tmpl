@@ -70,8 +70,10 @@ def build_outbound(link):
         if first(q, "extra"):
             xs["extra"] = json.loads(first(q, "extra"))
         ss["xhttpSettings"] = xs
-    if sec == "reality" or first(q, "tfo") == "1":
+    if first(q, "tfo") == "1":
         ss["sockopt"] = {"tcpFastOpen": True, "tcpNoDelay": True}
+    else:
+        ss["sockopt"] = {"tcpNoDelay": True}
     user = {"id": u.username, "encryption": first(q, "encryption", "none")}
     if first(q, "flow"):
         user["flow"] = first(q, "flow")

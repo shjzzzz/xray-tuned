@@ -9,7 +9,6 @@ def tls_block(qs, sec):
     if q1(qs, "fp"): t["fingerprint"] = q1(qs, "fp")
     if q1(qs, "alpn"): t["alpn"] = q1(qs, "alpn").split(",")
     if sec == "tls":
-        if truthy(q1(qs, "insecure", "0")) or truthy(q1(qs, "allowInsecure", "0")): t["allowInsecure"] = True
         if q1(qs, "ech"): t["echConfigList"] = q1(qs, "ech")
         if q1(qs, "pinSHA256"): t["pinnedPeerCertSha256"] = q1(qs, "pinSHA256")
     if sec == "reality":

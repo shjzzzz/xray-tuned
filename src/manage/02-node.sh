@@ -213,6 +213,11 @@ for tpath in [txt_file, "/etc/xhttp-cdn/all/client-config.txt"]:
         p = urllib.parse.urlparse(line)
         tag = urllib.parse.unquote(p.fragment or "")
         is_cdn_node = ("-CDN-" in tag or "PQ+XHTTP+CDN" in tag or "XHTTP-CDN" in tag) and "Reality-Up" not in tag
+        if is_cdn_node and cdn_addr:
+            port_part = f":{p.port}" if p.port else ":443"
+            new_netloc = f"{p.username}@{cdn_addr}{port_part}" if p.username else f"{cdn_addr}{port_part}"
+            p = p._replace(netloc=new_netloc)
+            line = urllib.parse.urlunparse(p)
         line = line.replace(
             "%22maxConcurrency%22%3A%2232-64%22%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22",
             "%22maxConcurrency%22%3A%228-16%22%2C%22cMaxReuseTimes%22%3A%2216-32%22%2C%22hMaxRequestTimes%22%3A%22100-200%22%2C%22hMaxReusableSecs%22%3A%22300-600%22"
@@ -221,18 +226,17 @@ for tpath in [txt_file, "/etc/xhttp-cdn/all/client-config.txt"]:
             "%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22",
             "%22hMaxRequestTimes%22%3A%22200-400%22%2C%22hMaxReusableSecs%22%3A%22600-1200%22"
         )
-        # 规范化客户端链接：移除阻碍连接的 tfo，规范化 XHTTP path 带有末尾斜杠
+        # 规范化客户端链接：移除阻碍连接的 tfo、insecure/allowInsecure，规范化 XHTTP path 带有末尾斜杠
         line = re.sub(r'[&?]tfo=[0-9]+', '', line)
+        line = re.sub(r'[&?](?:allowInsecure|insecure)=(?:0|false|1|true)', '', line)
         line = re.sub(r'(path=/[^&/]+)(?=[&#]|$)', r'\1/', line)
         if "REALITY" in tag or "Reality" in tag:
             line = line.replace("type=raw", "type=tcp")
             line = line.replace("alpn=h2,http/1.1", "alpn=h2")
+            if "Vision" in tag or "flow=xtls-rprx-vision" in line:
+                line = re.sub(r'[&?]alpn=[^&#]*', '', line)
+                line = re.sub(r'[&?]spx=[^&#]*', '', line)
         if is_cdn_node:
-            if cdn_addr:
-                port_part = f":{p.port}" if p.port else ":443"
-                new_netloc = f"{p.username}@{cdn_addr}{port_part}" if p.username else f"{cdn_addr}{port_part}"
-                p = p._replace(netloc=new_netloc)
-                line = urllib.parse.urlunparse(p)
             line = line.replace("mode=stream-up", "mode=auto")
         elif "Reality-XHTTP-Direct" in tag:
             line = line.replace("mode=auto", "mode=stream-up")
@@ -428,7 +432,7 @@ for line in lines:
     q = lambda k, d="": qs.get(k, [d])[0]
 
     if p.scheme == "hysteria2":
-        clean_qs = {k: v[0] for k, v in qs.items() if k not in ("fm", "udp")}
+        clean_qs = {k: v[0] for k, v in qs.items() if k not in ("fm", "udp", "tfo", "allowInsecure", "insecure")}
         new_q = urllib.parse.urlencode(clean_qs)
         sr_lines.append(f"{p.scheme}://{p.netloc}{p.path}?{new_q}#{tag}")
     elif p.scheme == "vless":
@@ -447,7 +451,7 @@ for line in lines:
 
         if "downloadSettings" in line:
             if "Reality-Up" in tag:
-                sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=reality&sni={sni}&fp={fp}&alpn=h2&pbk={pbk}&sid={sid}&type=xhttp&path={path}&mode=stream-up#{tag}-Direct")
+                sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=reality&sni={sni}&fp={fp}&pbk={pbk}&sid={sid}&type=xhttp&path={path}&mode=stream-up#{tag}-Direct")
             elif "CDN-Up" in tag:
                 sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=tls&sni={sni}&fp={fp}&alpn=h2&type=xhttp&host={host_hdr}&path={path}&mode=auto#{tag}-CDN")
         else:
@@ -459,7 +463,6 @@ for line in lines:
                 "type": net
             }
             if q("flow"): clean_qs["flow"] = q("flow")
-            if q("alpn"): clean_qs["alpn"] = q("alpn")
             if pbk: clean_qs["pbk"] = pbk
             if sid: clean_qs["sid"] = sid
             if host_hdr: clean_qs["host"] = host_hdr
@@ -467,12 +470,15 @@ for line in lines:
             is_cdn = ("CDN" in tag or "-CDN-" in tag or "PQ+XHTTP+CDN" in tag or "XHTTP-CDN" in tag) and "Reality-Up" not in tag
             if net == "xhttp":
                 clean_qs["mode"] = "auto" if is_cdn else q("mode", "stream-up")
-            if "h3" in clean_qs.get("alpn", ""):
-                if port == 443 or is_cdn:
+            if sec != "reality" or q("flow") != "xtls-rprx-vision":
+                if q("alpn"):
+                    clean_qs["alpn"] = q("alpn")
+                if "h3" in clean_qs.get("alpn", "") and (port == 443 or is_cdn):
                     clean_qs["alpn"] = "h2"
-            elif not is_cdn:
-                clean_qs["tfo"] = "1"
-            new_q = urllib.parse.urlencode(clean_qs)
+            clean_qs.pop("tfo", None)
+            clean_qs.pop("insecure", None)
+            clean_qs.pop("allowInsecure", None)
+            new_q = urllib.parse.urlencode(clean_qs, safe="/")
             sr_lines.append(f"vless://{uid}@{host}:{port}?{new_q}#{tag}")
 
 with open(dst, "w", encoding="utf-8") as f:
@@ -2488,10 +2494,11 @@ cmd_noise() {
 reality_server_edit() {
   local key="$1" act="$2" tmp="${XRAY_CONF%.json}.bk-tmp.json" bak="${XRAY_CONF}.bk.bak" rc err
   [[ -f "$XRAY_CONF" ]] || { backup_error "未找到 Xray 配置文件: $XRAY_CONF"; return 1; }
-  python3 - "$XRAY_CONF" "$tmp" "$key" "$act" "${UUID1:-}" "${VISION_FLOW:-xtls-rprx-vision}" <<'RSPY'
+  python3 - "$XRAY_CONF" "$tmp" "$key" "$act" "${UUID1:-}" "${VISION_FLOW:-xtls-rprx-vision}" "${UUID2:-}" <<'RSPY'
 import re, sys
 
 src, dst, key, act, uuid1, flow = sys.argv[1:7]
+uuid2 = sys.argv[7] if len(sys.argv) > 7 else ""
 s = open(src, encoding='utf-8').read()
 tag = 'reality' + key
 begin = '        // >>xh:' + tag
@@ -2500,11 +2507,23 @@ if key == 'vision':
     arr = '"clients"'
     if not uuid1:
         sys.stderr.write('node.env 里没有 UUID1\n'); sys.exit(1)
-    obj = ('                    {\n'
-           '                        "id": "%s",\n'
-           '                        "level": 0,\n'
-           '                        "flow": "%s"\n'
-           '                    }') % (uuid1, flow)
+    if uuid2 and uuid2 != uuid1:
+        obj = ('                    {\n'
+               '                        "id": "%s",\n'
+               '                        "level": 0,\n'
+               '                        "flow": "%s"\n'
+               '                    },\n'
+               '                    {\n'
+               '                        "id": "%s",\n'
+               '                        "level": 0,\n'
+               '                        "flow": "%s"\n'
+               '                    }') % (uuid1, flow, uuid2, flow)
+    else:
+        obj = ('                    {\n'
+               '                        "id": "%s",\n'
+               '                        "level": 0,\n'
+               '                        "flow": "%s"\n'
+               '                    }') % (uuid1, flow)
     ident = uuid1
 else:
     arr = '"fallbacks"'
