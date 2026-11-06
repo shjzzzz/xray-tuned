@@ -71,3 +71,15 @@
   2. **协议传输标准规范**：直连 Vision 统一使用 `type=tcp` 与 `alpn=h2`，移除阻碍连接的 `tfo=1`；
   3. **路径尾斜杠与 Nginx 兜底**：所有 XHTTP 链接路径统一规范为带尾部斜杠 `/path/`，且 Nginx location 中必须配置 `rewrite ^${XHTTP_PATH}$ ${XHTTP_PATH}/ break;` 做严格容错兜底；
   4. **全端编译分发**：执行 `xh resub` 重新分发全量订阅并经真实握手测试。
+
+## 2026-11-06 节点在 v2rayN 与 Shadowrocket 客户端连通性修复
+- **TFO (TCP Fast Open) 破坏 iOS/移动端握手**：
+  在 `02-node.sh` 的 `SRPY`（Shadowrocket 专属订阅转换）中切勿向直连节点强插 `&tfo=1`。iOS 移动网络和国内多数家庭路由器会丢弃携带数据的 TCP SYN 包，导致握手直接挂死超时。
+- **XTLS Vision 的 ALPN 规范**：
+  Reality Vision 链接不应硬编码 `alpn=h2`。官方规范是由客户端 uTLS 模拟指纹（Chrome / Safari）自行协商真实 ALPN (`h2, http/1.1`)。强制写死 `alpn=h2` 会导致 ALPN 协商错乱或被防火墙指纹识别。
+- **废弃字段 allowInsecure 彻底剔除**：
+  Xray 26.10+ 内核已完全删除 `allowInsecure`。链接中携带该参数会导致现代客户端解析报致命异常，必须全部清理。
+- **订阅重写顺序陷阱**：
+  在 `PYRESUB` 循环中，若要在重定向 CDN 地址时调用 `urlunparse(p)`，必须置于字符串参数替换（如 `re.sub` 清除 `tfo`、`insecure`、添加斜杠）之前执行，否则 `urlunparse` 会使用旧的 `p.query` 覆盖所有后续清理结果。
+- **开启可靠 CDN 兜底节点**：
+  在任何情况下均应启用 `FEATURE_CDN_H2=true`，生成走 Cloudflare 443 的 TCP 节点，作为直连 IP 遭遇干扰或 UDP 被封禁时的全天候网络生命线。
