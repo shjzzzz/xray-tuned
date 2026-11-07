@@ -83,3 +83,12 @@
   在 `PYRESUB` 循环中，若要在重定向 CDN 地址时调用 `urlunparse(p)`，必须置于字符串参数替换（如 `re.sub` 清除 `tfo`、`insecure`、添加斜杠）之前执行，否则 `urlunparse` 会使用旧的 `p.query` 覆盖所有后续清理结果。
 - **开启可靠 CDN 兜底节点**：
   在任何情况下均应启用 `FEATURE_CDN_H2=true`，生成走 Cloudflare 443 的 TCP 节点，作为直连 IP 遭遇干扰或 UDP 被封禁时的全天候网络生命线。
+
+## 10. 跨境网络 PMTU 黑洞与流媒体 Bufferbloat 综合治理 (2026-11-07)
+- **现象与瓶颈**：
+  1. 跨境高延迟链路（如中美 140~180ms RTT）下，若中间设备对 ICMP Type 3 Code 4（Fragmentation Needed）静默丢弃，遇非对称 MTU（PPPoE 1492 / 移动 4G 1420）易发生 PMTU 黑洞死锁，导致 TLS 证书握手与大包静默超时；
+  2. 套接字未发送缓冲区 `tcp_notsent_lowat` 过大（512KB）会导致 BBR 调步发送队列积压，在 YouTube 4K/8K 等流媒体高突发下载时造成显著 Bufferbloat 与往返抖动，拖慢首屏与暂停恢复。
+- **治理与防范规则**：
+  1. **PLPMTUD 主动探测**：全量开启 `net.ipv4.tcp_mtu_probing = 1`（RFC 4821），遇到黑洞连续重传时内核主动向下试探 MSS，防止大包死锁；
+  2. **发送缓冲收敛**：`tcp_notsent_lowat` 收敛至 **128KB (131072)**，既满足千兆 BDP 管道吞吐，又杜绝发送端缓冲膨胀，平滑流媒体 Pacing；
+  3. **客户端 QUIC 策略**：跨境 UDP 443 易受运营商 QoS 丢包影响，客户端路由规则中阻断国外 UDP 443 强制回退 HTTP/2 over Vision TCP，吃满内核 splice 零拷贝硬件加速。
