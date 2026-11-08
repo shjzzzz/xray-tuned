@@ -92,3 +92,8 @@
   1. **PLPMTUD 主动探测**：全量开启 `net.ipv4.tcp_mtu_probing = 1`（RFC 4821），遇到黑洞连续重传时内核主动向下试探 MSS，防止大包死锁；
   2. **发送缓冲收敛**：`tcp_notsent_lowat` 收敛至 **128KB (131072)**，既满足千兆 BDP 管道吞吐，又杜绝发送端缓冲膨胀，平滑流媒体 Pacing；
   3. **客户端 QUIC 策略**：跨境 UDP 443 易受运营商 QoS 丢包影响，客户端路由规则中阻断国外 UDP 443 强制回退 HTTP/2 over Vision TCP，吃满内核 splice 零拷贝硬件加速。
+
+## 2026-11-08 sing-box(sbbox)节点并入 Mihomo 订阅
+- Mihomo 没有 Naive 出站,sbbox 的 naive 节点无法进入 Mihomo 订阅;hy2 / anytls / tuic 可以。
+- 合并只作用于订阅目录里的 `mihomo-*.yaml` 副本(`mihomo_merge_sbbox`,`tools/merge_sbbox_mihomo.py`),源文件 `client-config-mihomo-*.yaml` 保持纯 Xray 节点,避免与其它重生成逻辑冲突;节点名加 `SB-` 前缀(sing-box 与 Xray 都有 `Hysteria2-TLS-BBR-Salamander`)。
+- 数据源是 `/root/sbbox/clmi.yaml`(可用 `SBBOX_CLMI` 覆盖);sbbox 改端口/密码后需再执行 `xh resub` 才会同步。

@@ -111,6 +111,21 @@ xray_tun_variants() {
 XTUNPY
 }
 
+# 把 sbbox（sing-box）的 hy2 / anytls / tuic 节点并入已发布的 Mihomo 订阅文件（节点名加 SB- 前缀）。
+# 只改订阅目录里的副本，不动 client-config-mihomo-*.yaml：源文件仍是纯 Xray 节点，其它重生成逻辑不受影响，
+# 每次 resub 都从干净源文件重新合并，天然幂等。未安装 sbbox 时直接跳过。
+# 用法：mihomo_merge_sbbox <订阅目录里的 yaml>...
+mihomo_merge_sbbox() {
+  local f
+  command -v python3 >/dev/null 2>&1 || return 0
+  for f in "$@"; do
+    [[ -f "$f" ]] || continue
+    python3 -I - "$f" "${SBBOX_CLMI:-/root/sbbox/clmi.yaml}" <<'SBMERGEPY' || warn "并入 sbbox 节点失败：$f（不影响 Xray 节点）"
+@@include tools/merge_sbbox_mihomo.py
+SBMERGEPY
+  done
+}
+
 # 按客户端平台生成 TUN 自适应的 Mihomo 完整分流配置（mihomo-full-<平台>.yaml）。
 # 基础文件的 tun 段 strict-route: false、stack: mixed；各平台只改确有区别的字段：
 #   windows：strict-route 开（防止 DNS 经物理网卡泄漏，Wintun 支持）
@@ -409,7 +424,8 @@ with open(fpath, 'w', encoding='utf-8') as f:
   base64 "${home}/client-config.txt" | tr -d '\n' > "${subdir}/v2rayn.txt"
   [[ -f "${home}/client-config-mihomo-full.yaml" ]]  && cp "${home}/client-config-mihomo-full.yaml"  "${subdir}/mihomo-full.yaml"
   [[ -f "${home}/client-config-mihomo-nodes.yaml" ]] && cp "${home}/client-config-mihomo-nodes.yaml" "${subdir}/mihomo-nodes.yaml"
-  mihomo_tun_variants "${home}/client-config-mihomo-full.yaml" "${subdir}"
+  mihomo_merge_sbbox "${subdir}/mihomo-full.yaml" "${subdir}/mihomo-nodes.yaml"
+  mihomo_tun_variants "${subdir}/mihomo-full.yaml" "${subdir}"
 
   xray_tun_variants "${home}/client-config.txt" "${subdir}"
 
