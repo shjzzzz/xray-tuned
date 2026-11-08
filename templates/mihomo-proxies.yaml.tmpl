@@ -21,7 +21,7 @@ proxies:
     encryption: none${MIHOMO_ECH_PROXY_BLOCK}
     xhttp-opts:
       host: ${CDN_DOMAIN}
-      path: ${XHTTP_PATH}
+      path: ${XHTTP_PATH_SLASH}
       mode: auto${MIHOMO_XPADDING_XHTTP_BLOCK}${MIHOMO_SC_MIN_POSTS_BLOCK}
       reuse-settings:
         max-concurrency: "16-32"
@@ -39,7 +39,6 @@ proxies:
     udp: true
     flow: ${VISION_FLOW}
     tls: true
-    tfo: true
     packet-encoding: xudp
     network: tcp
     alpn:
@@ -74,7 +73,7 @@ proxies:
     encryption: none${MIHOMO_ECH_PROXY_BLOCK}
     xhttp-opts:
       host: ${CDN_DOMAIN}
-      path: ${XHTTP_PATH}
+      path: ${XHTTP_PATH_SLASH}
       mode: auto${MIHOMO_XPADDING_XHTTP_BLOCK}${MIHOMO_SC_MIN_POSTS_BLOCK}
       reuse-settings:
         max-concurrency: "16-32"
@@ -104,7 +103,7 @@ proxies:
     encryption: none${MIHOMO_ECH_PROXY_BLOCK}
     xhttp-opts:
       host: ${CDN_DOMAIN}
-      path: ${XHTTP_PATH}
+      path: ${XHTTP_PATH_SLASH}
       mode: auto${MIHOMO_XPADDING_XHTTP_BLOCK}${MIHOMO_SC_MIN_POSTS_BLOCK}
       reuse-settings:
         max-concurrency: "16-32"
@@ -131,7 +130,7 @@ proxies:
     client-fingerprint: chrome
     encryption: none
     xhttp-opts:
-      path: ${XHTTP_PATH}
+      path: ${XHTTP_PATH_SLASH}
       mode: stream-up${MIHOMO_XPADDING_XHTTP_BLOCK}${MIHOMO_SC_MIN_POSTS_BLOCK}
       reuse-settings:
         max-concurrency: "16-32"
@@ -154,7 +153,6 @@ proxies:
     udp: true
     flow: ""
     tls: true
-    tfo: true
     network: xhttp
     alpn:
       - h2
@@ -162,7 +160,7 @@ proxies:
     client-fingerprint: chrome
     encryption: none
     xhttp-opts:
-      path: ${XHTTP_PATH}
+      path: ${XHTTP_PATH_SLASH}
       mode: stream-up${MIHOMO_XPADDING_XHTTP_BLOCK}${MIHOMO_SC_MIN_POSTS_BLOCK}
       reuse-settings:
         max-concurrency: "16-32"
@@ -212,7 +210,6 @@ proxies:
     flow: xtls-rprx-vision
     encryption: "none"
     packet-encoding: xudp
-    tfo: true
     network: tcp
     alpn:
       - h2
@@ -233,7 +230,6 @@ proxies:
     udp: true
     flow: ""
     tls: true
-    tfo: true
     packet-encoding: xudp
     encryption: none
     network: xhttp
@@ -246,13 +242,13 @@ proxies:
       short-id: ${SHORT_ID}
       support-x25519mlkem768: true
     xhttp-opts:
-      path: ${XHTTP_PATH}
+      path: ${XHTTP_PATH_SLASH}
       mode: stream-up${MIHOMO_XPADDING_XHTTP_BLOCK}
       reuse-settings:
-        max-concurrency: "8-16"
-        c-max-reuse-times: "16-32"
-        h-max-request-times: "100-200"
-        h-max-reusable-secs: "300-600"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
+        max-concurrency: "16-32"
+        c-max-reuse-times: "0"
+        h-max-request-times: "600-900"
+        h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
   #>>FEATURE_REALITY_XHTTP
 
   #<<FEATURE_UP_CDN_DOWN_MIHOMO
@@ -264,7 +260,6 @@ proxies:
     udp: true
     flow: ""
     tls: true
-    tfo: true
     packet-encoding: xudp
     encryption: none
     network: xhttp
@@ -277,13 +272,13 @@ proxies:
       short-id: ${SHORT_ID}
       support-x25519mlkem768: true
     xhttp-opts:
-      path: ${XHTTP_PATH}
+      path: ${XHTTP_PATH_SLASH}
       mode: stream-up${MIHOMO_XPADDING_XHTTP_BLOCK}
       reuse-settings:
-        max-concurrency: "8-16"
-        c-max-reuse-times: "16-32"
-        h-max-request-times: "100-200"
-        h-max-reusable-secs: "300-600"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
+        max-concurrency: "16-32"
+        c-max-reuse-times: "0"
+        h-max-request-times: "600-900"
+        h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
       # 下行腿（经 CDN）在 Mihomo 里没有独立的 mode 字段，随父级 stream-up；URI 版的下行腿是 auto。
       download-settings:
         server: ${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}
@@ -295,13 +290,13 @@ proxies:
         client-fingerprint: chrome${MIHOMO_ECH_DOWNLOAD_BLOCK}
         reality-opts:
           public-key: ""
-        path: ${XHTTP_PATH}
+        path: ${XHTTP_PATH_SLASH}
         host: ${CDN_DOMAIN}
         reuse-settings:
           max-concurrency: "16-32"
           c-max-reuse-times: "0"
-          h-max-request-times: "200-400"
-          h-max-reusable-secs: "600-1200"${MIHOMO_REUSE_KEEPALIVE_DOWNLOAD}
+          h-max-request-times: "600-900"
+          h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_DOWNLOAD}
   #>>FEATURE_UP_CDN_DOWN_MIHOMO
 
   #<<FEATURE_CDN_UP_REALITY_DOWN
@@ -326,13 +321,13 @@ proxies:
     client-fingerprint: chrome${MIHOMO_ECH_PROXY_BLOCK}
     xhttp-opts:
       host: ${CDN_DOMAIN}
-      path: ${XHTTP_PATH}
+      path: ${XHTTP_PATH_SLASH}
       mode: auto${MIHOMO_XPADDING_XHTTP_BLOCK}${MIHOMO_SC_MIN_POSTS_BLOCK}
       reuse-settings:
         max-concurrency: "16-32"
         c-max-reuse-times: "0"
-        h-max-request-times: "200-400"
-        h-max-reusable-secs: "600-1200"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
+        h-max-request-times: "600-900"
+        h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
       download-settings:
         server: ${VPS_IP}
         port: 443
@@ -347,12 +342,12 @@ proxies:
           public-key: ${PUBLIC_KEY}
           short-id: ${SHORT_ID}
           support-x25519mlkem768: true
-        path: ${XHTTP_PATH}
+        path: ${XHTTP_PATH_SLASH}
         host: ""
         reuse-settings:
-          max-concurrency: "8-16"
-          c-max-reuse-times: "16-32"
-          h-max-request-times: "100-200"
-          h-max-reusable-secs: "300-600"${MIHOMO_REUSE_KEEPALIVE_DOWNLOAD}
+          max-concurrency: "16-32"
+          c-max-reuse-times: "0"
+          h-max-request-times: "600-900"
+          h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_DOWNLOAD}
   #>>FEATURE_CDN_UP_REALITY_DOWN
 

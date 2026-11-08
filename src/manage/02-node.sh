@@ -227,7 +227,7 @@ for tpath in [txt_file, "/etc/xhttp-cdn/all/client-config.txt"]:
     for line in lines:
         p = urllib.parse.urlparse(line)
         tag = urllib.parse.unquote(p.fragment or "")
-        is_cdn_node = ("-CDN-" in tag or "PQ+XHTTP+CDN" in tag or "XHTTP-CDN" in tag) and "Reality-Up" not in tag
+        is_cdn_node = ("-CDN-" in tag or "PQ+XHTTP+CDN" in tag or "XHTTP-CDN" in tag) and "Reality-Up" not in tag and "CDN-Up" not in tag
         if is_cdn_node and cdn_addr:
             port_part = f":{p.port}" if p.port else ":443"
             new_netloc = f"{p.username}@{cdn_addr}{port_part}" if p.username else f"{cdn_addr}{port_part}"
@@ -235,16 +235,22 @@ for tpath in [txt_file, "/etc/xhttp-cdn/all/client-config.txt"]:
             line = urllib.parse.urlunparse(p)
         line = line.replace(
             "%22maxConcurrency%22%3A%2232-64%22%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22",
-            "%22maxConcurrency%22%3A%228-16%22%2C%22cMaxReuseTimes%22%3A%2216-32%22%2C%22hMaxRequestTimes%22%3A%22100-200%22%2C%22hMaxReusableSecs%22%3A%22300-600%22"
+            "%22maxConcurrency%22%3A%2216-32%22%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22"
         )
         line = line.replace(
-            "%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22",
-            "%22hMaxRequestTimes%22%3A%22200-400%22%2C%22hMaxReusableSecs%22%3A%22600-1200%22"
+            "%22maxConcurrency%22%3A%228-16%22%2C%22cMaxReuseTimes%22%3A%2216-32%22%2C%22hMaxRequestTimes%22%3A%22100-200%22%2C%22hMaxReusableSecs%22%3A%22300-600%22",
+            "%22maxConcurrency%22%3A%2216-32%22%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22"
         )
+        line = line.replace(
+            "%22hMaxRequestTimes%22%3A%22200-400%22%2C%22hMaxReusableSecs%22%3A%22600-1200%22",
+            "%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22"
+        )
+        line = line.replace("%22tcpFastOpen%22%3Atrue%2C", "")
         # 规范化客户端链接：移除阻碍连接的 tfo、insecure/allowInsecure，规范化 XHTTP path 带有末尾斜杠
         line = re.sub(r'[&?]tfo=[0-9]+', '', line)
         line = re.sub(r'[&?](?:allowInsecure|insecure)=(?:0|false|1|true)', '', line)
         line = re.sub(r'(path=/[^&/]+)(?=[&#]|$)', r'\1/', line)
+        line = re.sub(r'(%22path%22%3A%22%2F[^%"]+?)(?=%22)', lambda m: m.group(1) if m.group(1).endswith('%2F') else m.group(1) + '%2F', line)
         if "REALITY" in tag or "Reality" in tag:
             line = line.replace("type=raw", "type=tcp")
             line = line.replace("alpn=h2,http/1.1", "alpn=h2")
@@ -300,15 +306,23 @@ if yaml:
                             "path": path_val,
                             "mode": "stream-up",
                             "reuse-settings": {
-                                "max-concurrency": "8-16",
-                                "c-max-reuse-times": "16-32",
-                                "h-max-request-times": "100-200",
-                                "h-max-reusable-secs": "300-600",
+                                "max-concurrency": "16-32",
+                                "c-max-reuse-times": "0",
+                                "h-max-request-times": "600-900",
+                                "h-max-reusable-secs": "1800-3000",
                                 "h-keep-alive-period": 15
                             }
                         }
                     }
                     break
+
+    unified_reuse = {
+        "max-concurrency": "16-32",
+        "c-max-reuse-times": "0",
+        "h-max-request-times": "600-900",
+        "h-max-reusable-secs": "1800-3000",
+        "h-keep-alive-period": 15
+    }
 
     for yfile in [nodes_file, full_file, "/etc/xhttp-cdn/all/client-config-mihomo-nodes.yaml", "/etc/xhttp-cdn/all/client-config-mihomo-full.yaml"]:
         if not os.path.isfile(yfile):
@@ -323,64 +337,41 @@ if yaml:
             new_proxies = []
             for p in proxies:
                 pname = p.get("name", "")
+                p.pop("tfo", None)
                 if "REALITY+PQ+Vision" in pname or "Reality-Vision-Direct" in pname:
-                    p.pop("tfo", None)
                     p["packet-encoding"] = "xudp"
                     p["alpn"] = ["h2"]
-                is_cdn = ("-CDN-" in pname or "XHTTP-CDN" in pname or "PQ+XHTTP+CDN" in pname) and "Reality-Up" not in pname
+                is_cdn = ("-CDN-" in pname or "XHTTP-CDN" in pname or "PQ+XHTTP+CDN" in pname) and "Reality-Up" not in pname and "CDN-Up" not in pname
                 if is_cdn:
                     if cdn_addr:
                         p["server"] = cdn_addr
                     if "xhttp-opts" in p:
                         p["xhttp-opts"]["mode"] = "auto"
-                    p.pop("tfo", None)
-                elif "Reality-XHTTP-Direct" in pname:
-                    p.pop("tfo", None)
+                        p["xhttp-opts"]["reuse-settings"] = dict(unified_reuse)
+                elif "Reality-XHTTP-Direct" in pname or "Direct-H2" in pname or "Direct-H3" in pname:
                     if "xhttp-opts" in p:
-                        p["xhttp-opts"]["reuse-settings"] = {
-                            "max-concurrency": "8-16",
-                            "c-max-reuse-times": "16-32",
-                            "h-max-request-times": "100-200",
-                            "h-max-reusable-secs": "300-600",
-                            "h-keep-alive-period": 15
-                        }
+                        p["xhttp-opts"]["reuse-settings"] = dict(unified_reuse)
                 elif "Reality-Up-CDN-Down" in pname:
-                    p.pop("tfo", None)
                     if "xhttp-opts" in p:
-                        p["xhttp-opts"]["reuse-settings"] = {
-                            "max-concurrency": "8-16",
-                            "c-max-reuse-times": "16-32",
-                            "h-max-request-times": "100-200",
-                            "h-max-reusable-secs": "300-600",
-                            "h-keep-alive-period": 15
-                        }
+                        p["xhttp-opts"]["reuse-settings"] = dict(unified_reuse)
                         if "download-settings" in p["xhttp-opts"]:
                             if cdn_addr:
                                 p["xhttp-opts"]["download-settings"]["server"] = cdn_addr
-                            p["xhttp-opts"]["download-settings"]["reuse-settings"] = {
-                                "max-concurrency": "16-32",
-                                "c-max-reuse-times": "0",
-                                "h-max-request-times": "200-400",
-                                "h-max-reusable-secs": "600-1200",
-                                "h-keep-alive-period": 15
-                            }
+                            if "path" in p["xhttp-opts"]["download-settings"] and not p["xhttp-opts"]["download-settings"]["path"].endswith("/"):
+                                p["xhttp-opts"]["download-settings"]["path"] += "/"
+                            p["xhttp-opts"]["download-settings"]["reuse-settings"] = dict(unified_reuse)
                 elif "CDN-Up-Reality-Down" in pname:
                     if cdn_addr:
                         p["server"] = cdn_addr
-                    p.pop("tfo", None)
-                    if "xhttp-opts" in p and "download-settings" in p["xhttp-opts"]:
-                        p["xhttp-opts"]["download-settings"]["reuse-settings"] = {
-                            "max-concurrency": "8-16",
-                            "c-max-reuse-times": "16-32",
-                            "h-max-request-times": "100-200",
-                            "h-max-reusable-secs": "300-600",
-                            "h-keep-alive-period": 15
-                        }
+                    if "xhttp-opts" in p:
+                        p["xhttp-opts"]["reuse-settings"] = dict(unified_reuse)
+                        if "download-settings" in p["xhttp-opts"]:
+                            if "path" in p["xhttp-opts"]["download-settings"] and not p["xhttp-opts"]["download-settings"]["path"].endswith("/"):
+                                p["xhttp-opts"]["download-settings"]["path"] += "/"
+                            p["xhttp-opts"]["download-settings"]["reuse-settings"] = dict(unified_reuse)
                 if "xhttp-opts" in p and isinstance(p["xhttp-opts"], dict) and "path" in p["xhttp-opts"]:
                     if not p["xhttp-opts"]["path"].endswith("/"):
                         p["xhttp-opts"]["path"] += "/"
-                if "alpn" in p and "h3" in p["alpn"]:
-                    p.pop("tfo", None)
                 new_proxies.append(p)
             if not has_direct_xhttp and reality_xhttp_proxy:
                 new_proxies.append(reality_xhttp_proxy)
@@ -2144,10 +2135,6 @@ render_hy2_obfs_inbound() {
                         "insecure": true
                     }
                 },
-                "sockopt": {
-                    "tcpFastOpen": true,
-                    "tcpcongestion": "bbr"
-                },
                 "finalmask": {
                     "quicParams": {
                         "congestion": "bbr",
@@ -2234,10 +2221,6 @@ render_hy2_h3_inbound() {
                         "rewriteHost": false,
                         "insecure": true
                     }
-                },
-                "sockopt": {
-                    "tcpFastOpen": true,
-                    "tcpcongestion": "bbr"
                 },
                 "finalmask": {
                     "quicParams": {

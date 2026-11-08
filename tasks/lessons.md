@@ -97,3 +97,17 @@
 - Mihomo 没有 Naive 出站,sbbox 的 naive 节点无法进入 Mihomo 订阅;hy2 / anytls / tuic 可以。
 - 合并只作用于订阅目录里的 `mihomo-*.yaml` 副本(`mihomo_merge_sbbox`,`tools/merge_sbbox_mihomo.py`),源文件 `client-config-mihomo-*.yaml` 保持纯 Xray 节点,避免与其它重生成逻辑冲突;节点名加 `SB-` 前缀(sing-box 与 Xray 都有 `Hysteria2-TLS-BBR-Salamander`)。
 - 数据源是 `/root/sbbox/clmi.yaml`(可用 `SBBOX_CLMI` 覆盖);sbbox 改端口/密码后需再执行 `xh resub` 才会同步。
+
+## 11. Xray XHTTP 长连接周期性卡顿断流与 Nginx/客户端全链路参数协调性治理 (2026-11-08)
+- **错误现象**：Xray 内核节点在连接运行一段时间后，突然出现卡顿、新建网页连接挂死或断流，且 `ss -tinp` 观测到同一客户端并存多条半闲置连接与回环 `127.0.0.1:8001` 虚假重传（`dsack_dups: 38`）。
+- **根本原因（基于 `/usr/local/bin/xray` 26.10.31 机器码反汇编与 `ss -tinp` 实证）**：
+  1. **`scStreamUpServerSecs: "300-600"` 语义误解导致服务端保活饥饿**：反汇编 `splithttp.(*requestHandler).ServeHTTP.func1` (`0xb5b880`) 证实，该参数并非断流超时，而是服务端在 `stream-up` POST 响应流上定时写入随机长度 `'X'` (`0x58`) 保活填充块（heartbeat padding）的 `time.Sleep` 间隔（官方默认 `"20-80"` 秒，`GetNormalizedScStreamUpServerSecs` @ `0xb4b980`）。误设为 `"300-600"` 导致 5~10 分钟无保活包，被 Cloudflare CDN（100s）、Nginx（`send_timeout 300s`）及运营商 NAT 静默掐断。
+  2. **客户端 `xmux` 过度限制（`cMaxReuseTimes: "16-32"`, `hMaxRequestTimes: "100-200"`, `hMaxReusableSecs: "300-600"`）**：反汇编 `newXmuxClient` (`0xb56120`) 与 `getXmuxClient` (`0xb564a0`) 证实，`stream-up` 模式下每条代理流消耗 2 次 HTTP 请求（1 GET + 1 POST），导致单条 H2 连接仅承载 16~32 条流（约 1~3 分钟网页浏览）即耗尽配额，迫使客户端在高丢包跨境链路（实测移动 7.9% 重传率）上频繁重做 TCP+REALITY 握手，一旦新握手丢包即触发全连接卡死；且 Mihomo 模板内 Direct-H2/H3 (`16-32 / 0 / 600-900 / 1800-3000`) 与 Reality-XHTTP (`8-16 / 16-32 / 100-200 / 300-600`) 严重分裂。
+  3. **回环入站 `127.0.0.1:8001/8002` 未显式指定拥塞控制**：省略 `tcpcongestion` 导致回环套接字继承系统全局 `bbr`，当公网 443 腿因客户端接收窗口打满（`rwnd_limited: 83.6%`）产生背压时，回环 RTT 从 `0.007ms` 飙升至 `14.6ms`，触发 BBR 虚假重传（`dsack_dups: 38`）并将 `cwnd` 压垮至 9。
+  4. **Nginx 与 Xray 超时倒挂及配置失步**：Nginx `upstream xray_xhttp` 的 `keepalive_timeout 3600s` 大于 Xray `connIdle: 1800s`，存在复用已关闭连接触发 502 RST 的竞态；`location /cc3939d7` 的 `client_body_timeout 300s` 与 `grpc_read_timeout 1h` 冲突，5 分钟无上行数据即掐断 `stream-up` POST 请求体；`reality.cch.us.kg` 伪装站错误广播 `Alt-Svc: h3=":443"`。
+  5. **`tcpUserTimeout: 60000` (60s) 过短与 `freedom` 出站 `tcpFastOpen: true`**：60s 传输出局超时在跨境高抖动下易误杀整条多路复用连接；出站开启 TFO 易被目标网站防火墙丢弃 SYN。
+- **治理与防范规则**：
+  1. **服务端保活恢复**：所有 XHTTP 入站统一设置 `"scStreamUpServerSecs": "20-80"`，移除冗余 `"extra"` 嵌套块；
+  2. **客户端 `xmux` 全节点统一**：直连与上下行分离节点统一为 `maxConcurrency: "16-32"`（CDN URI 节点用 `maxConnections: 16`）、`cMaxReuseTimes: 0`、`hMaxRequestTimes: "600-900"`、`hMaxReusableSecs: "1800-3000"`、`hKeepAlivePeriod: 15`，彻底清除残留 `tfo: true`；
+  3. **回环与公网 `sockopt` 隔离**：回环 `8001/8002` 显式声明 `"tcpcongestion": "cubic"`；公网入站 `443/8445` 与 `freedom` 出站统一设置 `tcpKeepAliveIdle: 60, tcpKeepAliveInterval: 15, tcpUserTimeout: 300000`，出站移除 `tcpFastOpen`；
+  4. **Nginx 超时严格对齐**：`upstream` `keepalive_timeout 900s`（严格小于 Xray `connIdle 1800s`），XHTTP location 的 `client_body_timeout / send_timeout / grpc_read_timeout / grpc_send_timeout` 全部对齐为 `1h`，移除 `reality.cch.us.kg` 的 `Alt-Svc: h3=":443"`。

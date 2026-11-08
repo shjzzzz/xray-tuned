@@ -326,18 +326,16 @@ check_udp_port_conflict
 ensure_firewall_ports
 
 if [[ "$XRAY_DEFAULTS" == true ]]; then
-  # 即使在默认模式下，也必须显式声明 scStreamUpServerSecs=300-600 与缓冲上限，
-  # 否则 Xray 内核默认 20-80 秒强制切断 stream-up 上行流，导致 Reality-XHTTP 周期性断流卡顿。
+  # 逆向验证（splithttp.(*requestHandler).ServeHTTP.func1 @ 0xb5b880）：
+  # scStreamUpServerSecs 并非断流超时，而是服务端在 stream-up POST 响应流上定时发送随机长度 'X' (0x58)
+  # 保活填充块（heartbeat padding）的休眠间隔（time.Sleep）！
+  # 设为 20-80 秒（Xray 官方默认值）可持续刷新 Cloudflare CDN (100s)、Nginx 与运营商 NAT 状态表；
+  # 若误设为 300-600 秒，长连接空闲期间 5~10 分钟无保活包，必然被中间路由/NAT/CDN 静默掐断。
   XRAY_XHTTP_PADDING_JSON=$(cat <<EOF
 ,
-                    "scStreamUpServerSecs": "300-600",
+                    "scStreamUpServerSecs": "20-80",
                     "scMaxEachPostBytes": 100000000,
-                    "scMaxBufferedPosts": 100,
-                    "extra": {
-                        "scMaxBufferedPosts": 100,
-                        "scMaxEachPostBytes": 100000000,
-                        "scStreamUpServerSecs": "300-600"
-                    }
+                    "scMaxBufferedPosts": 100
 EOF
 )
 elif [[ "$FEATURE_XPADDING" == true ]]; then
@@ -349,7 +347,7 @@ elif [[ "$FEATURE_XPADDING" == true ]]; then
                     "xPaddingHeader": "${XHTTP_PADDING_HEADER}",
                     "xPaddingPlacement": "${XHTTP_PADDING_PLACEMENT}",
                     "xPaddingMethod": "${XHTTP_PADDING_METHOD}",
-                    "scStreamUpServerSecs": "300-600",
+                    "scStreamUpServerSecs": "20-80",
                     "scMaxEachPostBytes": 100000000,
                     "scMaxBufferedPosts": 100
 EOF
@@ -358,7 +356,7 @@ else
   XRAY_XHTTP_PADDING_JSON=$(cat <<EOF
 ,
                     "xPaddingBytes": "100-1000",
-                    "scStreamUpServerSecs": "300-600",
+                    "scStreamUpServerSecs": "20-80",
                     "scMaxEachPostBytes": 100000000,
                     "scMaxBufferedPosts": 100
 EOF

@@ -856,7 +856,7 @@ for idx, (name, raw_line, parsed) in enumerate(nodes, 1):
                 except: pass
             ob["streamSettings"]["xhttpSettings"] = xh
 
-        ob["streamSettings"]["sockopt"] = {"tcpFastOpen": True, "tcpNoDelay": True}
+        ob["streamSettings"]["sockopt"] = {"tcpNoDelay": True}
         cfg = {
             "log": {"loglevel": "error"},
             "policy": {"levels": {"0": {"bufferSize": 4096, "handshake": 10, "connIdle": 1800}}},

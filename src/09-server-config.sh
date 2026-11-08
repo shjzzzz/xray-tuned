@@ -110,17 +110,18 @@ if [[ -n "$XRAY_TCP_CC" ]]; then
   # Reality 443 与 TCP 直连入站默认用自适应的 BBR，不用固定速率发包的 Brutal
   REALITY_CC="${REALITY_TCP_CC:-bbr}"
   [[ "$AVAIL" == *"$REALITY_CC"* ]] || REALITY_CC="$XRAY_TCP_CC"
-  XRAY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpcongestion":"'"${XRAY_TCP_CC}"'","tcpKeepAliveIdle":30,"tcpKeepAliveInterval":10,"tcpUserTimeout":60000}'
-  REALITY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpcongestion":"'"${REALITY_CC}"'","tcpKeepAliveIdle":30,"tcpKeepAliveInterval":10,"tcpUserTimeout":60000}'
+  XRAY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpcongestion":"'"${XRAY_TCP_CC}"'","tcpKeepAliveIdle":60,"tcpKeepAliveInterval":15,"tcpUserTimeout":300000}'
+  REALITY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpcongestion":"'"${REALITY_CC}"'","tcpKeepAliveIdle":60,"tcpKeepAliveInterval":15,"tcpUserTimeout":300000}'
 else
   warn "BBR / Brutal 均不可用，Xray Reality 入站不写 tcpcongestion（TFO / keepalive 照常写入）"
-  XRAY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpKeepAliveIdle":30,"tcpKeepAliveInterval":10,"tcpUserTimeout":60000}'
-  REALITY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpKeepAliveIdle":30,"tcpKeepAliveInterval":10,"tcpUserTimeout":60000}'
+  XRAY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpKeepAliveIdle":60,"tcpKeepAliveInterval":15,"tcpUserTimeout":300000}'
+  REALITY_SOCKOPT_JSON=',"sockopt":{"tcpFastOpen":true,"tcpNoDelay":true,"tcpKeepAliveIdle":60,"tcpKeepAliveInterval":15,"tcpUserTimeout":300000}'
 fi
 
 # 模板里内联的 sockopt 调优字段（trustedXForwardedFor 是功能项，始终保留）。
-# 注意：8001/8002 仅监听 127.0.0.1 回环（RTT 0.007ms），回环上启用 BBR + MPTCP 会在公网背压时触发
-# 虚假重传（ss -tinp 实测 dsack_dups: 32），故回环入站只开 tcpNoDelay，不挂 BBR/MPTCP。
+# 注意：8001/8002 仅监听 127.0.0.1 回环（RTT 0.007ms），若不显式指定 tcpcongestion，将继承系统默认 bbr，
+# 在公网接收窗口背压（rwnd_limited）时触发虚假重传与 cwnd 坍缩（ss -tinp 实测 dsack_dups: 38, cwnd: 9），
+# 故回环入站必须显式指定 "tcpcongestion": "cubic"。
 # XHTTP 服务端入站 mode 统一用 auto（同时兼容 stream-up / auto / packet-up 客户端）。
 XRAY_SERVER_MODE=auto
 if [[ "${XRAY_NO_TUNE:-false}" == true ]]; then
@@ -133,8 +134,8 @@ if [[ "${XRAY_NO_TUNE:-false}" == true ]]; then
   HY2_SOCKOPT_JSON=""
   H3_SOCKOPT_JSON=""
 else
-  XRAY_SOCKOPT_TUNE=$',\n                    "tcpNoDelay": true'
-  XRAY_FREEDOM_SOCKOPT_TUNE=$',\n                    "tcpFastOpen": true,\n                    "tcpNoDelay": true,\n                    "tcpMptcp": false,\n                    "tcpcongestion": "bbr",\n                    "tcpKeepAliveIdle": 30,\n                    "tcpKeepAliveInterval": 10,\n                    "tcpUserTimeout": 60000'
+  XRAY_SOCKOPT_TUNE=$',\n                    "tcpNoDelay": true,\n                    "tcpcongestion": "cubic"'
+  XRAY_FREEDOM_SOCKOPT_TUNE=$',\n                    "tcpNoDelay": true,\n                    "tcpMptcp": false,\n                    "tcpcongestion": "bbr",\n                    "tcpKeepAliveIdle": 60,\n                    "tcpKeepAliveInterval": 15,\n                    "tcpUserTimeout": 300000'
   HY2_SOCKOPT_BLOCK=""
   HY2_UDP_IDLE_JSON=$'                    "udpIdleTimeout": 60,\n'
   HY2_SOCKOPT_JSON=""
