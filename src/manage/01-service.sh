@@ -110,7 +110,7 @@ cmd_update() {
   local auto=0 target_ver=""
   for arg in "$@"; do
     case "$arg" in
-      --auto) auto=1 ;;
+      --auto|-y|--yes) auto=1 ;;
       *) [[ -z "$target_ver" ]] && target_ver="$arg" ;;
     esac
   done
@@ -178,11 +178,6 @@ cmd_update() {
       read -rp "确定仍要安装此测试版本吗? [y/N]: " force_reply
       [[ "${force_reply,,}" == "y" ]] || { info "已取消安装测试版本"; return 0; }
     fi
-  fi
-
-  if [[ $auto -eq 0 ]]; then
-    read -rp "确认安装/更新到 ${latest}? [y/N]: " reply
-    [[ "${reply,,}" == "y" ]] || { info "已取消"; return 0; }
   fi
 
   backup="${XRAY_BIN}.bak-${current:-old}"

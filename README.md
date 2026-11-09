@@ -2,11 +2,11 @@
 
 <p align="center">
   <strong>面向极速吞吐、超低握手与抗审查封锁设计的代理与 Linux 内核深度调优全栈套件</strong><br>
-  <sub>Powered by Xray-core v26.10.31 · 原生 BBRv3 · XHTTP · Reality · Hysteria2 · 上下行分离 · Cloudflare CDN</sub>
+  <sub>Powered by Xray-core v26.11.9 · 原生 BBRv3 · XHTTP · Reality · Hysteria2 · 上下行分离 · Cloudflare CDN</sub>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Xray--core-v26.10.31-blue?style=flat-square&logo=xray" alt="Xray-core">
+  <img src="https://img.shields.io/badge/Xray--core-v26.11.9-blue?style=flat-square&logo=xray" alt="Xray-core">
   <img src="https://img.shields.io/badge/Congestion-BBRv3-brightgreen?style=flat-square" alt="BBRv3">
   <img src="https://img.shields.io/badge/Latency-7.0ms%20(TFO)-orange?style=flat-square" alt="TFO Latency">
   <img src="https://img.shields.io/badge/Speed-1000%2B%20Mbps-success?style=flat-square" alt="Speed">

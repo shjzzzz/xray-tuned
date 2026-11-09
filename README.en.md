@@ -1,6 +1,6 @@
 # xray-tuned
 
-> High-performance proxy and kernel-tuning deployment suite powered by **Xray-core (v26.10.31 stable)**.
+> High-performance proxy and kernel-tuning deployment suite powered by **Xray-core (v26.11.9 stable)**.
 > Features **XHTTP + Cloudflare CDN + Reality + Hysteria2** with native BBRv3, TCP Fast Open, 64MB buffer safety, and automated multi-platform subscription distribution.
 
 **Languages:** [简体中文](./README.md) · **English** · [فارسی](./README.fa.md)

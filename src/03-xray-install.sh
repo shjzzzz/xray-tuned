@@ -186,27 +186,23 @@ install_xray() {
       warn "检测到已安装 Xray 二进制架构 ($cur_arch) 与系统 CPU ($sys_arch) 不匹配或已损坏，执行自动替换安装..."
       rm -f /usr/local/bin/xray
     else
-      info "Xray already installed: ${cur:-unknown} ($sys_arch)"
-
-      # 已装但版本低于两个 UDP 节点的下限时**自动升级**，而不是跳过后再把节点关掉。
-      # 用户重跑安装脚本的意图就是让新功能生效；停在旧版只会让他们拿到一份
-      # 静默缺少 Hysteria2/h3 的配置，还以为是自己配错了。
-      if [[ "${FEATURE_H3_DIRECT:-false}" == true || "${FEATURE_HY2:-false}" == true ]]; then
-        if [[ -n "$cur" ]] && ! ver_ge "$cur" "$XRAY_MIN_VER_UDP"; then
-          warn "当前 Xray ${cur} 低于直连 UDP 节点所需的 ${XRAY_MIN_VER_UDP}，正在自动升级..."
-          local target_ver="$(resolve_xray_target_ver)"
-          if [[ "$OS_ID" != "alpine" ]]; then
-            local install_flag=""
-            [[ -n "$target_ver" && "$target_ver" != "latest" ]] && install_flag="--version v${target_ver#v}"
-            run_xray_official_install $install_flag \
-              || warn "自动升级失败，将按现有版本继续（两个直连 UDP 节点会被关闭）"
+      local target_ver
+      target_ver="$(resolve_xray_target_ver)"
+      target_ver="${target_ver#v}"
+      if [[ -n "$target_ver" && "$target_ver" != "latest" ]] && { [[ -n "${XRAY_VERSION:-}" && "$cur" != "$target_ver" ]] || ! ver_ge "$cur" "$target_ver"; }; then
+        info "检测到已安装 Xray ${cur} ($sys_arch)，正在自动更新至最新版 v${target_ver}..."
+        if [[ "$OS_ID" != "alpine" ]]; then
+          if run_xray_official_install --version "v${target_ver}"; then
             info "升级后版本: $(/usr/local/bin/xray version 2>/dev/null | head -1 || echo unknown)"
           else
-            warn "Alpine 下不自动升级，请手动更新后重跑（${MANAGE_CMD} update）"
+            warn "自动升级至 v${target_ver} 失败，将按现有版本 ${cur} 继续"
           fi
+          return
         fi
+      else
+        info "Xray already installed (latest): ${cur:-unknown} ($sys_arch)"
+        return
       fi
-      return
     fi
   fi
 

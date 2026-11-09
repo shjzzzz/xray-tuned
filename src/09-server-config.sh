@@ -690,6 +690,12 @@ write_xray_config() {
 cat > /usr/local/etc/xray/config.json << XRAYEOF
 @@include templates/xray-config.json.tmpl
 XRAYEOF
+  if getent group xray >/dev/null 2>&1; then
+    chown root:xray /usr/local/etc/xray/config.json 2>/dev/null || true
+    chmod 640 /usr/local/etc/xray/config.json 2>/dev/null || true
+  else
+    chmod 644 /usr/local/etc/xray/config.json 2>/dev/null || true
+  fi
 }
 write_xray_config
 

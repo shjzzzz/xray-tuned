@@ -99,6 +99,14 @@ fi
 
 svc() {
   local action="$1" name="$2"
+  if [[ "$name" == "xray" && ( "$action" == "start" || "$action" == "restart" ) && -f "$XRAY_CONF" ]]; then
+    if getent group xray >/dev/null 2>&1; then
+      chown root:xray "$XRAY_CONF" /etc/ssl/private/private.key 2>/dev/null || true
+      chmod 640 "$XRAY_CONF" /etc/ssl/private/private.key 2>/dev/null || true
+    else
+      chmod 644 "$XRAY_CONF" 2>/dev/null || true
+    fi
+  fi
   if [[ "$SERVICE_TYPE" == "openrc" ]]; then
     rc-service "$name" "$action"
   else
