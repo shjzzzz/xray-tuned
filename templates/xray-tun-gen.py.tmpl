@@ -125,7 +125,7 @@ TUN = {
 
 for osname, tun in TUN.items():
     cfg = {
-        "log": {"loglevel": "warning"},
+        "log": {"logLevel": "warning"},
         "dns": {
             "servers": [
                 {"address": "https://223.5.5.5/dns-query", "domains": ["geosite:cn"], "skipFallback": True},

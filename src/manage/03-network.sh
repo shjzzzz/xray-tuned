@@ -858,7 +858,7 @@ for idx, (name, raw_line, parsed) in enumerate(nodes, 1):
 
         ob["streamSettings"]["sockopt"] = {"tcpNoDelay": True}
         cfg = {
-            "log": {"loglevel": "error"},
+            "log": {"logLevel": "error"},
             "policy": {"levels": {"0": {"bufferSize": 4096, "handshake": 10, "connIdle": 1800}}},
             "inbounds": [{"tag": "socks-in", "listen": "127.0.0.1", "port": port, "protocol": "socks", "settings": {"udp": True}}],
             "outbounds": [ob],
@@ -1307,7 +1307,7 @@ if [[ -f "$XC" ]]; then
     python3 -c '
 import json,sys
 c=json.load(open("/usr/local/etc/xray/config.json"))
-print("  log.loglevel:", c.get("log",{}).get("loglevel"))
+print("  log.logLevel:", c.get("log",{}).get("logLevel") or c.get("log",{}).get("loglevel"))
 print("  policy:", json.dumps(c.get("policy",{}),ensure_ascii=False))
 for i,ib in enumerate(c.get("inbounds",[])):
     ss=ib.get("streamSettings",{})

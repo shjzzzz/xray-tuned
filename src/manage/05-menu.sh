@@ -210,7 +210,7 @@ _menu_define() {
   MENU_UPDATE=("更新 Xray-core"
     "最新正式版::cmd_update"
     "预览版 (pre)::cmd_update pre"
-    "指定版本号…::menu_ask 版本号(如26.10.29) cmd_update")
+    "指定版本号…::menu_ask 版本号(如26.11.9) cmd_update")
 
   MENU_NGINX=("Nginx 版本管理"
     "查看状态::cmd_nginx show"

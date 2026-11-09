@@ -549,8 +549,8 @@ if act == 'on':
         pat = re.compile(r'("geosite:category-pt"\s*\]\s*,\s*"outboundTag"\s*:\s*"block"\s*\})')
         new = '\n            , { "type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block" } // xh-block-ads'
     else:
-        pat = re.compile(r'(\{ "action": "block", "ip": \["geoip:private"\] \})')
-        new = '\n                    , { "action": "block", "ip": ["geoip:cn"] } // xh-block-cn'
+        pat = re.compile(r'(\{\s*"action"\s*:\s*"block"\s*,\s*"ip"\s*:\s*\["geoip:private"\][^}]*\})')
+        new = '\n                    , { "action": "block", "ip": ["geoip:cn"], "delay": "30-90", "logLevel": "warning" } // xh-block-cn'
     s, n = pat.subn(lambda m: m.group(1) + new, s, count=1)
     if n != 1:
         sys.stderr.write('没找到插入锚点（配置不是由本脚本生成？）\n'); sys.exit(1)

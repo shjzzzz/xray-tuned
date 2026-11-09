@@ -1,7 +1,7 @@
 {
     "log": {
         "access": "none",
-        "loglevel": "error"
+        "logLevel": "error"
     },
     "dns": {
         // 服务器顺序即优先级。freedom 出站的 sockopt.domainStrategy=UseIPv4 会让每个
@@ -192,9 +192,8 @@ ${XRAY_XDRIVE_INBOUND}
                 // 内网/云元数据地址的域名。routing 里的 ip 规则在
                 // domainStrategy=AsIs 时拿不到解析结果，两者互补，缺一不可。
                 "finalRules": [
-                    { "action": "block", "ip": ["geoip:private"] }${XRAY_BLOCK_CN_RULE}
-                ],
-                "blockDelay": "30-90"
+                    { "action": "block", "ip": ["geoip:private"], "delay": "30-90", "logLevel": "warning" }${XRAY_BLOCK_CN_RULE}
+                ]
             },
             "streamSettings": {
                 "sockopt": {

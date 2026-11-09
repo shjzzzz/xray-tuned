@@ -681,7 +681,7 @@ if [[ "${FEATURE_BLOCK_ADS:-false}" == true ]]; then
   XRAY_BLOCK_ADS_RULE=$'\n            , { "type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block" } // xh-block-ads'
 fi
 if [[ "${FEATURE_BLOCK_CN:-false}" == true ]]; then
-  XRAY_BLOCK_CN_RULE=$'\n                    , { "action": "block", "ip": ["geoip:cn"] } // xh-block-cn'
+  XRAY_BLOCK_CN_RULE=$'\n                    , { "action": "block", "ip": ["geoip:cn"], "delay": "30-90", "logLevel": "warning" } // xh-block-cn'
 fi
 
 info "写入 /usr/local/etc/xray/config.json ..."

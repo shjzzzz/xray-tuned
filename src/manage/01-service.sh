@@ -121,7 +121,8 @@ cmd_update() {
   current="${current#v}"
 
   case "$current" in
-    26.10.10|26.10.17) warn "当前 Xray ${current} 内置了已被攻破的根证书，官方已撤版，请尽快升级到 26.10.21 或更新版本" ;;
+    26.10.10|26.10.17) warn "当前 Xray ${current} 内置了已被攻破的根证书，官方已撤版，请尽快升级到 26.11.9 或更新版本" ;;
+    26.10.29) warn "当前 Xray ${current} 默认开启了 MPTCP，官方已撤版，请尽快升级到 26.11.9 或更新版本" ;;
   esac
 
   local force_channel=""
@@ -147,7 +148,7 @@ cmd_update() {
         | grep -m1 '"tag_name"' | cut -d'"' -f4)
     fi
     latest="${latest#v}"
-    [[ -z "$latest" ]] && latest="${XRAY_DEFAULT_VERSION:-26.10.31}"
+    [[ -z "$latest" ]] && latest="${XRAY_DEFAULT_VERSION:-26.11.9}"
   fi
 
   if [[ -z "$latest" ]]; then

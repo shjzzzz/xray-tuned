@@ -28,7 +28,7 @@ resolve_xray_target_ver() {
   local url="https://api.github.com/repos/XTLS/Xray-core/releases" tag
   [[ "${XRAY_CHANNEL:-stable}" != "prerelease" ]] && url="${url}/latest"
   tag=$(curl -fsSL --max-time 15 "$url" 2>/dev/null | grep -m1 '"tag_name"' | cut -d'"' -f4)
-  printf '%s' "${tag#v}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' && printf '%s' "${tag#v}" || printf '%s' "${XRAY_DEFAULT_VERSION:-26.10.21}"
+  printf '%s' "${tag#v}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' && printf '%s' "${tag#v}" || printf '%s' "${XRAY_DEFAULT_VERSION:-26.11.9}"
 }
 
 ver_ge() {
