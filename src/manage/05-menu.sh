@@ -97,14 +97,18 @@ _menu_define() {
     "REALITY+PQ+Vision (直连)  开启::cmd_pq reality on"
     "REALITY+PQ+Vision (直连)  关闭::cmd_pq reality off")
 
-  MENU_REALITY=("Reality 核心节点管理"
-    "查看状态::cmd_reality show"
-    "Vision 开启::cmd_reality vision on"
-    "Vision 关闭::cmd_reality vision off"
-    "XHTTP 开启::cmd_reality xhttp on"
-    "XHTTP 关闭::cmd_reality xhttp off"
-    "上下行分离 开启::cmd_reality updown on"
-    "上下行分离 关闭::cmd_reality updown off")
+  MENU_REALITY=("Reality 节点与矩阵管理"
+    "查看全部 Reality 节点状态与链接::cmd_reality show"
+    "Reality-XHTTP-Direct (默认保留节点) 开启::cmd_reality xhttp on"
+    "Reality-XHTTP-Direct (默认保留节点) 关闭::cmd_reality xhttp off"
+    "REALITY+PQ+Vision (后量子) 开启::cmd_reality pq on"
+    "REALITY+PQ+Vision (后量子) 关闭::cmd_reality pq off"
+    "Reality-Vision-Direct (标准Vision) 开启::cmd_reality vision on"
+    "Reality-Vision-Direct (标准Vision) 关闭::cmd_reality vision off"
+    "Reality-Up-CDN-Down (上下行分离) 开启::cmd_reality updown on"
+    "Reality-Up-CDN-Down (上下行分离) 关闭::cmd_reality updown off"
+    "CDN-Up-Reality-Down (反向分离) 开启::cmd_reality cdnup on"
+    "CDN-Up-Reality-Down (反向分离) 关闭::cmd_reality cdnup off")
 
   MENU_SPLIT=("上下行分离节点管理"
     "查看状态::cmd_split show"

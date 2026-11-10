@@ -2595,28 +2595,35 @@ if act == 'off':
         b = inner.index(end, a) + len(end)
         inner2 = inner[:a] + inner[b:]
     else:
-        # 没有标记（老机器）：删掉数组里含 ident 的那个对象
-        i = skip_ws_comments(inner, 0)
+        # 没有标记（老机器）：删掉数组里含 ident 的那个对象（vision 时清理所有客户端对象）
         removed = False
-        while i < len(inner) and inner[i] == '{':
-            j = match_close(inner, i)
-            if ident in inner[i:j + 1]:
-                k = i
-                while k > 0 and inner[k - 1] in ' \t':
-                    k -= 1
-                if k > 0 and inner[k - 1] == '\n':
-                    k -= 1
-                e = j + 1
-                if e < len(inner) and inner[e] == ',':
-                    e += 1
-                inner2 = inner[:k] + inner[e:]
-                removed = True
+        while True:
+            i = skip_ws_comments(inner, 0)
+            found = False
+            while i < len(inner) and inner[i] == '{':
+                j = match_close(inner, i)
+                chunk = inner[i:j + 1]
+                if (ident in chunk) or (key == 'vision' and uuid2 and uuid2 in chunk):
+                    k = i
+                    while k > 0 and inner[k - 1] in ' \t':
+                        k -= 1
+                    if k > 0 and inner[k - 1] == '\n':
+                        k -= 1
+                    e = j + 1
+                    if e < len(inner) and inner[e] == ',':
+                        e += 1
+                    inner = inner[:k] + inner[e:]
+                    found = True
+                    removed = True
+                    break
+                i = skip_ws_comments(inner, j + 1)
+                if i < len(inner) and inner[i] == ',':
+                    i = skip_ws_comments(inner, i + 1)
+            if not found:
                 break
-            i = skip_ws_comments(inner, j + 1)
-            if i < len(inner) and inner[i] == ',':
-                i = skip_ws_comments(inner, i + 1)
         if not removed:
             sys.stderr.write('没找到可删除的 %s 项\n' % ident); sys.exit(1)
+        inner2 = inner
 else:
     if has_obj:
         sys.exit(3)
@@ -2700,35 +2707,53 @@ reality_toggle() {
 }
 
 cmd_reality() {
-  local what="${1:-show}" act="${2:-show}" v x u sid minv mtd
-  local link1 link2 link3 cc="${USER_HOME:-/root}/client-config.txt"
-  # 直接取安装时生成的完整链接（bestcf/extra/spx 都已编码在内），不再在此重新拼接
-  link1=$(grep -m1 -E '#VLESS-TLS\+(后量子|PQ)\+XHTTP\+CDN' "$cc" 2>/dev/null || true)
-  link2=$(grep -m1 -E '#VLESS-TLS\+(后量子|PQ)\+Vision\+XHTTP\+CDN' "$cc" 2>/dev/null || true)
-  link3=$(grep -m1 -E '#VLESS-REALITY\+(后量子|PQ)\+Vision' "$cc" 2>/dev/null || true)
+  local what="${1:-show}" act="${2:-show}" v x u cu pq sid minv mtd
+  local link_xhttp link_pq link_vision link_split link_cdnsplit cc="${USER_HOME:-/root}/client-config.txt"
+  link_xhttp=$(grep -m1 -E '#VLESS-Reality-XHTTP-Direct' "$cc" 2>/dev/null || true)
+  link_pq=$(grep -m1 -E '#VLESS-REALITY\+(后量子|PQ)\+Vision' "$cc" 2>/dev/null || true)
+  link_vision=$(grep -m1 -E '#VLESS-Reality-Vision-Direct' "$cc" 2>/dev/null || true)
+  link_split=$(grep -m1 -E '#VLESS-Reality-Up-CDN-Down' "$cc" 2>/dev/null || true)
+  link_cdnsplit=$(grep -m1 -E '#VLESS-CDN-Up-Reality-Down' "$cc" 2>/dev/null || true)
 
   case "$what" in
     show|status|list|"")
-      v="${FEATURE_REALITY_VISION:-true}"; x="${FEATURE_REALITY_XHTTP:-true}"; u="${FEATURE_REALITY_UP_CDN_DOWN:-false}"
+      x="${FEATURE_REALITY_XHTTP:-true}"; pq="${FEATURE_REALITY_PQ_VISION:-false}"
+      v="${FEATURE_REALITY_VISION:-false}"; u="${FEATURE_REALITY_UP_CDN_DOWN:-false}"; cu="${FEATURE_CDN_UP_REALITY_DOWN:-false}"
       sid="${SHORT_ID:-}"; [[ -n "$sid" ]] && sid="${sid:0:2}$(printf '%*s' $(( ${#sid} > 2 ? ${#sid} - 2 : 0 )) '' | tr ' ' '*')"
       minv=$(grep -o '"minClientVer"[[:space:]]*:[[:space:]]*"[^"]*"' "$XRAY_CONF" 2>/dev/null | head -1 | sed -E 's/.*"([^"]*)"$/\1/')
       mtd=$(grep -o '"maxTimeDiff"[[:space:]]*:[[:space:]]*[0-9]*' "$XRAY_CONF" 2>/dev/null | head -1 | grep -o '[0-9]*$')
       echo ""
-      echo -e "${CYAN}=== Reality 与后量子精选核心节点 (最佳本机配置) ===${NC}"
-      printf '  %-40s %s\n' "1) VLESS-TLS+PQ+XHTTP+CDN" "$([[ "${FEATURE_TLS_PQ_XHTTP:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  CF CDN(443)  TLS+ML-KEM+XHTTP(16流)"
-      printf '  %-40s %s\n' "2) VLESS-TLS+PQ+Vision+XHTTP+CDN" "$([[ "${FEATURE_TLS_PQ_VISION:-false}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  CF CDN(443)  TLS+ML-KEM+Vision+XHTTP"
-      printf '  %-40s %s\n' "3) VLESS-REALITY+PQ+Vision" "$([[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  直连(443)    REALITY+ML-KEM+Vision(BBR)"
+      echo -e "${CYAN}=== Reality 核心节点矩阵管理 ===${NC}"
+      printf '  %-35s %s\n' "1) VLESS-Reality-XHTTP-Direct" "$([[ "$x" == true ]] && echo -e "${GREEN}已开启 (默认节点)${NC}" || echo -e "${YELLOW}未开启${NC}")  TCP 443  XHTTP+vlessenc (${MANAGE_CMD} reality xhttp on|off)"
+      printf '  %-35s %s\n' "2) VLESS-REALITY+PQ+Vision"    "$([[ "$pq" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启 (备用)${NC}")  TCP 443  ML-KEM-768 (${MANAGE_CMD} reality pq on|off)"
+      printf '  %-35s %s\n' "3) VLESS-Reality-Vision-Direct" "$([[ "$v" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启 (备用)${NC}")  TCP 443  Vision直连 (${MANAGE_CMD} reality vision on|off)"
+      printf '  %-35s %s\n' "4) VLESS-Reality-Up-CDN-Down"   "$([[ "$u" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启 (备用)${NC}")  分离 443 上行Reality/下行CDN (${MANAGE_CMD} reality updown on|off)"
+      printf '  %-35s %s\n' "5) VLESS-CDN-Up-Reality-Down"   "$([[ "$cu" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启 (备用)${NC}")  分离 443 上行CDN/下行Reality (${MANAGE_CMD} reality cdnup on|off)"
       echo ""
-      echo -e "${CYAN}--- 核心节点链接 (可直接导入客户端) ---${NC}"
-      echo -e "  ${YELLOW}[1] VLESS-TLS+PQ+XHTTP+CDN:${NC}"
-      echo -e "  ${link1}"
-      echo ""
-      echo -e "  ${YELLOW}[2] VLESS-TLS+PQ+Vision+XHTTP+CDN:${NC}"
-      echo -e "  ${link2}"
-      echo ""
-      echo -e "  ${YELLOW}[3] VLESS-REALITY+PQ+Vision:${NC}"
-      echo -e "  ${link3}"
-      echo ""
+      echo -e "${CYAN}--- 当前已启用的 Reality 节点链接 ---${NC}"
+      local any_shown=false
+      if [[ -n "$link_xhttp" ]]; then
+        echo -e "  ${YELLOW}[1] VLESS-Reality-XHTTP-Direct:${NC}\n  ${link_xhttp}\n"
+        any_shown=true
+      fi
+      if [[ -n "$link_pq" ]]; then
+        echo -e "  ${YELLOW}[2] VLESS-REALITY+PQ+Vision:${NC}\n  ${link_pq}\n"
+        any_shown=true
+      fi
+      if [[ -n "$link_vision" ]]; then
+        echo -e "  ${YELLOW}[3] VLESS-Reality-Vision-Direct:${NC}\n  ${link_vision}\n"
+        any_shown=true
+      fi
+      if [[ -n "$link_split" ]]; then
+        echo -e "  ${YELLOW}[4] VLESS-Reality-Up-CDN-Down:${NC}\n  ${link_split}\n"
+        any_shown=true
+      fi
+      if [[ -n "$link_cdnsplit" ]]; then
+        echo -e "  ${YELLOW}[5] VLESS-CDN-Up-Reality-Down:${NC}\n  ${link_cdnsplit}\n"
+        any_shown=true
+      fi
+      [[ "$any_shown" == true ]] || echo -e "  （暂无启用的 Reality 节点）\n"
+
       echo -e "  伪装目标 target:   127.0.0.1:8003（本机 Nginx，证书域名 ${REALITY_DOMAIN:-?}）"
       echo -e "  serverNames:       ${REALITY_DOMAIN:-?}、${CDN_DOMAIN:-?}"
       echo -e "  后量子加密套件:    ML-KEM-768 (mlkem768x25519plus)"
@@ -2736,28 +2761,52 @@ cmd_reality() {
       echo -e "  shortId:           ${sid:-?}（已隐藏）"
       [[ -n "$minv" ]] && echo -e "  minClientVer:      ${minv}    （${MANAGE_CMD} minversion）"
       echo ""
-      echo -e "${CYAN}=== 历史兼容节点 ===${NC}"
-      printf '  %-30s %s\n' "VLESS-Reality-Vision-Direct" "$([[ "$v" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  TCP 443  xtls-rprx-vision      ${MANAGE_CMD} reality vision on|off"
-      printf '  %-30s %s\n' "VLESS-Reality-XHTTP-Direct" "$([[ "$x" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  TCP 443  XHTTP + vlessenc       ${MANAGE_CMD} reality xhttp on|off"
-      printf '  %-30s %s\n' "VLESS-Reality-Up-CDN-Down" "$([[ "$u" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  上行 Reality / 下行 CDN   ${MANAGE_CMD} reality updown on|off"
-      echo ""
-      echo -e "  后量子节点独立管理: ${MANAGE_CMD} pq [show | xhttp on|off | vision on|off | reality on|off]"
+      echo -e "快捷管理命令："
+      echo -e "  ${MANAGE_CMD} reality xhttp on|off   # 开启/关闭 Reality-XHTTP-Direct (默认节点)"
+      echo -e "  ${MANAGE_CMD} reality pq on|off      # 开启/关闭 REALITY+PQ+Vision (后量子)"
+      echo -e "  ${MANAGE_CMD} reality vision on|off  # 开启/关闭 Reality-Vision-Direct (标准Vision)"
+      echo -e "  ${MANAGE_CMD} reality updown on|off  # 开启/关闭 Reality-Up-CDN-Down (上下行分离)"
+      echo -e "  ${MANAGE_CMD} reality cdnup on|off   # 开启/关闭 CDN-Up-Reality-Down (反向分离)"
       echo ""
       ;;
-    vision|xhttp)
+    xhttp)
       case "$act" in
-        on|off) reality_toggle "$what" "$act" ;;
+        on|off) reality_toggle xhttp "$act" ;;
         show|status|"") cmd_reality show ;;
-        *) echo "用法: ${MANAGE_CMD} reality ${what} [on|off]" ;;
+        *) echo "用法: ${MANAGE_CMD} reality xhttp [on|off]" ;;
       esac
       ;;
-    updown|split)
+    pq|pq-vision|pqvision)
+      case "$act" in
+        on|off) cmd_pq reality "$act" ;;
+        show|status|"") cmd_reality show ;;
+        *) echo "用法: ${MANAGE_CMD} reality pq [on|off]" ;;
+      esac
+      ;;
+    vision)
+      case "$act" in
+        on|off) reality_toggle vision "$act" ;;
+        show|status|"") cmd_reality show ;;
+        *) echo "用法: ${MANAGE_CMD} reality vision [on|off]" ;;
+      esac
+      ;;
+    updown|split|reality-up|realityup)
       case "$act" in
         on|off) cmd_split reality-up "$act" ;;
-        *) cmd_split reality-up show ;;
+        show|status|"") cmd_reality show ;;
+        *) echo "用法: ${MANAGE_CMD} reality updown [on|off]" ;;
       esac
       ;;
-    *) echo "用法: ${MANAGE_CMD} reality [show | list | vision on|off | xhttp on|off | updown on|off]" ;;
+    cdnup|cdn-up)
+      case "$act" in
+        on|off) cmd_split cdn-up "$act" ;;
+        show|status|"") cmd_reality show ;;
+        *) echo "用法: ${MANAGE_CMD} reality cdnup [on|off]" ;;
+      esac
+      ;;
+    *)
+      echo "用法: ${MANAGE_CMD} reality [show | xhttp on|off | pq on|off | vision on|off | updown on|off | cdnup on|off]"
+      ;;
   esac
 }
 

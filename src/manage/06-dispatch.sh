@@ -27,7 +27,7 @@ xray-xhttp 全能管理命令 (v${XH_VERSION:-5.6.0})
 
 【节点与协议矩阵管理】
   xh pq [show|xhttp on|off|vision on|off|reality on|off]  后量子 PQ 核心节点管理
-  xh reality [show|vision on|off|xhttp on|off]  Reality 核心节点管理
+  xh reality [show|xhttp on|off|pq on|off|vision on|off|updown on|off|cdnup on|off]  Reality 核心节点管理
   xh split [show|reality-up on|off|cdn-up on|off] 上下行分离节点开关
   xh hy2 [show|on|off]  Hysteria2 原生直连节点开关
   xh hy2 obfs [on|off]  Hysteria2 Salamander 混淆节点开关 (别名: xh hy2obfs)

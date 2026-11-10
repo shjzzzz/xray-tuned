@@ -203,7 +203,7 @@ fi
 # 443 入站本身（含到本机 nginx 的 target）始终保留：CDN 域名的回源也要靠它。
 REALITY_VISION_CLIENT_JSON=""
 REALITY_XHTTP_FALLBACK_JSON=""
-if [[ "${FEATURE_REALITY_VISION:-true}" == true || "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
+if [[ "${FEATURE_REALITY_VISION:-false}" == true || "${FEATURE_REALITY_PQ_VISION:-false}" == true ]]; then
   if [[ -n "${UUID2}" && "${UUID2}" != "${UUID1}" ]]; then
     printf -v REALITY_VISION_CLIENT_JSON '\n        // >>xh:realityvision\n                    {\n                        "id": "%s",\n                        "level": 0,\n                        "flow": "%s"\n                    },\n                    {\n                        "id": "%s",\n                        "level": 0,\n                        "flow": "%s"\n                    }\n        // <<xh:realityvision\n' "${UUID1}" "${VISION_FLOW:-xtls-rprx-vision}" "${UUID2}" "${VISION_FLOW:-xtls-rprx-vision}"
   else
@@ -765,7 +765,7 @@ info "写入 ${NODE_ENV_FILE} ..."
   printf 'FEATURE_REALITY_XHTTP=%q\n'   "${FEATURE_REALITY_XHTTP:-true}"
   printf 'FEATURE_TLS_PQ_XHTTP=%q\n'    "${FEATURE_TLS_PQ_XHTTP:-false}"
   printf 'FEATURE_TLS_PQ_VISION=%q\n'   "${FEATURE_TLS_PQ_VISION:-false}"
-  printf 'FEATURE_REALITY_PQ_VISION=%q\n' "${FEATURE_REALITY_PQ_VISION:-true}"
+  printf 'FEATURE_REALITY_PQ_VISION=%q\n' "${FEATURE_REALITY_PQ_VISION:-false}"
   printf 'XRAY_CHANNEL=%q\n'   "${XRAY_CHANNEL:-stable}"
   printf 'NOISE_EXP_PACKET=%q\n'       "${NOISE_EXP_PACKET:-<b 16030100><r 32><t><c><rd 8>}"
   printf 'NOISE_EXP_DELAY=%q\n'        "${NOISE_EXP_DELAY:-10-50}"

@@ -300,21 +300,21 @@ else
   TLS_PQ_VISION_NODE_LINE=""
 fi
 
-if [[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
+if [[ "${FEATURE_REALITY_PQ_VISION:-false}" == true ]]; then
   REALITY_PQ_VISION_NODE_LINE="vless://${UUID1}@${VPS_IP_URI}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=tcp&headerType=none&packetEncoding=xudp#VLESS-REALITY+PQ+Vision"
 else
   REALITY_PQ_VISION_NODE_LINE=""
 fi
 
 if [[ "$FEATURE_H3_DIRECT" == true ]]; then
-  H3_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H3_PORT}?encryption=none&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h3&type=xhttp&path=${XHTTP_PATH_SLASH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}#VLESS-XHTTP-Direct-H3${NODE_SUFFIX}"
+  H3_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H3_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h3&type=xhttp&path=${XHTTP_PATH_SLASH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}#VLESS-XHTTP-Direct-H3${NODE_SUFFIX}"
 else
   H3_DIRECT_NODE_LINE=""
 fi
 
 # h2-cdn: 经 CDN 的 TCP(h2) 链路（默认关闭，FEATURE_CDN_H2=true 时启用）
 if [[ "$FEATURE_CDN_H2" == true ]]; then
-  H2_CDN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-CDN-H2${NODE_SUFFIX}"
+  H2_CDN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-CDN-H2${NODE_SUFFIX}"
 else
   H2_CDN_NODE_LINE=""
 fi
@@ -325,14 +325,14 @@ fi
 # HTTP/3（transport/xhttp/client.go:159），列表里多一个值就退回 TCP。
 # 默认关闭（v4.9.64；FEATURE_CDN_H3=true 或 xh cdnh3 on 开启）。
 if [[ "${FEATURE_CDN_H3:-false}" == true ]]; then
-  H3_CDN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-CDN-H3${NODE_SUFFIX}"
+  H3_CDN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-CDN-H3${NODE_SUFFIX}"
 else
   H3_CDN_NODE_LINE=""
 fi
 
 # h2-direct（v4.7.0）：h3-direct 的 TCP 版，只差 port 与 alpn (h2)。
 if [[ "$FEATURE_H2_DIRECT" == true ]]; then
-  H2_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H2_PORT}?encryption=none&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&type=xhttp&path=${XHTTP_PATH_SLASH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}#VLESS-XHTTP-Direct-H2${NODE_SUFFIX}"
+  H2_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H2_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&type=xhttp&path=${XHTTP_PATH_SLASH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}#VLESS-XHTTP-Direct-H2${NODE_SUFFIX}"
 else
   H2_DIRECT_NODE_LINE=""
 fi

@@ -153,10 +153,10 @@ FEATURE_REALITY_SPX=${FEATURE_REALITY_SPX:-true}
 # 默认关闭（本机节点集不含它）；需要时 FEATURE_H2_DIRECT=true 或装好后 xh h2direct on。
 FEATURE_H2_DIRECT=${FEATURE_H2_DIRECT:-false}
 
-# FEATURE_REALITY_UP_CDN_DOWN（默认开启，与当前实机节点集一致；关闭用 FEATURE_REALITY_UP_CDN_DOWN=false 或 xh split reality-up off）：上下行分离节点
+# FEATURE_REALITY_UP_CDN_DOWN（默认关闭；开启用 FEATURE_REALITY_UP_CDN_DOWN=true 或 xh reality updown on）：上下行分离节点
 # VLESS-Reality-Up-CDN-Down（上行 Reality 直连 443 / 下行 CDN H2 443）。
-FEATURE_REALITY_UP_CDN_DOWN=${FEATURE_REALITY_UP_CDN_DOWN:-true}
-FEATURE_UP_CDN_DOWN_MIHOMO=${FEATURE_UP_CDN_DOWN_MIHOMO:-${FEATURE_REALITY_UP_CDN_DOWN}}
+FEATURE_REALITY_UP_CDN_DOWN=${FEATURE_REALITY_UP_CDN_DOWN:-false}
+FEATURE_UP_CDN_DOWN_MIHOMO=${FEATURE_UP_CDN_DOWN_MIHOMO:-${FEATURE_REALITY_UP_CDN_DOWN:-false}}
 
 # FEATURE_CDN_UP_REALITY_DOWN（默认关闭，可用 FEATURE_CDN_UP_REALITY_DOWN=true 或 xh split cdn-up on 开启）：反向的上下行分离节点
 # VLESS-CDN-Up-Reality-Down —— 上行 XHTTP+TLS 经 Cloudflare CDN，下行 XHTTP+Reality 直连。
@@ -208,11 +208,11 @@ FEATURE_NOISE_EXP=${FEATURE_NOISE_EXP:-true}
 # 三个后量子 (ML-KEM-768) 节点开关：TLS_PQ_XHTTP（CDN）默认关闭，REALITY_PQ_VISION（直连 443）默认开启，TLS_PQ_VISION 默认关闭。
 FEATURE_TLS_PQ_XHTTP=${FEATURE_TLS_PQ_XHTTP:-false}
 FEATURE_TLS_PQ_VISION=${FEATURE_TLS_PQ_VISION:-false}
-FEATURE_REALITY_PQ_VISION=${FEATURE_REALITY_PQ_VISION:-true}
+FEATURE_REALITY_PQ_VISION=${FEATURE_REALITY_PQ_VISION:-false}
 
-# FEATURE_REALITY_VISION / FEATURE_REALITY_XHTTP：Reality 443 入站上的两个直连节点。
-# 默认启用 REALITY_XHTTP（标口 443 + XHTTP）；REALITY_VISION（Vision-Direct）默认关闭，REALITY+PQ+Vision 仍共用 443 上的 Vision 客户端项。
-# 关闭 = 服务端去掉对应的 clients 项 / fallback 项并从订阅里移除节点；装好后用 xh reality vision|xhttp on|off 切换。
+# FEATURE_REALITY_VISION / FEATURE_REALITY_XHTTP：Reality 443 入站上的直连节点。
+# 默认仅启用 REALITY_XHTTP（VLESS-Reality-XHTTP-Direct）；其它 Reality 节点（REALITY+PQ+Vision、Vision-Direct、上下行分离）默认关闭，整合进 xh reality / 功能菜单管理。
+# 关闭 = 服务端去掉对应的 clients 项 / fallback 项并从订阅里移除节点；装好后用 xh reality 菜单/命令切换。
 FEATURE_REALITY_VISION=${FEATURE_REALITY_VISION:-false}
 FEATURE_REALITY_XHTTP=${FEATURE_REALITY_XHTTP:-true}
 NOISE_EXP_PACKET=${NOISE_EXP_PACKET:-"<b 16030100><r 32><t><c><rd 8>"}
