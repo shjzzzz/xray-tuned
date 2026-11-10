@@ -163,8 +163,8 @@ FEATURE_UP_CDN_DOWN_MIHOMO=${FEATURE_UP_CDN_DOWN_MIHOMO:-${FEATURE_REALITY_UP_CD
 # 与 Reality-Up-CDN-Down 一样落到同一个 8001 入站（Reality 443 回落 / Nginx 8003 回源）。
 FEATURE_CDN_UP_REALITY_DOWN=${FEATURE_CDN_UP_REALITY_DOWN:-false}
 
-# FEATURE_XHTTP_VLESSENC（v4.9.29）：8001 XHTTP 入站启用 VLESS Encryption（默认关闭设为 none，杜绝客户端 -1 报错）。
-FEATURE_XHTTP_VLESSENC=${FEATURE_XHTTP_VLESSENC:-false}
+# FEATURE_XHTTP_VLESSENC（v4.9.29）：8001 XHTTP 入站启用 VLESS Encryption（X25519 临时密钥，抗中间人嗅探解密）。
+FEATURE_XHTTP_VLESSENC=${FEATURE_XHTTP_VLESSENC:-true}
 
 # FEATURE_PORT_HOPPING：UDP 端口跳跃（默认关闭）。
 # 避免客户端在服务端未配置 nat/iptables 端口段重定向时握手失败，或劫持同机其他 UDP 服务。
@@ -177,10 +177,9 @@ FEATURE_BRUTAL_EXPLICIT="${FEATURE_BRUTAL+set}"
 FEATURE_BRUTAL=${FEATURE_BRUTAL:-false}
 BRUTAL_DEFAULT_MBPS=${BRUTAL_DEFAULT_MBPS:-auto}
 
-# REALITY_MIN_CLIENT_VER：Reality 客户端最低版本，默认 1.8.0（兼容 Shadowrocket / mihomo / sing-box 等非 Xray 内核客户端，它们的版本字段为 0，会被内核默认下限 26.3.27 拒绝）。
-# 设为 none 或 default 则不写 minClientVer（严格模式，只放行最新 Xray 内核客户端）。
+# REALITY_MIN_CLIENT_VER：Reality 客户端最低版本，默认 default（严格模式：使用 Xray 最新内核默认版本校验，强制支持 X25519MLKEM768 后量子 key share）。
 # 兼容别名：MIN_CLIENT_VER、MINVERSION、MIN_VERSION。
-REALITY_MIN_CLIENT_VER="${REALITY_MIN_CLIENT_VER:-${MIN_CLIENT_VER:-${MINVERSION:-${MIN_VERSION:-1.8.0}}}}"
+REALITY_MIN_CLIENT_VER="${REALITY_MIN_CLIENT_VER:-${MIN_CLIENT_VER:-${MINVERSION:-${MIN_VERSION:-default}}}}"
 
 # ==================================================
 # Xray v26.9.30+ 前沿新特性开关（默认可选）
@@ -202,7 +201,7 @@ XDRIVE_ENCRYPTION=${XDRIVE_ENCRYPTION:-""}
 XDRIVE_DECRYPTION=${XDRIVE_DECRYPTION:-""}
 
 # FEATURE_NOISE_EXP: Finalmask Noise dynamic expression 动态模板混淆（防 UDP DPI 识别）
-FEATURE_NOISE_EXP=${FEATURE_NOISE_EXP:-false}
+FEATURE_NOISE_EXP=${FEATURE_NOISE_EXP:-true}
 # FEATURE_NOISE_LINKS（v4.9.81，默认关闭）：客户端链接的 fm 里是否也带 noise 项。服务端入站的 noise 只是发送方行为，
 # 老客户端不受影响；但链接里的 noise.exp 在 Xray < 26.9.30 的客户端内核里无法解析，v2rayN 会报「运行内核失败」。
 # 确认所有客户端内核都 >= 26.9.30 后再开：xh noise links on。

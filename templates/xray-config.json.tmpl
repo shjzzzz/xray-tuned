@@ -96,37 +96,6 @@
         },
         {
             "listen": "127.0.0.1",
-            "port": 8002,
-            "protocol": "vless",
-            "settings": {
-                "clients": [
-                    {
-                        "id": "${UUID2}",
-                        "level": 0
-                    }
-                ],
-                "decryption": "${SR_DECRYPTION:-none}"
-            },
-            "streamSettings": {
-                "network": "xhttp",
-                "sockopt": {
-                    "trustedXForwardedFor": ["X-Real-IP"]${XRAY_SOCKOPT_TUNE}
-                },
-                "xhttpSettings": {
-                    "host": "",
-                    "path": "/sr${XHTTP_PATH#/}",
-                    "mode": "auto"${XRAY_XHTTP_PADDING_JSON}
-                }
-            },
-            "sniffing": {
-                "enabled": true,
-                "destOverride": ["http", "tls", "quic"],
-                "metadataOnly": false,
-                "routeOnly": false
-            }
-        },
-        {
-            "listen": "127.0.0.1",
             "port": 8001,
             "protocol": "vless",
             "settings": {

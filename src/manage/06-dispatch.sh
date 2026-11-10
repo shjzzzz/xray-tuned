@@ -31,6 +31,9 @@ xray-xhttp 全能管理命令 (v${XH_VERSION:-5.2.2})
   xh split [show|reality-up on|off|cdn-up on|off] 上下行分离节点开关
   xh hy2 [show|on|off]  Hysteria2 原生直连节点开关
   xh hy2 obfs [on|off]  Hysteria2 Salamander 混淆节点开关 (别名: xh hy2obfs)
+  xh noise [show|on|off|links on|off|sync] Finalmask Noise 动态混淆管理
+  xh masque [show|on|off] MASQUE RFC 9484 CONNECT-IP 隧道管理
+  xh xdrive [show|on|off] XDRIVE 网盘穿透代理管理
   xh h3direct [on|off]  XHTTP-Direct-H3 (QUIC/UDP) 直连节点开关
   xh h2direct [on|off]  XHTTP-Direct-H2 直连节点开关
   xh cdnh2 [on|off]     CDN TCP(h2) 节点开关
@@ -103,6 +106,9 @@ case "${1:-}" in
   h2direct)   shift; cmd_h2direct "$@" ;;
   hy2)        shift; cmd_hy2 "$@" ;;
   hy2obfs|hy2_obfs) shift; cmd_hy2obfs "$@" ;;
+  noise)      shift; cmd_noise "$@" ;;
+  masque)     shift; cmd_masque "$@" ;;
+  xdrive)     shift; cmd_xdrive "$@" ;;
   pq)         shift; cmd_pq "$@" ;;
   reality)    shift; cmd_reality "$@" ;;
   split)      shift; cmd_split "$@" ;;
