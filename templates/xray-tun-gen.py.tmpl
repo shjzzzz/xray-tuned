@@ -68,7 +68,12 @@ def build_outbound(link):
         if first(q, "host"):
             xs["host"] = first(q, "host")
         if first(q, "extra"):
-            xs["extra"] = json.loads(first(q, "extra"))
+            extra_obj = json.loads(first(q, "extra"))
+            if isinstance(extra_obj, dict) and isinstance(extra_obj.get("downloadSettings"), dict):
+                dl_tls = extra_obj["downloadSettings"].get("tlsSettings")
+                if isinstance(dl_tls, dict):
+                    dl_tls.pop("allowInsecure", None)
+            xs["extra"] = extra_obj
         ss["xhttpSettings"] = xs
     if first(q, "tfo") == "1":
         ss["sockopt"] = {"tcpFastOpen": True, "tcpNoDelay": True}

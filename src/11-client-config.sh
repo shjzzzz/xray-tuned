@@ -378,10 +378,10 @@ hy2_client_fm_param() {
 
 if [[ "$FEATURE_HY2" == true && "${FEATURE_HY2_OBFS:-false}" == true ]]; then
   if [[ "${FEATURE_PORT_HOPPING:-false}" == true ]]; then
-    HY2_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_PORT}/?sni=${REALITY_DOMAIN}&mport=${HY2_PORT},${PORT_HOP_RANGE:-40000-50000}&alpn=h3&insecure=0&obfs=salamander&obfs-password=$(rawurlencode "$OBFS_PASSWORD")${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "$OBFS_PASSWORD" "${HY2_PORT},${PORT_HOP_RANGE:-40000-50000}")#Hysteria2-TLS-BBR-Salamander"
+    HY2_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_PORT}/?sni=${REALITY_DOMAIN}&mport=${HY2_PORT},${PORT_HOP_RANGE:-40000-50000}&alpn=h3&obfs=salamander&obfs-password=$(rawurlencode "$OBFS_PASSWORD")${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "$OBFS_PASSWORD" "${HY2_PORT},${PORT_HOP_RANGE:-40000-50000}")#Hysteria2-TLS-BBR-Salamander"
     MIHOMO_HY2_PORTS_LINE=$(printf '\n    ports: %s,%s' "${HY2_PORT}" "${PORT_HOP_RANGE:-40000-50000}")
   else
-    HY2_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_PORT}/?sni=${REALITY_DOMAIN}&alpn=h3&insecure=0&obfs=salamander&obfs-password=$(rawurlencode "$OBFS_PASSWORD")${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "$OBFS_PASSWORD" "")#Hysteria2-TLS-BBR-Salamander"
+    HY2_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_PORT}/?sni=${REALITY_DOMAIN}&alpn=h3&obfs=salamander&obfs-password=$(rawurlencode "$OBFS_PASSWORD")${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "$OBFS_PASSWORD" "")#Hysteria2-TLS-BBR-Salamander"
     MIHOMO_HY2_PORTS_LINE=""
   fi
 else
@@ -391,7 +391,7 @@ fi
 
 # Hysteria2-H3（v4.9.26）：UDP 443、无混淆，其余与 Hysteria2-Obfs-Direct 相同。
 if [[ "${FEATURE_HY2_H3:-false}" == true ]]; then
-  HY2_H3_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_H3_PORT:-443}/?sni=${REALITY_DOMAIN}&alpn=h3&insecure=0${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "" "")#Hysteria2-H3-Direct${NODE_SUFFIX}"
+  HY2_H3_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_H3_PORT:-443}/?sni=${REALITY_DOMAIN}&alpn=h3${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "" "")#Hysteria2-H3-Direct${NODE_SUFFIX}"
 else
   HY2_H3_NODE_LINE=""
 fi
@@ -450,8 +450,6 @@ prune_mihomo_features() {
   [[ -f "$file" ]] || return 0
   for feat in FEATURE_TLS_PQ_XHTTP FEATURE_REALITY_PQ_VISION FEATURE_REALITY_VISION FEATURE_REALITY_XHTTP FEATURE_CDN_H2 FEATURE_CDN_H3 FEATURE_H3_DIRECT FEATURE_H2_DIRECT FEATURE_HY2 FEATURE_HY2_H3 FEATURE_HY2_OBFS FEATURE_UP_CDN_DOWN_MIHOMO FEATURE_CDN_UP_REALITY_DOWN; do
     local on="${!feat}"
-    # Reality-XHTTP 与最新版 Mihomo(Clash) / Shadowrocket 不兼容：不写进任何 Mihomo 产物（Shadowrocket 订阅本来就不含它）。
-    [[ "$feat" == FEATURE_REALITY_XHTTP ]] && on=false
     if [[ "$on" == true ]]; then
       sed -i "/^[[:space:]]*#<<${feat}\$/d; /^[[:space:]]*#>>${feat}\$/d" "$file"
     else

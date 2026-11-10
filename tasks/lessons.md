@@ -89,7 +89,7 @@
   1. 跨境高延迟链路（如中美 140~180ms RTT）下，若中间设备对 ICMP Type 3 Code 4（Fragmentation Needed）静默丢弃，遇非对称 MTU（PPPoE 1492 / 移动 4G 1420）易发生 PMTU 黑洞死锁，导致 TLS 证书握手与大包静默超时；
   2. 套接字未发送缓冲区 `tcp_notsent_lowat` 过大（512KB）会导致 BBR 调步发送队列积压，在 YouTube 4K/8K 等流媒体高突发下载时造成显著 Bufferbloat 与往返抖动，拖慢首屏与暂停恢复。
 - **治理与防范规则**：
-  1. **PLPMTUD 主动探测**：全量开启 `net.ipv4.tcp_mtu_probing = 1`（RFC 4821），遇到黑洞连续重传时内核主动向下试探 MSS，防止大包死锁；
+  1. **PLPMTUD 主动探测与底线锁定**：开启 `net.ipv4.tcp_mtu_probing = 1`（RFC 4821）时，**必须同步显式设置 `net.ipv4.tcp_base_mss = 1360`、`net.ipv4.tcp_mtu_probe_floor = 1360` 与 `net.ipv4.tcp_min_snd_mss = 536`**。若保留内核默认底线（`tcp_base_mss=1024, tcp_mtu_probe_floor=48`），在跨境移动高丢包链路（8%+ 重传）发生连续 RTO 时，内核会误判为 PMTU 黑洞并将 MSS 二分腰斩至 `512 -> 256 -> 64 -> 48` 字节，导致 850KB 发送队列被切碎为 3300+ 个极小分片、`cwnd` 锁死为 1、吞吐跌至 7kbps（表现为 Reality 彻底断流）；锁定 `1360`（对应 MTU 1400）既兼容 PPPoE 1492 / 蜂窝 1420，又彻底杜绝 MSS 崩塌。
   2. **发送缓冲收敛**：`tcp_notsent_lowat` 收敛至 **128KB (131072)**，既满足千兆 BDP 管道吞吐，又杜绝发送端缓冲膨胀，平滑流媒体 Pacing；
   3. **客户端 QUIC 策略**：跨境 UDP 443 易受运营商 QoS 丢包影响，客户端路由规则中阻断国外 UDP 443 强制回退 HTTP/2 over Vision TCP，吃满内核 splice 零拷贝硬件加速。
 

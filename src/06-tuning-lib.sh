@@ -435,8 +435,13 @@ apply_system_tuning() {
   # ---------- 连接建立与保持 ----------
   try_sysctl net.ipv4.tcp_fastopen 3
   # 开启 RFC 4821 PLPMTUD（包化层路径 MTU 探测）：当链路遭遇中间网元丢弃 ICMP 报文产生 PMTU 黑洞时，
-  # 内核自动向下探测协商合适 MSS，杜绝大包、TLS 证书握手与流媒体切片静默丢弃卡死
+  # 内核自动向下探测协商合适 MSS，杜绝大包、TLS 证书握手与流媒体切片静默丢弃卡死。
+  # 必须同步锁定 tcp_base_mss=1360 与 tcp_mtu_probe_floor=1360（对应 MTU 1400，兼容 PPPoE 1492 / 移动蜂窝 1420），
+  # 严防跨境高丢包链路连续 RTO 触发内核默认底线 (48 字节) 将 MSS 二分腰斩至 512/256/64/48 导致 Reality 长连接假死
   try_sysctl net.ipv4.tcp_mtu_probing 1
+  try_sysctl net.ipv4.tcp_base_mss 1360
+  try_sysctl net.ipv4.tcp_mtu_probe_floor 1360
+  try_sysctl net.ipv4.tcp_min_snd_mss 536
   try_sysctl net.ipv4.tcp_slow_start_after_idle 0
   # 套接字未发送数据上限：由 512KB 优化收敛至 128KB (131072)。在千兆 BBR/BBRv3 速率下，既保证充足的
   # 管道吞吐，又能精准压降发送缓冲区排队延迟与 Bufferbloat，显著改善 YouTube 等流媒体首屏加载与播放抖动

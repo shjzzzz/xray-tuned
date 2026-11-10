@@ -1027,7 +1027,8 @@ done
 sub "连接状态与超时"
 for k in net.ipv4.tcp_fastopen net.ipv4.tcp_fin_timeout net.ipv4.tcp_tw_reuse \
          net.ipv4.tcp_max_tw_buckets net.ipv4.tcp_syncookies net.ipv4.tcp_slow_start_after_idle \
-         net.ipv4.tcp_mtu_probing net.ipv4.tcp_notsent_lowat net.ipv4.ip_local_port_range \
+         net.ipv4.tcp_mtu_probing net.ipv4.tcp_base_mss net.ipv4.tcp_mtu_probe_floor net.ipv4.tcp_min_snd_mss \
+         net.ipv4.tcp_notsent_lowat net.ipv4.ip_local_port_range \
          net.ipv4.tcp_keepalive_time net.ipv4.tcp_keepalive_intvl net.ipv4.tcp_keepalive_probes; do
   sy "$k"
 done

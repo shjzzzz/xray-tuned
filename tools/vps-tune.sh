@@ -293,6 +293,9 @@ try net.ipv4.ip_local_port_range "1024 65535"   # CDN 回源是出站方向，�
 # ---- 连接建立与保持 ----
 try net.ipv4.tcp_fastopen 3                     # 客户端+服务端同时开，省一个 RTT
 try net.ipv4.tcp_mtu_probing 1                  # PMTU 黑洞探测，中间设备丢 ICMP 时避免大包卡死
+try net.ipv4.tcp_base_mss 1360                  # 锁定探测基线与下限为 1360（MTU 1400），严防连续 RTO 触发默认 48 字节底线导致 MSS 崩塌
+try net.ipv4.tcp_mtu_probe_floor 1360
+try net.ipv4.tcp_min_snd_mss 536
 try net.ipv4.tcp_slow_start_after_idle 0        # 空闲后不回慢启动 —— XHTTP 长连接的关键项
 # 调小 = 应用更早被唤醒补数据，本地排队更少。这是**延迟**收益不是吞吐收益：
 # 拥塞窗口由 BBR 与 rmem/wmem 决定，与本项无关。

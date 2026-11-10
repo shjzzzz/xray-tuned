@@ -249,6 +249,8 @@ for tpath in [txt_file, "/etc/xhttp-cdn/all/client-config.txt"]:
         # 规范化客户端链接：移除阻碍连接的 tfo、insecure/allowInsecure，规范化 XHTTP path 带有末尾斜杠
         line = re.sub(r'[&?]tfo=[0-9]+', '', line)
         line = re.sub(r'[&?](?:allowInsecure|insecure)=(?:0|false|1|true)', '', line)
+        line = re.sub(r'%22allowInsecure%22%3A(?:false|true)%2C', '', line)
+        line = re.sub(r'%2C%22allowInsecure%22%3A(?:false|true)', '', line)
         line = re.sub(r'(path=/[^&/]+)(?=[&#]|$)', r'\1/', line)
         line = re.sub(r'(%22path%22%3A%22%2F[^%"]+?)(?=%22)', lambda m: m.group(1) if m.group(1).endswith('%2F') else m.group(1) + '%2F', line)
         if "REALITY" in tag or "Reality" in tag:
@@ -340,7 +342,7 @@ if yaml:
                 p.pop("tfo", None)
                 if "REALITY+PQ+Vision" in pname or "Reality-Vision-Direct" in pname:
                     p["packet-encoding"] = "xudp"
-                    p["alpn"] = ["h2"]
+                    p.pop("alpn", None)
                 is_cdn = ("-CDN-" in pname or "XHTTP-CDN" in pname or "PQ+XHTTP+CDN" in pname) and "Reality-Up" not in pname and "CDN-Up" not in pname
                 if is_cdn:
                     if cdn_addr:
@@ -560,7 +562,9 @@ BLOCKPY
     rm -f "$tmp"; fail "Xray 配置校验失败（geodata 缺少对应规则？），已放弃，未做任何修改"
   fi
   cp -a "$XRAY_CONF" "$bak"
-  mv -f "$tmp" "$XRAY_CONF"; chmod 600 "$XRAY_CONF" 2>/dev/null || true
+  chown --reference="$XRAY_CONF" "$tmp" 2>/dev/null || true
+  chmod --reference="$XRAY_CONF" "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$XRAY_CONF"
   if svc restart xray; then
     update_node_env "$key" "$([[ "$act" == on ]] && echo true || echo false)"
     info "出站分流 ${what} 已$([[ "$act" == on ]] && echo 开启 || echo 关闭)，xray 已重启"
@@ -1880,7 +1884,7 @@ cmd_hy2() {
       export HY2_PASSWORD="$new"
       # 先刷新订阅再重启：重启失败（如拆分配置的并发写入）不应让订阅停在旧密码上
       cmd_resub
-      systemctl restart xray || warn "xray 重启失败，请检查 ${XRAY_CONF} 并手动 systemctl restart xray"
+      svc restart xray || warn "xray 重启失败，请检查 ${XRAY_CONF} 并手动 systemctl restart xray"
       info "Hysteria2 认证密码已轮换，客户端需重新拉取订阅"
       ;;
     obfs-on) cmd_backup_server_node hy2obfs on ;;
@@ -2355,6 +2359,8 @@ NPY
     rm -f "$tmp"; warn "Xray 配置校验失败，已放弃修改：$err"; return 1
   fi
   cp -a "$XRAY_CONF" "$bak"
+  chown --reference="$XRAY_CONF" "$tmp" 2>/dev/null || true
+  chmod --reference="$XRAY_CONF" "$tmp" 2>/dev/null || true
   mv -f "$tmp" "$XRAY_CONF"
   if ! svc restart xray; then
     cp -a "$bak" "$XRAY_CONF"

@@ -41,8 +41,6 @@ proxies:
     tls: true
     packet-encoding: xudp
     network: tcp
-    alpn:
-      - h2
     servername: ${REALITY_DOMAIN}
     client-fingerprint: chrome
     encryption: none
@@ -211,8 +209,6 @@ proxies:
     encryption: "none"
     packet-encoding: xudp
     network: tcp
-    alpn:
-      - h2
     servername: ${REALITY_DOMAIN}
     client-fingerprint: chrome
     reality-opts:
