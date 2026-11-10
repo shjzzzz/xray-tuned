@@ -100,7 +100,7 @@ jobs:
           else
             git fetch --tags --force
             tag=$(git tag --sort=-v:refname | head -n1)
-            [[ -n "$tag" ]] || tag="v5.6.0"
+            [[ -n "$tag" ]] || tag="v5.6.1"
           fi
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 

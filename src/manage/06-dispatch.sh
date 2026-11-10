@@ -4,7 +4,7 @@
 
 usage() {
   cat << USAGEEOF
-xray-xhttp 全能管理命令 (v${XH_VERSION:-5.6.0})
+xray-xhttp 全能管理命令 (v${XH_VERSION:-5.6.1})
 
 【基础运维与状态】
   xh                    进入交互式全功能分层导航终端
