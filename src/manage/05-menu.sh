@@ -242,7 +242,7 @@ cmd_menu() {
   while true; do
     echo ""
     echo -e "${CYAN}================================================================${NC}"
-    echo -e "${CYAN}           xray-xhttp 全能管理终端 (v${XH_VERSION:-5.2.2})           ${NC}"
+    echo -e "${CYAN}           xray-xhttp 全能管理终端 (v${XH_VERSION:-5.6.0})           ${NC}"
     echo -e "${CYAN}================================================================${NC}"
     echo -e "  ${GREEN}[1]${NC} 节点与订阅管理 (Nodes & Subscriptions)"
     echo -e "  ${GREEN}[2]${NC} 链路测速与性能审计 (Benchmark & Audit)"

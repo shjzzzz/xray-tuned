@@ -50,7 +50,7 @@ fi
 # ==================================================
 
 PROJECT_NAME="xray-xhttp"
-PROJECT_VERSION="5.5.0"
+PROJECT_VERSION="5.6.0"
 PROJECT_REPO="shjzzzz/xray-tuned"
 # 默认推荐的 Xray-core 版本：回退版本 v26.11.9（含 Chrome 155+ 指纹、XDRIVE Google Drive 正式版优化、finalRules.delay/logLevel、WFP 增强、默认禁 MPTCP 与根证书移除；
 # v26.10.10 / v26.10.17 / v26.10.29 已被官方撤版）。正常情况下按通道（stable=/releases/latest）自适应取最新，查询失败才用它。

@@ -89,6 +89,7 @@ jobs:
             dist/add-dual-ip.sh
             dist/add-quic.sh
             dist/add-quic-h3.sh
+            dist/xh
 
       - name: Resolve release tag
         id: release_tag
@@ -99,7 +100,7 @@ jobs:
           else
             git fetch --tags --force
             tag=$(git tag --sort=-v:refname | head -n1)
-            [[ -n "$tag" ]] || tag="v5.5.0"
+            [[ -n "$tag" ]] || tag="v5.6.0"
           fi
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
@@ -115,3 +116,4 @@ jobs:
             dist/add-dual-ip.sh
             dist/add-quic.sh
             dist/add-quic-h3.sh
+            dist/xh
