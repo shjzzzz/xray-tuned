@@ -402,6 +402,25 @@ if yaml:
                             if vn.startswith(rname) and vn not in gp:
                                 gp.append(vn)
                     g["proxies"] = gp
+            # 分组成员被清空时按模板默认值补回：广告过滤 / 全局拦截既无 proxies 也无 include-all，
+            # mihomo 会因 "`use` or `proxies` missing" 拒绝加载整份配置；其余组丢了 节点选择 / 全局直连 等引用则无法按预期选路。
+            # 只补「当前为空」的组，成员非空的组原样保留。
+            group_defaults = {
+                "节点选择": ["自动选择", "直连择优"], "谷歌服务": ["节点选择", "全局直连"], "YouTube": ["节点选择", "全局直连"],
+                "Netflix": ["节点选择", "全局直连"], "电报消息": ["节点选择", "全局直连"], "AI": ["节点选择"], "TikTok": ["节点选择"],
+                "微软服务": ["全局直连", "节点选择"], "iCloud服务": ["全局直连", "节点选择"], "苹果服务": ["节点选择", "全局直连"],
+                "动画疯": ["节点选择"], "哔哩哔哩港澳台": ["全局直连", "节点选择"], "Spotify": ["节点选择", "全局直连"],
+                "广告过滤": ["REJECT", "DIRECT"], "全局直连": ["DIRECT", "节点选择"], "全局拦截": ["REJECT", "DIRECT"],
+                "漏网之鱼": ["节点选择", "全局直连"],
+            }
+            for g in (cfg.get("proxy-groups") or []):
+                if isinstance(g, dict) and not g.get("proxies") and not g.get("use") and g.get("name") in group_defaults:
+                    g["proxies"] = list(group_defaults[g["name"]])
+            # Loyalsoldier/clash-rules 的 release 分支没有 microsoft.txt（jsDelivr 404），换成 MetaCubeX geosite 同名列表
+            ms = (cfg.get("rule-providers") or {}).get("microsoft")
+            if isinstance(ms, dict) and "Loyalsoldier/clash-rules@release/microsoft.txt" in str(ms.get("url", "")):
+                ms["url"] = "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/microsoft.yaml"
+                ms["path"] = "./ruleset/metacubex/microsoft.yaml"
             with open(yfile, "w", encoding="utf-8") as f:
                 yaml.dump(cfg, f, allow_unicode=True, sort_keys=False)
         except Exception:

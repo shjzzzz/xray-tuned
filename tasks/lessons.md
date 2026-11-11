@@ -120,3 +120,9 @@
   1. mihomo 节点的 `encryption` 以 `client-config.txt` 链接为准（`cmd_resub` 已按节点名同步）；模板里 XHTTP 节点用 `${XHTTP_ENCRYPTION}`。
   2. 客户端需更新到支持 VLESS Encryption 的 mihomo（v1.19.34 实测可用，v1.19.10 不可用）。
   3. 沙箱跑 `cmd_resub` 抽出的 Python 前，必须隔离脚本里硬编码的 `/etc/xhttp-cdn/all/*` 路径（本次漏了，改写了 3 个线上节点库文件，见 lessons #7）。
+
+## 2026-11-11 microsoft 规则集 404 与分组成员被清空
+- **microsoft 404**：`Loyalsoldier/clash-rules@release` 没有 `microsoft.txt`（jsDelivr 404，其余 22 个规则集均 200）。改用 MetaCubeX `meta-rules-dat@meta/geo/geosite/microsoft.yaml`（`behavior: domain`，756 条，mihomo 实测加载成功）；`cmd_resub` 会把已部署文件里的旧地址自动换掉。
+- **线上 `mihomo-full.yaml` 曾无法被 mihomo 加载**：11-10 14:36 重新生成后，所有分组的静态成员被清空（`节点选择`、`谷歌服务`……`proxies: []`），`广告过滤` / `全局拦截` 既无 proxies 也无 include-all，mihomo 报 `proxy group[2]: 广告过滤: use or proxies missing` 并拒绝加载整份配置。
+- **未定位到清空动作的来源**：沙箱里用 v5.6.0 / HEAD 的渲染函数、`cmd_resub` 的 Python、`backup_node_sync_files` 的 on/off 逐一复现，产物分组都正常，故不是这几处。`cmd_resub` 现在对「成员为空且无 use 的分组」按模板默认值补回（只补空组），并在写回前校验。再出现请先查是谁在 11-10 之后改写了客户端文件。
+- **验证口径**：订阅文件必须用 `mihomo -t -f` 实际校验，仅 PyYAML 能解析不代表 mihomo 能加载；此前所有节点测试都用独立监听口、绕过了分组，因此没发现这个问题。
