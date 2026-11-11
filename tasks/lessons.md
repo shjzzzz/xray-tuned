@@ -111,3 +111,12 @@
   2. **客户端 `xmux` 全节点统一**：直连与上下行分离节点统一为 `maxConcurrency: "16-32"`（CDN URI 节点用 `maxConnections: 16`）、`cMaxReuseTimes: 0`、`hMaxRequestTimes: "600-900"`、`hMaxReusableSecs: "1800-3000"`、`hKeepAlivePeriod: 15`，彻底清除残留 `tfo: true`；
   3. **回环与公网 `sockopt` 隔离**：回环 `8001/8002` 显式声明 `"tcpcongestion": "cubic"`；公网入站 `443/8445` 与 `freedom` 出站统一设置 `tcpKeepAliveIdle: 60, tcpKeepAliveInterval: 15, tcpUserTimeout: 300000`，出站移除 `tcpFastOpen`；
   4. **Nginx 超时严格对齐**：`upstream` `keepalive_timeout 900s`（严格小于 Xray `connIdle 1800s`），XHTTP location 的 `client_body_timeout / send_timeout / grpc_read_timeout / grpc_send_timeout` 全部对齐为 `1h`，移除 `reality.cch.us.kg` 的 `Alt-Svc: h3=":443"`。
+
+## 2026-11-11 Mihomo 的 VLESS encryption 必须与服务端 decryption 一致
+- **现象**：mihomo 客户端 Reality-XHTTP / XHTTP-Direct-H2 / H3 全部 502，Xray 客户端同样节点正常。
+- **根因**：服务端 XHTTP 入站（8001 / 8443 / 8445）启用 VLESS Encryption（`mlkem768x25519plus`），v2rayN 链接带 `encryption=<串>`，但 `templates/mihomo-proxies.yaml.tmpl` 与 `cmd_resub` 里重建 Reality-XHTTP 节点的代码都写死 `encryption: none`。Vision 入站（443，`decryption=none`）才应写 none。
+- **实测**（mihomo v1.19.34，直连监听口）：`none` → 502；链接里的加密串 → 204。mihomo v1.19.10 即使写对也不通（内核太旧，不支持 VLESS Encryption）。
+- **规则**：
+  1. mihomo 节点的 `encryption` 以 `client-config.txt` 链接为准（`cmd_resub` 已按节点名同步）；模板里 XHTTP 节点用 `${XHTTP_ENCRYPTION}`。
+  2. 客户端需更新到支持 VLESS Encryption 的 mihomo（v1.19.34 实测可用，v1.19.10 不可用）。
+  3. 沙箱跑 `cmd_resub` 抽出的 Python 前，必须隔离脚本里硬编码的 `/etc/xhttp-cdn/all/*` 路径（本次漏了，改写了 3 个线上节点库文件，见 lessons #7）。

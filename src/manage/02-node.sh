@@ -294,7 +294,7 @@ if yaml:
                         "flow": "",
                         "tls": True,
                         "packet-encoding": "xudp",
-                        "encryption": "none",
+                        "encryption": q("encryption", "none"),
                         "network": "xhttp",
                         "alpn": ["h2"],
                         "servername": reality_domain,
@@ -318,6 +318,19 @@ if yaml:
                     }
                     break
 
+    # 以 client-config.txt 链接为准：mihomo 的 vless encryption 必须与服务端 decryption 一致
+    # （XHTTP 入站启用 VLESS Encryption，写成 none 会被服务端拒绝，表现为节点 502 不通）。
+    link_enc = {}
+    if os.path.isfile(txt_file):
+        with open(txt_file, "r", encoding="utf-8") as f:
+            for l in f:
+                l = l.strip()
+                if l.startswith("vless://") and "#" in l:
+                    lp = urllib.parse.urlparse(l)
+                    e = urllib.parse.parse_qs(lp.query).get("encryption", [""])[0]
+                    if e:
+                        link_enc[urllib.parse.unquote(lp.fragment)] = e
+
     unified_reuse = {
         "max-concurrency": "16-32",
         "c-max-reuse-times": "0",
@@ -340,6 +353,8 @@ if yaml:
             for p in proxies:
                 pname = p.get("name", "")
                 p.pop("tfo", None)
+                if p.get("type") == "vless" and pname in link_enc:
+                    p["encryption"] = link_enc[pname]
                 if "REALITY+PQ+Vision" in pname or "Reality-Vision-Direct" in pname:
                     p["packet-encoding"] = "xudp"
                     p.pop("alpn", None)

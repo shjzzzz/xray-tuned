@@ -68,7 +68,7 @@ proxies:
       - h3
     servername: ${CDN_DOMAIN}
     client-fingerprint: chrome
-    encryption: none${MIHOMO_ECH_PROXY_BLOCK}
+    encryption: "${XHTTP_ENCRYPTION}"${MIHOMO_ECH_PROXY_BLOCK}
     xhttp-opts:
       host: ${CDN_DOMAIN}
       path: ${XHTTP_PATH_SLASH}
@@ -98,7 +98,7 @@ proxies:
       - h3
     servername: ${CDN_DOMAIN}
     client-fingerprint: chrome
-    encryption: none${MIHOMO_ECH_PROXY_BLOCK}
+    encryption: "${XHTTP_ENCRYPTION}"${MIHOMO_ECH_PROXY_BLOCK}
     xhttp-opts:
       host: ${CDN_DOMAIN}
       path: ${XHTTP_PATH_SLASH}
@@ -126,7 +126,7 @@ proxies:
       - h3
     servername: ${REALITY_DOMAIN}
     client-fingerprint: chrome
-    encryption: none
+    encryption: "${XHTTP_ENCRYPTION}"
     xhttp-opts:
       path: ${XHTTP_PATH_SLASH}
       mode: stream-up${MIHOMO_XPADDING_XHTTP_BLOCK}${MIHOMO_SC_MIN_POSTS_BLOCK}
@@ -156,7 +156,7 @@ proxies:
       - h2
     servername: ${REALITY_DOMAIN}
     client-fingerprint: chrome
-    encryption: none
+    encryption: "${XHTTP_ENCRYPTION}"
     xhttp-opts:
       path: ${XHTTP_PATH_SLASH}
       mode: stream-up${MIHOMO_XPADDING_XHTTP_BLOCK}${MIHOMO_SC_MIN_POSTS_BLOCK}
@@ -227,7 +227,7 @@ proxies:
     flow: ""
     tls: true
     packet-encoding: xudp
-    encryption: none
+    encryption: "${XHTTP_ENCRYPTION}"
     network: xhttp
     alpn:
       - h2
@@ -257,7 +257,7 @@ proxies:
     flow: ""
     tls: true
     packet-encoding: xudp
-    encryption: none
+    encryption: "${XHTTP_ENCRYPTION}"
     network: xhttp
     alpn:
       - h2
@@ -308,7 +308,7 @@ proxies:
     flow: ""
     tls: true
     packet-encoding: xudp
-    encryption: none
+    encryption: "${XHTTP_ENCRYPTION}"
     network: xhttp
     # 上行腿 h2 走 TCP 经 CDN（抗运营商 UDP QoS 阻断，握手稳定）
     alpn:
