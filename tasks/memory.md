@@ -6,11 +6,11 @@
 > 
 > | 架构维度 | 当前生产环境权威规范 | 最终裁定章节 |
 > | :--- | :--- | :--- |
-> | **操作系统与基础环境** | **Ubuntu 26.10 (Stonking Stingray)**，ARM64 物理 24GB，BBRv3 双内核备选 | 第 25 节 |
-> | **Xray 内核与通道** | 官方稳定版 **`v26.3.27 stable`** (`XRAY_CHANNEL=stable`)，跳过 pre-release | 第 20 节、第 21 节 |
-> | **Xray Policy 与连接保活** | bufferSize **4096KB**，connIdle **1800s**，scStreamUpServerSecs **300-600s**（禁用 MPTCP） | 第 4 节、第 25 节 |
+> | **操作系统与基础环境** | **Debian 13 (trixie)**，ARM64 物理 24GB，内核 `7.3.3-joeyblog-bbrv3`（2026-11-12 实机核实；原写 Ubuntu 26.10 有误） | 第 25 节 |
+> | **Xray 内核与通道** | 官方稳定版通道（`XRAY_CHANNEL=stable`），实机当前 **`26.11.9`**（原 `v26.3.27` 锁定已过期） | 第 20 节、第 21 节 |
+> | **Xray Policy 与连接保活** | bufferSize **4096KB**，connIdle **1800s**，scStreamUpServerSecs **20-80s**（官方默认；`300-600` 会导致保活饥饿，见 lessons 第 11 节；禁用 MPTCP） | 第 4 节、第 25 节 |
 > | **拥塞控制 (CC)** | 全协议、入站、直连出站统一使用 **`BBRv3 + FQ`**（彻底废止 Brutal，根绝 Bufferbloat） | 第 21 节、第 22 节 |
-> | **系统流控与缓冲** | 单流保护上限 **64MB**，TSQ 发送队列限制 **4MB**，反压 `tcp_notsent_lowat=16KB` | 第 7 节、第 22 节、第 25 节 |
+> | **系统流控与缓冲** | 单流保护上限 **64MB**，TSQ 发送队列限制 **4MB**，反压 `tcp_notsent_lowat=131072`（实机值，原写 16KB 已过期） | 第 7 节、第 22 节、第 25 节 |
 > | **CDN-H2 节点** | 严格单一 **`alpn=h2`**，物理连接并发 **`maxConnections: 16`**，Nginx `Alt-Svc: clear` | 第 14 节、第 19 节 |
 > | **CDN-H3 节点** | 独立纯 QUIC 节点 **`alpn=h3`**，QUIC 窗口：流 **64MB** / 连接 **128MB** | 第 14 节、第 19 节 |
 > | **DNS 回退解析** | 三核 Anycast DOH/DOD（`9.9.9.10` / `1.1.1.1` / `8.8.8.8`，弃用 `127.0.0.53`） | 第 12 节 |
@@ -973,3 +973,8 @@
   - 重新构建 `dist/install.sh` 与 `dist/xh`，更新 `/etc/xhttp-cdn/node.env` 并执行 `xh resub` 刷新订阅。
   - 实测 `xh bench`（全 9 节点 100% PASS）与 `xray_compat_test.py`（v2rayN/TUN 全量 100% PASS）。
 
+## 53. VLESS-XHTTP-Direct-H3 补 QUIC 接收窗口提速 (2026-11-12)
+- **根因**：8443 XHTTP-H3 入站与订阅链接都没有 `finalmask.quicParams`，窗口走 quic-go 默认（流 ≤6MB / 连接 ≤15MB），高 RTT/丢包下封顶吞吐；`XRAY_DEFAULTS=true` 策略曾摘掉 `XH3_FM_PARAM`，且 `cmd_resub` 会剥离 Direct-H3 的 `&fm=`。
+- **改动**：服务端入站 `finalmask.quicParams`（流 8→64MB、连接 16→128MB，不加 congestion/keepAlive）；H3 链接带 `&fm=`；删除 `cmd_resub` 剥离规则。涉及 `src/09-server-config.sh`、`src/11-client-config.sh`、`src/manage/02-node.sh`。
+- **规律**：服务端窗口管上行、客户端窗口管下行，缺一不可；netns+netem 实测 RTT 100~180ms（含 1% 丢包）约 2~3 倍，低 RTT 无差别（单次测量，波动约 ±30%）。Shadowrocket / mihomo 解析不了 `fm`，下行不受益。
+- **注意**：`xh bench` 走 127.0.0.1 回环，测不出窗口收益；Xray 26.11.9 的 `freedom` 默认拦截私网目标，本地靶站实验需显式 allow；严禁 `pkill xray`。详见 `/root/memory.md` §11。

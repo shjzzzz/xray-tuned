@@ -267,6 +267,17 @@ xray_h3_direct_inbound() {
                         }
                     ]
                 }${H3_SOCKOPT_JSON},
+                // 上行吃的是服务端 QUIC 接收窗口；默认窗口（流 ≤6MB / 连接 ≤15MB）在高 RTT 或丢包链路上会封顶吞吐。
+                // 实测（netns+netem，RTT 100~180ms、含 1% 丢包）：下行 / 上行约 2~3 倍；低 RTT 无差别。
+                // 与客户端链接的 fm 成对使用（仅一端调只提升对应方向）。
+                "finalmask": {
+                    "quicParams": {
+                        "initStreamReceiveWindow": 8388608,
+                        "maxStreamReceiveWindow": 67108864,
+                        "initConnectionReceiveWindow": 16777216,
+                        "maxConnectionReceiveWindow": 134217728
+                    }
+                },
                 "xhttpSettings": {
                     "host": "",
                     "path": "${XHTTP_PATH}",

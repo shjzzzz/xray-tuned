@@ -126,3 +126,14 @@
 - **线上 `mihomo-full.yaml` 曾无法被 mihomo 加载**：11-10 14:36 重新生成后，所有分组的静态成员被清空（`节点选择`、`谷歌服务`……`proxies: []`），`广告过滤` / `全局拦截` 既无 proxies 也无 include-all，mihomo 报 `proxy group[2]: 广告过滤: use or proxies missing` 并拒绝加载整份配置。
 - **未定位到清空动作的来源**：沙箱里用 v5.6.0 / HEAD 的渲染函数、`cmd_resub` 的 Python、`backup_node_sync_files` 的 on/off 逐一复现，产物分组都正常，故不是这几处。`cmd_resub` 现在对「成员为空且无 use 的分组」按模板默认值补回（只补空组），并在写回前校验。再出现请先查是谁在 11-10 之后改写了客户端文件。
 - **验证口径**：订阅文件必须用 `mihomo -t -f` 实际校验，仅 PyYAML 能解析不代表 mihomo 能加载；此前所有节点测试都用独立监听口、绕过了分组，因此没发现这个问题。
+
+## 2026-11-12 XHTTP-H3 吞吐：QUIC 窗口要两端成对，且别信回环压测
+- **现象**：VLESS-XHTTP-Direct-H3 在高 RTT / 丢包的跨境链路上下行只有几百 Mbps，上行更低；`xh bench` 看不出问题。
+- **根因**：8443 入站和订阅链接都没有 `finalmask.quicParams`，窗口走 quic-go 默认（流 ≤6MB / 连接 ≤15MB）。服务端窗口管上行、客户端窗口管下行。
+- **规则**：
+  1. XHTTP-H3 入站与链接必须成对带 `quicParams` 窗口（流 8→64MB、连接 16→128MB）；只加窗口即可，不必加 `congestion`（隔离实验已验证）。
+  2. 改链接参数必须同时查 `cmd_resub` 等"规范化"代码会不会再把它剥掉（本次 `cmd_resub` 有显式 `re.sub(r'&fm=...')`）。
+  3. 验证窗口/RTT 类优化用 netns + `tc netem` 拆分实验（基线 / 仅服务端 / 仅客户端 / 两端）；`xh bench` 走 127.0.0.1 回环，不含真实链路，且测速源自身波动极大，不能用来证明此类提速。
+  4. 实验结果出现"各配置数字雷同 / 下行为 0"= 实验无效，先查日志。Xray 26.11.9 `freedom` 默认拦截私网目标（`target blocked by a finalrule`），本地靶站需显式 `allow`。
+  5. 清理实验进程用精确 PID，严禁 `pkill xray` / 宽泛 `pkill -f`（会误杀线上或自身 shell）。
+- **局限**：Shadowrocket 与 mihomo 解析不了 `fm`，下行不受益。

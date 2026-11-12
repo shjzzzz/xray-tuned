@@ -266,8 +266,6 @@ for tpath in [txt_file, "/etc/xhttp-cdn/all/client-config.txt"]:
         elif "Reality-Up-CDN-Down" in tag and "downloadSettings" in line and cdn_addr:
             line = re.sub(r'(%22address%22%3A%22)(?:[0-9.]+|[^%"]+)(%22)', r'\g<1>' + urllib.parse.quote(cdn_addr) + r'\g<2>', line)
             line = re.sub(r'("address":")[^"]+(")', r'\g<1>' + cdn_addr + r'\g<2>', line)
-        elif "Direct-H3" in tag:
-            line = re.sub(r'&fm=[^&#]*', '', line)
         new_lines.append(line)
     with open(tpath, "w", encoding="utf-8") as f:
         f.write("\n".join(new_lines) + "\n")
