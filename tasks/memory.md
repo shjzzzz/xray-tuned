@@ -978,3 +978,8 @@
 - **改动**：服务端入站 `finalmask.quicParams`（流 8→64MB、连接 16→128MB，不加 congestion/keepAlive）；H3 链接带 `&fm=`；删除 `cmd_resub` 剥离规则。涉及 `src/09-server-config.sh`、`src/11-client-config.sh`、`src/manage/02-node.sh`。
 - **规律**：服务端窗口管上行、客户端窗口管下行，缺一不可；netns+netem 实测 RTT 100~180ms（含 1% 丢包）约 2~3 倍，低 RTT 无差别（单次测量，波动约 ±30%）。Shadowrocket / mihomo 解析不了 `fm`，下行不受益。
 - **注意**：`xh bench` 走 127.0.0.1 回环，测不出窗口收益；Xray 26.11.9 的 `freedom` 默认拦截私网目标，本地靶站实验需显式 allow；严禁 `pkill xray`。详见 `/root/memory.md` §11。
+
+## 54. 全部 DNS 统一为 https://1.1.1.1/dns-query（2026-11-13）
+- 模板：`xray-config.json.tmpl`（dns.servers 仅 1.1.1.1 DoH）、`mihomo-full.yaml.tmpl`（四类 nameserver 仅 1.1.1.1，删 nameserver-policy）、`xray-tun-gen.py.tmpl`（三平台）、`nginx.conf.tmpl`（resolver 127.0.0.53）；`src/04-input.sh`、`src/manage/02-node.sh` 的 ECH 查询默认改 1.1.1.1。
+- 依赖：`127.0.0.53` 本地 DoH 转发器由 sbbox（sing-box direct 入站 + hijack-dns）提供；独立安装 xray-tuned 而无 sbbox 的机器需自备。
+- 详见 `/root/memory.md` §13（线上改动、抓包验证、回滚）。

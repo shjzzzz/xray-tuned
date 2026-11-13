@@ -161,7 +161,7 @@ if [[ "$FEATURE_CDN_ECH" == true ]]; then
   ask CDN_ECH "是否启用 CDN ECH [y/N]: " "n"
   if [[ "${CDN_ECH,,}" == "y" || "${CDN_ECH,,}" == "yes" ]]; then
     CDN_ECH_ENABLED=true
-    CDN_ECH_QUERY="cloudflare-ech.com+https://223.5.5.5/dns-query"
+    CDN_ECH_QUERY="cloudflare-ech.com+https://1.1.1.1/dns-query"
   else
     CDN_ECH_ENABLED=false
     CDN_ECH_QUERY=""

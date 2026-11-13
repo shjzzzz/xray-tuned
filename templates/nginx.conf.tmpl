@@ -136,7 +136,7 @@ http {
     # 只会让 nginx 每次启动/重载打两条 [warn]，装订不出任何东西。
     # 写成显式 off 是表态：不是忘了开，是签发方已经没有 OCSP 了。
     ssl_stapling               off;
-    resolver                   169.254.169.254 1.1.1.1 8.8.8.8 valid=300s ${NGINX_RESOLVER_IPV6};
+    resolver                   127.0.0.53 valid=300s ${NGINX_RESOLVER_IPV6};
     resolver_timeout           5s;
 
     map \$real_client_ip \$proxy_forwarded_elem {
