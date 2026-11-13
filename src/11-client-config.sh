@@ -337,6 +337,21 @@ else
   H2_DIRECT_NODE_LINE=""
 fi
 
+# h2-direct CDN（借鉴 argosbx xhttp-h23）：443 系端口 + 域名证书时，支持直出经 CDN 的 TCP / UDP 节点
+FEATURE_H2_DIRECT_CDN=false
+if [[ "$FEATURE_H2_DIRECT" == true && -n "${CDN_DOMAIN:-}" ]]; then
+  case "${H2_PORT:-}" in
+    443|2053|2083|2087|2096|8443) FEATURE_H2_DIRECT_CDN=true ;;
+  esac
+fi
+if [[ "$FEATURE_H2_DIRECT_CDN" == true ]]; then
+  H2_DIRECT_CDN_TCP_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:${H2_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-Direct-CDN-TCP${NODE_SUFFIX}"
+  H2_DIRECT_CDN_UDP_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:${H2_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-Direct-CDN-UDP${NODE_SUFFIX}"
+else
+  H2_DIRECT_CDN_TCP_NODE_LINE=""
+  H2_DIRECT_CDN_UDP_NODE_LINE=""
+fi
+
 # v4.9.49 / v4.9.50：Hysteria2 链接附带 fm（v2rayN / v2rayNG 的 finalmask JSON 参数）打开 QUIC 保活。
 # Xray-core 作 Hysteria2 客户端时 keepAlivePeriod 默认 0（v26.3.27 客户端 dialer.go 里 10s 的默认值被注释掉），
 # 服务端 hub.go 的 quic.Config 也不传 KeepAlivePeriod，闲置 30s 即断，下一次请求重握手多 2 个 RTT。
@@ -448,7 +463,7 @@ MIHOMOEOF
 prune_mihomo_features() {
   local file="$1" feat
   [[ -f "$file" ]] || return 0
-  for feat in FEATURE_TLS_PQ_XHTTP FEATURE_REALITY_PQ_VISION FEATURE_REALITY_VISION FEATURE_REALITY_XHTTP FEATURE_CDN_H2 FEATURE_CDN_H3 FEATURE_H3_DIRECT FEATURE_H2_DIRECT FEATURE_HY2 FEATURE_HY2_H3 FEATURE_HY2_OBFS FEATURE_UP_CDN_DOWN_MIHOMO FEATURE_CDN_UP_REALITY_DOWN; do
+  for feat in FEATURE_TLS_PQ_XHTTP FEATURE_REALITY_PQ_VISION FEATURE_REALITY_VISION FEATURE_REALITY_XHTTP FEATURE_CDN_H2 FEATURE_CDN_H3 FEATURE_H3_DIRECT FEATURE_H2_DIRECT FEATURE_H2_DIRECT_CDN FEATURE_HY2 FEATURE_HY2_H3 FEATURE_HY2_OBFS FEATURE_UP_CDN_DOWN_MIHOMO FEATURE_CDN_UP_REALITY_DOWN; do
     local on="${!feat}"
     if [[ "$on" == true ]]; then
       sed -i "/^[[:space:]]*#<<${feat}\$/d; /^[[:space:]]*#>>${feat}\$/d" "$file"

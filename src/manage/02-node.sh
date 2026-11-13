@@ -1656,7 +1656,12 @@ cmd_backup_server_node() {
       if [[ "$cur" == true && "$has_inbound" == true ]]; then
         # 已开启也顺手把客户端文件补齐（订阅里缺这个节点时，这是唯一的修复入口）
         backup_store_check
-        backup_node_sync_files "$name" on >/dev/null 2>&1 && cmd_resub
+        backup_node_sync_files "$name" on >/dev/null 2>&1
+        if [[ "$key" == h2direct ]]; then
+          backup_node_sync_files "VLESS-XHTTP-Direct-CDN-TCP" on >/dev/null 2>&1 || true
+          backup_node_sync_files "VLESS-XHTTP-Direct-CDN-UDP" on >/dev/null 2>&1 || true
+        fi
+        cmd_resub
         info "${label} 已经是开启状态"
         return 0
       fi
@@ -1681,6 +1686,10 @@ cmd_backup_server_node() {
       backup_port_busy "$proto" "$port" "$key" && fail "${proto^^} ${port} 已被其他进程占用${occupier:+ ($occupier)}，未做任何修改"
       info "正在开启 ${label} ..."
       backup_node_sync_files "$name" on || fail "更新客户端文件失败，未改动服务端（原因见上）"
+      if [[ "$key" == h2direct ]]; then
+        backup_node_sync_files "VLESS-XHTTP-Direct-CDN-TCP" on >/dev/null 2>&1 || true
+        backup_node_sync_files "VLESS-XHTTP-Direct-CDN-UDP" on >/dev/null 2>&1 || true
+      fi
       backup_inbound_edit "$key" on "$port"; rc=$?
       if [[ $rc -ne 0 && $rc -ne 3 ]]; then
         backup_node_sync_files "$name" off >/dev/null 2>&1 || true
@@ -1709,6 +1718,10 @@ cmd_backup_server_node() {
       backup_inbound_edit "$key" off "$port"; rc=$?
       [[ $rc -eq 0 || $rc -eq 3 ]] || fail "移除服务端入站失败（原因见上），未改动客户端文件和标志位"
       backup_node_sync_files "$name" off || warn "服务端入站已移除，但客户端文件没有同步（原因见上）。请手动检查 client-config.txt 与订阅"
+      if [[ "$key" == h2direct ]]; then
+        backup_node_sync_files "VLESS-XHTTP-Direct-CDN-TCP" off >/dev/null 2>&1 || true
+        backup_node_sync_files "VLESS-XHTTP-Direct-CDN-UDP" off >/dev/null 2>&1 || true
+      fi
       update_node_env "$flag" "false"
       export "$flag"=false
       info "${label} 已关闭"

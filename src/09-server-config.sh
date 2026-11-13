@@ -325,7 +325,7 @@ xray_h2_direct_inbound() {
                 "network": "xhttp",
                 "security": "tls",
                 "tlsSettings": {
-                    "alpn": ["h2"],
+                    "alpn": ["h2", "http/1.1"],
                     // 只谈 TLS 1.3。注意不能靠「删掉这行」来要最新特性——
                     // 删掉后 Xray 会退回它自己的默认下限（更低），
                     // 所以这里显式写死 1.3。
