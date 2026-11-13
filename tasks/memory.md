@@ -13,7 +13,7 @@
 > | **系统流控与缓冲** | 单流保护上限 **64MB**，TSQ 发送队列限制 **4MB**，反压 `tcp_notsent_lowat=131072`（实机值，原写 16KB 已过期） | 第 7 节、第 22 节、第 25 节 |
 > | **CDN-H2 节点** | 严格单一 **`alpn=h2`**，物理连接并发 **`maxConnections: 16`**，Nginx `Alt-Svc: clear` | 第 14 节、第 19 节 |
 > | **CDN-H3 节点** | 独立纯 QUIC 节点 **`alpn=h3`**，QUIC 窗口：流 **64MB** / 连接 **128MB** | 第 14 节、第 19 节 |
-> | **DNS 回退解析** | 三核 Anycast DOH/DOD（`9.9.9.10` / `1.1.1.1` / `8.8.8.8`，弃用 `127.0.0.53`） | 第 12 节 |
+> | **DNS 回退解析** | 三核 Anycast DOH/DOD（`9.9.9.10` / `1.1.1.1` / `8.8.8.8`，弃用 `127.0.0.53`） | 第 12 节 |（**【已过时：2026-11-13 起全部 DNS 统一为 `https://1.1.1.1/dns-query`，见第 54 节】**）
 > | **MTU 与防黑洞** | 网卡 MTU **1500**，全链路 iptables **`TCPMSS --clamp-mss-to-pmtu`** | 第 5 节、第 15 节 |
 > | **双回环与多端兼容** | 8001（V2RayN/Mihomo，mlkem） / 8002（Shadowrocket，免解密）分立 | 第 1 节、第 8 节 |
 > | **Reality 直连与 UDP** | target 锁定本地网关 `127.0.0.1:8003`；入站注入 TFO 与 BBR；客户端扩充 `alpn=h2,http/1.1` 与 `packetEncoding=xudp`；严禁开启 Mux 保证 `splice` 零拷贝 | 第 24 节、第 26 节 |
@@ -90,7 +90,7 @@
      - `06-tuning-lib.sh` 中的 `set_tcp_brutal_xray` 在开启 Brutal 时通过正则守卫，确保 freedom 出站始终维持 BBR。
   2. **修复 DNS 本地解析（注意：后续已被第 12 节升级替代）**：
      - `xray-config.json.tmpl` 中的 fallback DNS 此前修正为 `127.0.0.53`。
-     - *演进标注*：在 **第 12 节 (第 4 条)** 中发现 `127.0.0.53` 处理特定压缩标签会报 `segment prefix is reserved` 崩溃，当前已全面升级替换为权威 Anycast DNS `8.8.8.8` / `9.9.9.10` / `1.1.1.1`。
+     - *演进标注*：在 **第 12 节 (第 4 条)** 中发现 `127.0.0.53` 处理特定压缩标签会报 `segment prefix is reserved` 崩溃，当前已全面升级替换为权威 Anycast DNS `8.8.8.8` / `9.9.9.10` / `1.1.1.1`。（**补充：2026-11-13 的 `127.0.0.53` 是 sing-box 自带转发器，而不是此前出问题的系统 stub；仅 nginx 与系统解析使用，Xray 自己用 DoH 直连 1.1.1.1，不受此限；已实测 nginx 伪装站经它解析并回源正常**）
   3. **停用境外服务端优选定时器**：
      - 明确优选 IP 测速必须在客户端或本地网关执行，停用服务端的 `cf-bestip.timer` 与 `cf-healthcheck.timer`。
 
@@ -902,7 +902,7 @@
   - `ssl_session_cache` 扩容至 `shared:SSL:64m;`（容纳约 26 万会话），`ssl_session_timeout` 延长至 `1d`（符合 RFC 8446 标准），保证移动端及断网重连稳定利用 Session Ticket 和 0-RTT 极速复用，显著降低 CPU 握手开销。
   - 注入 `ssl_buffer_size 8k;`，减少 TLS 记录块切片等待，有效压缩首包往返延迟 (TTFB)。
 - **回落伪装站 DNS 解析韧性增强 (Masquerade DNS Resilience)**：
-  - 针对此前日志排查出的 `www.sjsu.edu could not be resolved (Operation timed out)`，在 `resolver` 列表中优先引入云内网低延迟解析器 `169.254.169.254`（<1ms），并保留 `1.1.1.1`、`8.8.8.8` 作为灾备；解析缓存由 60s 延长为 300s，超时放宽至 5s，彻底根除回落伪装站偶发的 502/504 错误。
+  - 针对此前日志排查出的 `www.sjsu.edu could not be resolved (Operation timed out)`，在 `resolver` 列表中优先引入云内网低延迟解析器 `169.254.169.254`（<1ms），并保留 `1.1.1.1`、`8.8.8.8` 作为灾备；解析缓存由 60s 延长为 300s，超时放宽至 5s，彻底根除回落伪装站偶发的 502/504 错误。（**其中内网 DNS `169.254.169.254` 已于 2026-11-13 改为 `127.0.0.53`，由 sing-box DoH 转发器提供，见第 54 节**）
 - **Upstream gRPC 保活平滑轮换**：
   - 在 `upstream xray_xhttp` 与 `upstream xray_xhttp_sr` 中加入 `keepalive_time 1h;`，确保超长连接在维持复用的同时平滑轮替。
 - **模板与实机同步**：
@@ -982,4 +982,19 @@
 ## 54. 全部 DNS 统一为 https://1.1.1.1/dns-query（2026-11-13）
 - 模板：`xray-config.json.tmpl`（dns.servers 仅 1.1.1.1 DoH）、`mihomo-full.yaml.tmpl`（四类 nameserver 仅 1.1.1.1，删 nameserver-policy）、`xray-tun-gen.py.tmpl`（三平台）、`nginx.conf.tmpl`（resolver 127.0.0.53）；`src/04-input.sh`、`src/manage/02-node.sh` 的 ECH 查询默认改 1.1.1.1。
 - 依赖：`127.0.0.53` 本地 DoH 转发器由 sbbox（sing-box direct 入站 + hijack-dns）提供；独立安装 xray-tuned 而无 sbbox 的机器需自备。
-- 详见 `/root/memory.md` §13（线上改动、抓包验证、回滚）。
+- **线上改动**：`/etc/resolv.conf`→`127.0.0.53`（dhcpcd 加 `nohook resolv.conf`）、nginx `resolver 127.0.0.53`、Xray/sing-box 仅 1.1.1.1 DoH、sing-box 新增 `dns-in`（direct 入站 + hijack-dns，仅回环）、Pika 容器 `dns: [127.0.0.1]` 失败即关闭（宿主 resolv.conf 为回环时 Docker 会回落 8.8.8.8，属隐蔽泄露）。
+- **验证**：公网网卡抓包 port 53/853 为 0 包；`ss` 对外 DNS 连接仅 sing-box 与 xray 到 `1.1.1.1:443`；16 份订阅文件无残留其他解析器；nginx 伪装站经新解析器回源与直连一致（上游本身对 `/` 返回 404，与本改动无关）。
+- **代价**：单一上游无兜底，1.1.1.1 不可达则全部解析失败；国内域名也走 1.1.1.1。未模拟 dhcpcd 租约续期，未用真实 mihomo/xray-tun 客户端做 dnsleaktest。
+- 详见 `/root/memory.md` §13（线上改动、抓包验证、回滚、端口放行复核）。
+
+## 55. Snell 节点不通：mihomo 不支持 Snell v6，新增独立 v5 入站（2026-11-13）
+- **根因**：订阅给 mihomo 的 Snell 节点是 `version: 6`，mihomo 只支持 v1–v5；sing-box 一个 snell 入站只能一个版本，v6 入站不接受 v4/v5 线协议客户端（实测 exit 35），v5 入站接受 v4/v5 线协议客户端。服务端 v6 本身正常。
+- **改动**：`sb.json` 新增 `snell-v5-in`（version 5，同 PSK，端口 19115，存 `/root/sbbox/port_snell5`），v6（18429）保留给 Surge / sing-box；mihomo 订阅 snell 节点改为 `SB-Snell-v5:19115`；iptables/ip6tables 放行并持久化，端口加入保留端口。`sbbox-tuned` 的 `sbbox.sh` 同步（分配/放行/关闭、入站、Clash 节点、load/save_state、proto off、ports 清单、自检），已推送。
+- **陷阱**：sing-box **出站** `snell` 只接受 version 4 或 6（写 3/5 报 `unsupported version`），`mode` 为 v6 专有字段；入站可写 5（`obfs_mode`）或 6（`mode`）。
+- **局限**：未用真实 mihomo 验证（本机无 mihomo，下载运行外部二进制被拒；证据链为文档 + sing-box v4 线协议客户端连 v5 入站 204，属推断）；未端到端跑完整重新生成流程；云安全组需放行 TCP 19115。详见 `/root/memory.md` §12。
+
+## 56. Pika 探针加固与 TLS 反代（2026-11-12）
+- **背景**：Pika（`/opt/pika`，docker compose：pika-server + pika-victoriametrics；探针 `pika-agent.service` 用独立 api_key 连 `http://127.0.0.1:8080`）原为默认密码 `admin123`、`0.0.0.0:8080`、`ip_trust_list: 0.0.0.0/0`（可伪造 `X-Forwarded-For`）。
+- **改动**：管理员密码换随机 24 位（bcrypt 哈希在 `config.yaml` 的 `App.Users`，明文仅存 `/root/.pika/admin-credentials.txt`，权限 600）；端口改 `127.0.0.1:8080:8080`；`ip_trust_list` 收窄为 `127.0.0.1/32` + `172.18.0.1/32`（docker 网桥网关）；nginx TLS 反代公网 TCP **9443**（`/etc/nginx/conf.d/pika.conf` + `pika-proxy.inc`，`nginx.conf` http 块内 `# BEGIN pika-tls … # END pika-tls` 一行 include，未知 SNI `ssl_reject_handshake`，`/api/login` 限速 10r/m burst5 返回 429，XFF 用 `$remote_addr` 覆盖）；9443 加入 `ip_local_reserved_ports`，iptables/ip6tables 放行并持久化。
+- **陷阱**：`09-server-config.sh` 重新生成 `nginx.conf` 会覆盖 pika-tls 标记块，需补回；xh 没有独立放行清单，放行即 iptables 规则本身。
+- **局限**：云安全组（OCI）需放行 TCP 9443，本机无法核实（2026-11-13 复核：本机监听与 iptables 均通，自测 200）。详见 `/root/memory.md` §5.3。
