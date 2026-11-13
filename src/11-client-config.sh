@@ -337,7 +337,7 @@ else
   H2_DIRECT_NODE_LINE=""
 fi
 
-# h2-direct CDN（借鉴 argosbx xhttp-h23）：443 系端口 + 域名证书时，支持直出经 CDN 的 TCP / UDP 节点
+# h2-direct CDN（借鉴 argosbx xhttp-h23）：443 系端口 + 域名证书时，支持直出经 CDN 的 UDP 节点
 FEATURE_H2_DIRECT_CDN=false
 if [[ "$FEATURE_H2_DIRECT" == true && -n "${CDN_DOMAIN:-}" ]]; then
   case "${H2_PORT:-}" in
@@ -345,10 +345,8 @@ if [[ "$FEATURE_H2_DIRECT" == true && -n "${CDN_DOMAIN:-}" ]]; then
   esac
 fi
 if [[ "$FEATURE_H2_DIRECT_CDN" == true ]]; then
-  H2_DIRECT_CDN_TCP_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:${H2_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-Direct-CDN-TCP${NODE_SUFFIX}"
   H2_DIRECT_CDN_UDP_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:${H2_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-Direct-CDN-UDP${NODE_SUFFIX}"
 else
-  H2_DIRECT_CDN_TCP_NODE_LINE=""
   H2_DIRECT_CDN_UDP_NODE_LINE=""
 fi
 

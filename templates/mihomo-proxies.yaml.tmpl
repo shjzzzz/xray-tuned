@@ -168,31 +168,7 @@ proxies:
   #>>FEATURE_H2_DIRECT
 
   #<<FEATURE_H2_DIRECT_CDN
-  # 2c. h2-direct 443 系端口直出 CDN（TCP / UDP，借鉴 argosbx xhttp-h23）
-  - name: VLESS-XHTTP-Direct-CDN-TCP${NODE_SUFFIX}
-    type: vless
-    server: ${CDN_CONNECT_ADDR}
-    port: ${H2_PORT}
-    uuid: ${UUID2}
-    udp: true
-    flow: ""
-    tls: true
-    network: xhttp
-    alpn:
-      - h2
-    servername: ${CDN_DOMAIN}
-    client-fingerprint: chrome
-    encryption: "${XHTTP_ENCRYPTION}"
-    xhttp-opts:
-      host: ${CDN_DOMAIN}
-      path: ${XHTTP_PATH_SLASH}
-      mode: auto${MIHOMO_XPADDING_CDN_BLOCK}${MIHOMO_SC_MIN_POSTS_BLOCK}
-      reuse-settings:
-        max-concurrency: "16-32"
-        c-max-reuse-times: "0"
-        h-max-request-times: "600-900"
-        h-max-reusable-secs: "1800-3000"${MIHOMO_REUSE_KEEPALIVE_XHTTP}
-
+  # 2c. h2-direct 443 系端口直出 CDN（UDP，借鉴 argosbx xhttp-h23）
   - name: VLESS-XHTTP-Direct-CDN-UDP${NODE_SUFFIX}
     type: vless
     server: ${CDN_CONNECT_ADDR}
