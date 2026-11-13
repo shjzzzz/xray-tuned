@@ -26,7 +26,7 @@
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/acme-yg/main/acme.sh)
 ```
-> **前置准备**：准备 2 个解析到本 VPS 的域名（直连域名仅 DNS 灰云解析；CDN 域名开启 Cloudflare 黄云代理）。
+> **前置准备**：准备 2 个解析到本 VPS 的域名（直连域名<reality.yourdomain.com>仅 DNS 灰云解析；CDN 域名<cdn.yourdomain.com>开启 Cloudflare 黄云代理）。
 
 ### 2. 自动化静默部署
 适合脚本自动化批量部署，无需任何人工确认：
