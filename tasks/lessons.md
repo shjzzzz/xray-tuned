@@ -137,11 +137,3 @@
   4. 实验结果出现"各配置数字雷同 / 下行为 0"= 实验无效，先查日志。Xray 26.11.9 `freedom` 默认拦截私网目标（`target blocked by a finalrule`），本地靶站需显式 `allow`。
   5. 清理实验进程用精确 PID，严禁 `pkill xray` / 宽泛 `pkill -f`（会误杀线上或自身 shell）。
 - **局限**：Shadowrocket 与 mihomo 解析不了 `fm`，下行不受益。
-
-## 2026-11-13 全部 DNS 统一 1.1.1.1 DoH、禁止泄露
-- **根因**：DNS 配置散落在 7 处（resolv.conf/dhcpcd、nginx resolver、Xray、sing-box、docker 容器、mihomo/xray-tun/sing-box 客户端），逐处改才能不漏；只改代理核心，系统解析器仍把明文发给 OCI 内网 DNS。
-- **规则**：
-  1. "禁止泄露"= 全局无兜底：删明文 UDP、备用解析器、`type: local`；改完必须在公网网卡抓 port 53/853 验证为 0，并看 `ss -tnp` 只剩 1.1.1.1:443。
-  2. 宿主 resolv.conf 指向回环时，Docker 默认回落 8.8.8.8/8.8.4.4（隐蔽泄露）；容器要显式 `dns: [127.0.0.1]` 失败即关闭，或指向可达的本地转发器。
-  3. dhcpcd 租约续期会改写 resolv.conf，须 `nohook resolv.conf`。`cloudflared proxy-dns` 已移除，nginx 不支持 DoH，本机转发器用 sing-box `direct` 入站 + `hijack-dns`。
-  4. mihomo 的 `default-nameserver` / `proxy-server-nameserver` 也会发 DNS，别只改 `nameserver`；live 的 `client-config-mihomo-full.yaml` 是 yaml 重序列化过的（无注释），改它要按实际内容定位，不要用模板里的注释当锚点。

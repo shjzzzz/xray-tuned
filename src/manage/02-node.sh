@@ -792,7 +792,7 @@ with open(cfg, 'w', encoding='utf-8') as f:
 
 sync_client_configs_ech() {
   local enable="$1"
-  local query="${2:-cloudflare-ech.com+https://1.1.1.1/dns-query}"
+  local query="${2:-cloudflare-ech.com+https://223.5.5.5/dns-query}"
   python3 -c "
 import os, sys, re, urllib.parse, json, yaml
 
@@ -1154,7 +1154,7 @@ cmd_ech() {
       local cur_ech="${CDN_ECH_ENABLED:-false}"
       if [[ "$cur_ech" == "true" ]]; then
         echo -e "  当前状态:       ${GREEN}已开启 (Enabled)${NC}"
-        echo -e "  DoH 查询端点:   ${CDN_ECH_QUERY:-cloudflare-ech.com+https://1.1.1.1/dns-query}"
+        echo -e "  DoH 查询端点:   ${CDN_ECH_QUERY:-cloudflare-ech.com+https://223.5.5.5/dns-query}"
       else
         echo -e "  当前状态:       ${YELLOW}未开启 (Disabled)${NC}"
       fi
@@ -1185,7 +1185,7 @@ cmd_ech() {
       ;;
     on)
       info "正在开启 CDN ECH..."
-      local cdn_query="${2:-cloudflare-ech.com+https://1.1.1.1/dns-query}"
+      local cdn_query="${2:-cloudflare-ech.com+https://223.5.5.5/dns-query}"
       update_node_env "FEATURE_CDN_ECH" "true"
       update_node_env "CDN_ECH_ENABLED" "true"
       update_node_env "CDN_ECH_QUERY" "$cdn_query"
