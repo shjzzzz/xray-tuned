@@ -113,7 +113,7 @@ proxies:
   #>>FEATURE_CDN_H3
 
   #<<FEATURE_DIRECT_MERGED
-  # 2. 直连 VPS（同端口 UDP+TCP 合并自适应：alpn [h3, h2]）
+  # 2. 直连 VPS（仅支持 h3）
   - name: VLESS-XHTTP-Direct${NODE_SUFFIX}
     type: vless
     server: ${VPS_IP}
@@ -125,7 +125,6 @@ proxies:
     network: xhttp
     alpn:
       - h3
-      - h2
     servername: ${REALITY_DOMAIN}
     client-fingerprint: chrome
     encryption: "${XHTTP_ENCRYPTION}"
