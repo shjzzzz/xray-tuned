@@ -193,9 +193,9 @@ EOF
 fi
 
 if [[ "$CDN_ECH_ENABLED" == true ]]; then
-  DOWNLOAD_TLS_ENC="%22tlsSettings%22%3A%7B%22serverName%22%3A%22${CDN_DOMAIN}%22%2C%22alpn%22%3A%5B%22h2%22%5D%2C%22fingerprint%22%3A%22chrome%22%2C%22ech%22%3A%22${CDN_ECH_QUERY_ENC}%22%7D"
+  DOWNLOAD_TLS_ENC="%22tlsSettings%22%3A%7B%22serverName%22%3A%22${CDN_DOMAIN}%22%2C%22alpn%22%3A%5B%22h3%22%2C%22h2%22%5D%2C%22fingerprint%22%3A%22chrome%22%2C%22ech%22%3A%22${CDN_ECH_QUERY_ENC}%22%7D"
 else
-  DOWNLOAD_TLS_ENC="%22tlsSettings%22%3A%7B%22serverName%22%3A%22${CDN_DOMAIN}%22%2C%22alpn%22%3A%5B%22h2%22%5D%2C%22fingerprint%22%3A%22chrome%22%7D"
+  DOWNLOAD_TLS_ENC="%22tlsSettings%22%3A%7B%22serverName%22%3A%22${CDN_DOMAIN}%22%2C%22alpn%22%3A%5B%22h3%22%2C%22h2%22%5D%2C%22fingerprint%22%3A%22chrome%22%7D"
 fi
 if [[ "$FEATURE_XPADDING" == true ]]; then
   DOWNLOAD_XHTTP_ENC="%22xhttpSettings%22%3A%7B%22host%22%3A%22${CDN_DOMAIN}%22%2C%22path%22%3A%22${XHTTP_PATH_ENC}%22%2C%22mode%22%3A%22auto%22%2C%22extra%22%3A%7B${XPAD_FIELDS_ENC}%2C%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D%7D"
@@ -235,7 +235,7 @@ fi
 REALITY_DOWNLOAD_ENC="%22downloadSettings%22%3A%7B%22address%22%3A%22${VPS_IP//:/%3A}%22%2C%22port%22%3A443%2C%22network%22%3A%22xhttp%22%2C%22security%22%3A%22reality%22%2C%22realitySettings%22%3A%7B%22serverName%22%3A%22${REALITY_DOMAIN}%22%2C%22fingerprint%22%3A%22chrome%22%2C%22publicKey%22%3A%22${PUBLIC_KEY}%22%2C%22shortId%22%3A%22${SHORT_ID}%22%2C%22spiderX%22%3A%22%22%7D%2C%22xhttpSettings%22%3A%7B%22path%22%3A%22${XHTTP_PATH_ENC}%22%2C%22mode%22%3A%22stream-up%22%2C%22extra%22%3A${XPAD_EXTRA_ENC}%7D%2C%22sockopt%22%3A%7B%22tcpNoDelay%22%3Atrue%7D%7D"
 XPAD_REV_SPLIT_EXTRA_ENC="${XPAD_CDN_EXTRA_ENC%\%7D}%2C${REALITY_DOWNLOAD_ENC}%7D"
 if [[ "${FEATURE_CDN_UP_REALITY_DOWN:-false}" == true ]]; then
-  CDN_UP_REALITY_DOWN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}:443?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=${XPAD_REV_SPLIT_EXTRA_ENC}&packetEncoding=xudp#VLESS-CDN-Up-Reality-Down${NODE_SUFFIX}"
+  CDN_UP_REALITY_DOWN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}:443?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3,h2${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=${XPAD_REV_SPLIT_EXTRA_ENC}&packetEncoding=xudp#VLESS-CDN-Up-Reality-Down${NODE_SUFFIX}"
 else
   CDN_UP_REALITY_DOWN_NODE_LINE=""
 fi
@@ -289,13 +289,13 @@ fi
 # 直连入站只收 stream-up。
 # 10 大核心节点之三大后量子 (ML-KEM-768) 节点（默认开启）
 if [[ "${FEATURE_TLS_PQ_XHTTP:-false}" == true ]]; then
-  TLS_PQ_XHTTP_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=%7B%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D&packetEncoding=xudp#VLESS-TLS+PQ+XHTTP+CDN"
+  TLS_PQ_XHTTP_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3,h2&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=%7B%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D&packetEncoding=xudp#VLESS-TLS+PQ+XHTTP+CDN"
 else
   TLS_PQ_XHTTP_NODE_LINE=""
 fi
 
 if [[ "${FEATURE_TLS_PQ_VISION:-false}" == true ]]; then
-  TLS_PQ_VISION_NODE_LINE="vless://${UUID1}@${CDN_CONNECT_ADDR}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=%7B%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D&packetEncoding=xudp#VLESS-TLS+PQ+Vision+XHTTP+CDN"
+  TLS_PQ_VISION_NODE_LINE="vless://${UUID1}@${CDN_CONNECT_ADDR}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3,h2&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=%7B%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D&packetEncoding=xudp#VLESS-TLS+PQ+Vision+XHTTP+CDN"
 else
   TLS_PQ_VISION_NODE_LINE=""
 fi
@@ -312,17 +312,17 @@ FEATURE_H2_DIRECT_ONLY=false
 FEATURE_DIRECT_MERGED=false
 if [[ "$FEATURE_H3_DIRECT" == true && "$FEATURE_H2_DIRECT" == true && "${H2_PORT:-}" == "${H3_PORT:-}" ]]; then
   FEATURE_DIRECT_MERGED=true
-  H3_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H3_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h3&type=xhttp&path=${XHTTP_PATH_SLASH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}${XH3_FM_PARAM}#VLESS-XHTTP-Direct${NODE_SUFFIX}"
+  H3_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H3_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h3,h2&type=xhttp&path=${XHTTP_PATH_SLASH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}${XH3_FM_PARAM}#VLESS-XHTTP-Direct${NODE_SUFFIX}"
 elif [[ "$FEATURE_H3_DIRECT" == true ]]; then
   FEATURE_H3_DIRECT_ONLY=true
-  H3_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H3_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h3&type=xhttp&path=${XHTTP_PATH_SLASH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}${XH3_FM_PARAM}#VLESS-XHTTP-Direct-H3${NODE_SUFFIX}"
+  H3_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H3_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h3,h2&type=xhttp&path=${XHTTP_PATH_SLASH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}${XH3_FM_PARAM}#VLESS-XHTTP-Direct-H3${NODE_SUFFIX}"
 else
   H3_DIRECT_NODE_LINE=""
 fi
 
 # h2-cdn: 经 CDN 的 TCP(h2) 链路（默认关闭，FEATURE_CDN_H2=true 时启用）
 if [[ "$FEATURE_CDN_H2" == true ]]; then
-  H2_CDN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-CDN-H2${NODE_SUFFIX}"
+  H2_CDN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3,h2${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-CDN-H2${NODE_SUFFIX}"
 else
   H2_CDN_NODE_LINE=""
 fi
@@ -333,7 +333,7 @@ fi
 # HTTP/3（transport/xhttp/client.go:159），列表里多一个值就退回 TCP。
 # 默认关闭（v4.9.64；FEATURE_CDN_H3=true 或 xh cdnh3 on 开启）。
 if [[ "${FEATURE_CDN_H3:-false}" == true ]]; then
-  H3_CDN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-CDN-H3${NODE_SUFFIX}"
+  H3_CDN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3,h2${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH_SLASH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-CDN-H3${NODE_SUFFIX}"
 else
   H3_CDN_NODE_LINE=""
 fi
@@ -341,7 +341,7 @@ fi
 # h2-direct（v4.7.0）：h3-direct 的 TCP 版（若未与 h3-direct 合并，则单独输出）
 if [[ "$FEATURE_H2_DIRECT" == true && "$FEATURE_DIRECT_MERGED" != true ]]; then
   FEATURE_H2_DIRECT_ONLY=true
-  H2_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H2_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&type=xhttp&path=${XHTTP_PATH_SLASH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}#VLESS-XHTTP-Direct-H2${NODE_SUFFIX}"
+  H2_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H2_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h3,h2&type=xhttp&path=${XHTTP_PATH_SLASH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}#VLESS-XHTTP-Direct-H2${NODE_SUFFIX}"
 else
   H2_DIRECT_NODE_LINE=""
 fi
@@ -400,10 +400,10 @@ hy2_client_fm_param() {
 
 if [[ "$FEATURE_HY2" == true && "${FEATURE_HY2_OBFS:-false}" == true ]]; then
   if [[ "${FEATURE_PORT_HOPPING:-false}" == true ]]; then
-    HY2_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_PORT}/?sni=${REALITY_DOMAIN}&mport=${HY2_PORT},${PORT_HOP_RANGE:-40000-50000}&alpn=h3&obfs=salamander&obfs-password=$(rawurlencode "$OBFS_PASSWORD")${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "$OBFS_PASSWORD" "${HY2_PORT},${PORT_HOP_RANGE:-40000-50000}")#Hysteria2-TLS-BBR-Salamander"
+    HY2_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_PORT}/?sni=${REALITY_DOMAIN}&mport=${HY2_PORT},${PORT_HOP_RANGE:-40000-50000}&alpn=h3,h2&obfs=salamander&obfs-password=$(rawurlencode "$OBFS_PASSWORD")${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "$OBFS_PASSWORD" "${HY2_PORT},${PORT_HOP_RANGE:-40000-50000}")#Hysteria2-TLS-BBR-Salamander"
     MIHOMO_HY2_PORTS_LINE=$(printf '\n    ports: %s,%s' "${HY2_PORT}" "${PORT_HOP_RANGE:-40000-50000}")
   else
-    HY2_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_PORT}/?sni=${REALITY_DOMAIN}&alpn=h3&obfs=salamander&obfs-password=$(rawurlencode "$OBFS_PASSWORD")${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "$OBFS_PASSWORD" "")#Hysteria2-TLS-BBR-Salamander"
+    HY2_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_PORT}/?sni=${REALITY_DOMAIN}&alpn=h3,h2&obfs=salamander&obfs-password=$(rawurlencode "$OBFS_PASSWORD")${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "$OBFS_PASSWORD" "")#Hysteria2-TLS-BBR-Salamander"
     MIHOMO_HY2_PORTS_LINE=""
   fi
 else
@@ -413,13 +413,13 @@ fi
 
 # Hysteria2-H3（v4.9.26）：UDP 443、无混淆，其余与 Hysteria2-Obfs-Direct 相同。
 if [[ "${FEATURE_HY2_H3:-false}" == true ]]; then
-  HY2_H3_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_H3_PORT:-443}/?sni=${REALITY_DOMAIN}&alpn=h3${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "" "")#Hysteria2-H3-Direct${NODE_SUFFIX}"
+  HY2_H3_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_H3_PORT:-443}/?sni=${REALITY_DOMAIN}&alpn=h3,h2${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "" "")#Hysteria2-H3-Direct${NODE_SUFFIX}"
 else
   HY2_H3_NODE_LINE=""
 fi
 
 if [[ "${FEATURE_MASQUE:-false}" == true ]]; then
-  MASQUE_NODE_LINE="masque://user%40${CDN_DOMAIN}:${MASQUE_PASSWORD}@${REALITY_DOMAIN}:${MASQUE_PORT:-8447}/.well-known/masque/ip/*/*/?sni=${REALITY_DOMAIN}&alpn=h3#MASQUE-CONNECT-IP${NODE_SUFFIX}"
+  MASQUE_NODE_LINE="masque://user%40${CDN_DOMAIN}:${MASQUE_PASSWORD}@${REALITY_DOMAIN}:${MASQUE_PORT:-8447}/.well-known/masque/ip/*/*/?sni=${REALITY_DOMAIN}&alpn=h3,h2#MASQUE-CONNECT-IP${NODE_SUFFIX}"
 else
   MASQUE_NODE_LINE=""
 fi

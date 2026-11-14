@@ -15,6 +15,7 @@ proxies:
     packet-encoding: xudp
     network: xhttp
     alpn:
+      - h3
       - h2
     servername: ${CDN_DOMAIN}
     client-fingerprint: chrome
@@ -64,8 +65,8 @@ proxies:
     packet-encoding: xudp
     network: xhttp
     alpn:
-      - h2
       - h3
+      - h2
     servername: ${CDN_DOMAIN}
     client-fingerprint: chrome
     encryption: "${XHTTP_ENCRYPTION}"${MIHOMO_ECH_PROXY_BLOCK}
@@ -96,6 +97,7 @@ proxies:
     network: xhttp
     alpn:
       - h3
+      - h2
     servername: ${CDN_DOMAIN}
     client-fingerprint: chrome
     encryption: "${XHTTP_ENCRYPTION}"${MIHOMO_ECH_PROXY_BLOCK}
@@ -123,6 +125,7 @@ proxies:
     network: xhttp
     alpn:
       - h3
+      - h2
     servername: ${REALITY_DOMAIN}
     client-fingerprint: chrome
     encryption: "${XHTTP_ENCRYPTION}"
@@ -150,6 +153,7 @@ proxies:
     network: xhttp
     alpn:
       - h3
+      - h2
     servername: ${REALITY_DOMAIN}
     client-fingerprint: chrome
     encryption: "${XHTTP_ENCRYPTION}"
@@ -179,6 +183,7 @@ proxies:
     tls: true
     network: xhttp
     alpn:
+      - h3
       - h2
     servername: ${REALITY_DOMAIN}
     client-fingerprint: chrome
@@ -232,6 +237,7 @@ proxies:
     skip-cert-verify: false${MIHOMO_HY2_BW_BLOCK}
     alpn:
       - h3
+      - h2
   #>>FEATURE_HY2_H3
 
   #<<FEATURE_HY2_OBFS
@@ -248,6 +254,7 @@ proxies:
     skip-cert-verify: false${MIHOMO_HY2_BW_BLOCK}
     alpn:
       - h3
+      - h2
   #>>FEATURE_HY2_OBFS
 
   # ---------- TCP 兜底（UDP/QUIC 被封时使用）----------
@@ -335,6 +342,7 @@ proxies:
         port: 443
         tls: true
         alpn:
+          - h3
           - h2
         servername: ${CDN_DOMAIN}
         client-fingerprint: chrome${MIHOMO_ECH_DOWNLOAD_BLOCK}
@@ -364,8 +372,9 @@ proxies:
     packet-encoding: xudp
     encryption: "${XHTTP_ENCRYPTION}"
     network: xhttp
-    # 上行腿 h2 走 TCP 经 CDN（抗运营商 UDP QoS 阻断，握手稳定）
+    # 上行腿 h3,h2 经 CDN
     alpn:
+      - h3
       - h2
     servername: ${CDN_DOMAIN}
     client-fingerprint: chrome${MIHOMO_ECH_PROXY_BLOCK}

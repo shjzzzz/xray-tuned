@@ -514,8 +514,6 @@ for line in lines:
             if sec != "reality" or q("flow") != "xtls-rprx-vision":
                 if q("alpn"):
                     clean_qs["alpn"] = q("alpn")
-                if "h3" in clean_qs.get("alpn", "") and (port == 443 or is_cdn):
-                    clean_qs["alpn"] = "h2"
             clean_qs.pop("tfo", None)
             clean_qs.pop("insecure", None)
             clean_qs.pop("allowInsecure", None)
