@@ -20,12 +20,13 @@
         // （OCI 元数据 DNS 对无 A 记录的 IPv6 域名返回非标准报文触发 Go dnsmessage "segment prefix is reserved" 解析报错与 8s 阻塞），
         // 首选低延迟 1.1.1.1 与 9.9.9.10 DoH，并以 1.1.1.1 UDP 兜底。
         "servers": [
-            "https+local://1.1.1.1/dns-query",
             "https+local://9.9.9.10/dns-query",
+            "https+local://1.1.1.1/dns-query",
+            "https+local://1.0.0.1/dns-query",
             "1.1.1.1",
-            "8.8.8.8",
             "9.9.9.10"
         ],
+        "disableCache": false,
         "queryStrategy": "UseIPv4"
     },
     ${XRAY_POLICY_JSON}
