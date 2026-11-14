@@ -306,7 +306,15 @@ else
   REALITY_PQ_VISION_NODE_LINE=""
 fi
 
-if [[ "$FEATURE_H3_DIRECT" == true ]]; then
+# 直连 XHTTP-TLS：当 h3-direct 与 h2-direct 同端口（TCP+UDP）时，合并为单条 VLESS-XHTTP-Direct（alpn=h3,h2）
+FEATURE_H3_DIRECT_ONLY=false
+FEATURE_H2_DIRECT_ONLY=false
+FEATURE_DIRECT_MERGED=false
+if [[ "$FEATURE_H3_DIRECT" == true && "$FEATURE_H2_DIRECT" == true && "${H2_PORT:-}" == "${H3_PORT:-}" ]]; then
+  FEATURE_DIRECT_MERGED=true
+  H3_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H3_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h3,h2&type=xhttp&path=${XHTTP_PATH_SLASH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}${XH3_FM_PARAM}#VLESS-XHTTP-Direct${NODE_SUFFIX}"
+elif [[ "$FEATURE_H3_DIRECT" == true ]]; then
+  FEATURE_H3_DIRECT_ONLY=true
   H3_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H3_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h3&type=xhttp&path=${XHTTP_PATH_SLASH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}${XH3_FM_PARAM}#VLESS-XHTTP-Direct-H3${NODE_SUFFIX}"
 else
   H3_DIRECT_NODE_LINE=""
@@ -330,8 +338,9 @@ else
   H3_CDN_NODE_LINE=""
 fi
 
-# h2-direct（v4.7.0）：h3-direct 的 TCP 版，只差 port 与 alpn (h2)。
-if [[ "$FEATURE_H2_DIRECT" == true ]]; then
+# h2-direct（v4.7.0）：h3-direct 的 TCP 版（若未与 h3-direct 合并，则单独输出）
+if [[ "$FEATURE_H2_DIRECT" == true && "$FEATURE_DIRECT_MERGED" != true ]]; then
+  FEATURE_H2_DIRECT_ONLY=true
   H2_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H2_PORT}?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&type=xhttp&path=${XHTTP_PATH_SLASH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}#VLESS-XHTTP-Direct-H2${NODE_SUFFIX}"
 else
   H2_DIRECT_NODE_LINE=""
@@ -461,7 +470,7 @@ MIHOMOEOF
 prune_mihomo_features() {
   local file="$1" feat
   [[ -f "$file" ]] || return 0
-  for feat in FEATURE_TLS_PQ_XHTTP FEATURE_REALITY_PQ_VISION FEATURE_REALITY_VISION FEATURE_REALITY_XHTTP FEATURE_CDN_H2 FEATURE_CDN_H3 FEATURE_H3_DIRECT FEATURE_H2_DIRECT FEATURE_H2_DIRECT_CDN FEATURE_HY2 FEATURE_HY2_H3 FEATURE_HY2_OBFS FEATURE_UP_CDN_DOWN_MIHOMO FEATURE_CDN_UP_REALITY_DOWN; do
+  for feat in FEATURE_TLS_PQ_XHTTP FEATURE_REALITY_PQ_VISION FEATURE_REALITY_VISION FEATURE_REALITY_XHTTP FEATURE_CDN_H2 FEATURE_CDN_H3 FEATURE_H3_DIRECT_ONLY FEATURE_H2_DIRECT_ONLY FEATURE_DIRECT_MERGED FEATURE_H2_DIRECT_CDN FEATURE_HY2 FEATURE_HY2_H3 FEATURE_HY2_OBFS FEATURE_UP_CDN_DOWN_MIHOMO FEATURE_CDN_UP_REALITY_DOWN; do
     local on="${!feat}"
     if [[ "$on" == true ]]; then
       sed -i "/^[[:space:]]*#<<${feat}\$/d; /^[[:space:]]*#>>${feat}\$/d" "$file"

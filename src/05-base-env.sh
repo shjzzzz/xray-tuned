@@ -309,10 +309,9 @@ if [[ "$H2_PORT" == "443" ]]; then
   warn "H2_PORT=443 会与 Reality 抢占 TCP 443，已改用 8445"
   H2_PORT=8445
 fi
-# H2 是 TCP、H3/HY2 是 UDP，端口号相同在内核层面不冲突，但会让排障和安全组
-# 规则变得难以分辨，因此仍然要求三者互不相同。
-if [[ "$H2_PORT" == "$H3_PORT" || "$H2_PORT" == "$HY2_PORT" || "$H2_PORT" == "$HY2_H3_PORT" ]]; then
-  warn "H2_PORT=${H2_PORT} 与 UDP 端口重复，已改用 8445"
+# 允许 H2_PORT 与 H3_PORT 同端口（TCP+UDP 合并监听，供客户端自适应 alpn=h3,h2）；仅避开 HY2 UDP 端口。
+if [[ "$H2_PORT" == "$HY2_PORT" || "$H2_PORT" == "$HY2_H3_PORT" ]]; then
+  warn "H2_PORT=${H2_PORT} 与 Hy2 UDP 端口重复，已改用 8445"
   H2_PORT=8445
 fi
 
