@@ -169,7 +169,7 @@ proxies:
 
   #<<FEATURE_H2_DIRECT_CDN
   # 2c. h2-direct 443 系端口直出 CDN（UDP，借鉴 argosbx xhttp-h23）
-  - name: VLESS-XHTTP-Direct-CDN-UDP${NODE_SUFFIX}
+  - name: VLESS-XHTTP-CDN-UDP${NODE_SUFFIX}
     type: vless
     server: ${CDN_CONNECT_ADDR}
     port: ${H2_PORT}

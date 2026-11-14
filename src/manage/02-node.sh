@@ -1658,7 +1658,7 @@ cmd_backup_server_node() {
         backup_store_check
         backup_node_sync_files "$name" on >/dev/null 2>&1
         if [[ "$key" == h2direct ]]; then
-          backup_node_sync_files "VLESS-XHTTP-Direct-CDN-UDP" on >/dev/null 2>&1 || true
+          backup_node_sync_files "VLESS-XHTTP-CDN-UDP" on >/dev/null 2>&1 || true
         fi
         cmd_resub
         info "${label} 已经是开启状态"
@@ -1686,7 +1686,7 @@ cmd_backup_server_node() {
       info "正在开启 ${label} ..."
       backup_node_sync_files "$name" on || fail "更新客户端文件失败，未改动服务端（原因见上）"
       if [[ "$key" == h2direct ]]; then
-        backup_node_sync_files "VLESS-XHTTP-Direct-CDN-UDP" on >/dev/null 2>&1 || true
+        backup_node_sync_files "VLESS-XHTTP-CDN-UDP" on >/dev/null 2>&1 || true
       fi
       backup_inbound_edit "$key" on "$port"; rc=$?
       if [[ $rc -ne 0 && $rc -ne 3 ]]; then
@@ -1717,7 +1717,7 @@ cmd_backup_server_node() {
       [[ $rc -eq 0 || $rc -eq 3 ]] || fail "移除服务端入站失败（原因见上），未改动客户端文件和标志位"
       backup_node_sync_files "$name" off || warn "服务端入站已移除，但客户端文件没有同步（原因见上）。请手动检查 client-config.txt 与订阅"
       if [[ "$key" == h2direct ]]; then
-        backup_node_sync_files "VLESS-XHTTP-Direct-CDN-UDP" off >/dev/null 2>&1 || true
+        backup_node_sync_files "VLESS-XHTTP-CDN-UDP" off >/dev/null 2>&1 || true
       fi
       update_node_env "$flag" "false"
       export "$flag"=false
