@@ -17,6 +17,21 @@
 
 sysctl_get() { sysctl -n "$1" 2>/dev/null || true; }
 
+# 合并若干端口列表（逗号/空白分隔，可含 a-b 区间），输出去重、升序、连续段压缩为区间的逗号列表；
+# 非法项与 1-65535 之外的端口丢弃。输入全空时输出空串。
+merge_port_lists() {
+  printf '%s\n' "$@" | tr -c '0-9-' '\n' | awk -F- '
+    /^[0-9]+(-[0-9]+)?$/ {
+      a = $1 + 0; b = (NF > 1 ? $2 + 0 : a); if (a > b) { t = a; a = b; b = t }
+      if (a < 1) a = 1; if (b > 65535) b = 65535
+      for (p = a; p <= b; p++) print p
+    }' | sort -nu | awk '
+    NR == 1 { s = e = $1; next }
+    $1 == e + 1 { e = $1; next }
+    { printf "%s%s", sep, (s == e ? s : s "-" e); sep = ","; s = e = $1 }
+    END { if (NR) printf "%s%s\n", sep, (s == e ? s : s "-" e) }'
+}
+
 # fs.nr_open 是单进程可打开句柄数的内核硬上限，systemd 的 DefaultLimitNOFILE 无论
 # 写多大都不能越过它。两者一旦倒挂（DefaultLimitNOFILE > fs.nr_open），systemd 在
 # 拉起任何"没有自己声明 LimitNOFILE"的服务时都会在设限那一步失败：
@@ -419,7 +434,9 @@ apply_system_tuning() {
       [[ "$_p" =~ ^[0-9]+$ && "$_p" -ge 1024 ]] && [[ ",${_res_ports}," != *",${_p},"* ]] && _res_ports="${_res_ports},${_p}"
     done
   fi
-  try_sysctl net.ipv4.ip_local_reserved_ports "$_res_ports"
+  # 与内核现值取并集而不是整份覆盖：同机的 sbbox 也写这个键，后写的一方会把另一方的端口
+  # 挤出保留表，重启时可能被出站临时端口占用而 bind 失败。代价：已停用的端口不会自动移除（只影响临时端口选择）。
+  try_sysctl net.ipv4.ip_local_reserved_ports "$(merge_port_lists "$_res_ports" "$(sysctl_get net.ipv4.ip_local_reserved_ports)")"
 
   # conntrack 仅在模块已加载时调整；未加载时写入会失败并留下无用告警。
   # 开机时 systemd-sysctl 早于 iptables / Docker 加载 nf_conntrack，键还不存在就被静默跳过，
