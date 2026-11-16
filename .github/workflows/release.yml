@@ -58,6 +58,15 @@ jobs:
   build-release:
     needs: validate
     runs-on: ubuntu-latest
+    # 串行发布：main 推送也会发布到「最新 tag」的 Release，同时推 main 与 tag 时两个 run 会
+    # 并发覆盖同一 Release 的附件（overwrite_files 先删后传），互相踩踏导致附件缺失、run 报 404
+    # （2026-11-16 v5.6.8 实际发生）。所有会发布的 run 共用一个组排队；不取消正在跑的。
+    # PR 不发布，按 run_id 各自成组，不参与排队。
+    # 注意：同组最多一个运行 + 一个排队，更新的排队 run 会顶掉更早的排队 run（GitHub 行为）；
+    # 若被顶掉的是 tag run，后来的 main run 会解析到同一个最新 tag 并完成发布（附件来自 main 的构建）。
+    concurrency:
+      group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.run_id) || 'release-publish' }}
+      cancel-in-progress: false
 
     steps:
       - name: Checkout
