@@ -61,6 +61,8 @@ update_node_env() {
   mv -f "$tmp" "$NODE_ENV_FILE"
 }
 
+@@include src/hy2-cc.sh
+
 if [[ -f "$NODE_ENV_FILE" ]]; then
   # shellcheck disable=SC1090
   . "$NODE_ENV_FILE"

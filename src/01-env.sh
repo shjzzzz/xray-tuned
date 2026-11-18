@@ -129,6 +129,14 @@ FEATURE_HY2_OBFS=${FEATURE_HY2_OBFS:-true}
 # 允许环境变量显式指定，未指定时由 05-base-env.sh 自动生成随机可用端口。
 HY2_H3_PORT=${HY2_H3_PORT:-}
 HY2_PORT=${HY2_PORT:-}
+# Hysteria2 Brutal（默认关闭，使用 BBR）：同时给出 HY2_UP_MBPS / HY2_DOWN_MBPS（客户端上行 / 下行，Mbps）才启用，
+# 服务端入站与客户端链接共用这一对值。Brutal 是固定速率发包，必须对齐真实带宽；高于真实上行会造成上传严重丢包。
+# 例：HY2_UP_MBPS=1000 HY2_DOWN_MBPS=1000 bash install.sh
+HY2_UP_MBPS=${HY2_UP_MBPS:-}
+HY2_DOWN_MBPS=${HY2_DOWN_MBPS:-}
+for _bw in "$HY2_UP_MBPS" "$HY2_DOWN_MBPS"; do
+  [[ -z "$_bw" || "$_bw" =~ ^[1-9][0-9]*$ ]] || error "HY2_UP_MBPS / HY2_DOWN_MBPS 必须是正整数（Mbps），当前: ${_bw}"
+done
 
 # FEATURE_CDN_H2：是否生成经 CDN 的 TCP(h2) 节点 VLESS-XHTTP-CDN-H2（默认关闭；需要开启时 FEATURE_CDN_H2=true 或装好后 xh cdnh2 on）。
 FEATURE_CDN_H2=${FEATURE_CDN_H2:-false}

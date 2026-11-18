@@ -4,6 +4,8 @@
 
 info "[4/7] 生成配置文件"
 
+@@include src/hy2-cc.sh
+
 if [[ "$FALLBACK_MODE" == "static" ]]; then
   [[ -f "${STATIC_SITE_DIR}/${REALITY_DOMAIN}/index.html" ]] || error "未找到 Reality 域名页面"
   [[ -f "${STATIC_SITE_DIR}/${CDN_DOMAIN}/index.html" ]] || error "未找到 CDN 域名页面"
@@ -414,7 +416,7 @@ ${HY2_UDP_IDLE_JSON}                    "masquerade": {
                 ${HY2_SOCKOPT_BLOCK}
                 "finalmask": {
                     "quicParams": {
-                        "congestion": "bbr",
+                        $(hy2_cc_json)
                         "keepAlivePeriod": 10,
                         "initStreamReceiveWindow": 8388608,
                         "maxStreamReceiveWindow": 67108864,
@@ -519,7 +521,7 @@ ${HY2_UDP_IDLE_JSON}                    "masquerade": {
                 }${HY2_SOCKOPT_JSON},
                 "finalmask": {
                     "quicParams": {
-                        "congestion": "bbr",
+                        $(hy2_cc_json)
                         "keepAlivePeriod": 10,
                         "initStreamReceiveWindow": 8388608,
                         "maxStreamReceiveWindow": 67108864,
@@ -725,6 +727,8 @@ info "写入 ${NODE_ENV_FILE} ..."
   printf 'H3_PORT=%q\n'           "$H3_PORT"
   printf 'H2_PORT=%q\n'           "$H2_PORT"
   printf 'HY2_PORT=%q\n'          "$HY2_PORT"
+  printf 'HY2_UP_MBPS=%q\n'      "${HY2_UP_MBPS:-}"
+  printf 'HY2_DOWN_MBPS=%q\n'    "${HY2_DOWN_MBPS:-}"
   printf 'HY2_PASSWORD=%q\n'      "$HY2_PASSWORD"
   printf 'OBFS_PASSWORD=%q\n'     "$OBFS_PASSWORD"
   printf 'PROJECT_REPO=%q\n'      "$PROJECT_REPO"

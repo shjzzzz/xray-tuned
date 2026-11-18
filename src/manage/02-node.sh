@@ -2181,7 +2181,7 @@ render_hy2_obfs_inbound() {
                 },
                 "finalmask": {
                     "quicParams": {
-                        "congestion": "bbr",
+                        $(hy2_cc_json)
                         "keepAlivePeriod": 10,
                         "initStreamReceiveWindow": 8388608,
                         "maxStreamReceiveWindow": 67108864,
@@ -2268,7 +2268,7 @@ render_hy2_h3_inbound() {
                 },
                 "finalmask": {
                     "quicParams": {
-                        "congestion": "bbr",
+                        $(hy2_cc_json)
                         "keepAlivePeriod": 10,
                         "initStreamReceiveWindow": 8388608,
                         "maxStreamReceiveWindow": 67108864,
