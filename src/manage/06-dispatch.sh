@@ -30,6 +30,7 @@ xray-xhttp 全能管理命令 (v${XH_VERSION:-5.6.1})
   xh reality [show|xhttp on|off|pq on|off|vision on|off|updown on|off|cdnup on|off]  Reality 核心节点管理
   xh split [show|reality-up on|off|cdn-up on|off] 上下行分离节点开关
   xh hy2 [show|on|off]  Hysteria2 原生直连节点开关
+  xh hy2 speed <上>/<下>|off  Hysteria2 Brutal 带宽（Mbps）/ 恢复 BBR
   xh hy2 obfs [on|off]  Hysteria2 Salamander 混淆节点开关 (别名: xh hy2obfs)
   xh noise [show|on|off|links on|off|sync] Finalmask Noise 动态混淆管理
   xh masque [show|on|off] MASQUE RFC 9484 CONNECT-IP 隧道管理

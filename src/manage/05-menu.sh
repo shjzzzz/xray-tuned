@@ -123,6 +123,8 @@ _menu_define() {
     "关闭全部 Hysteria2 节点::cmd_hy2 off"
     "只关闭直连节点，保留混淆节点::cmd_hy2 h3 off"
     "轮换认证密码并刷新订阅::cmd_hy2 rotate"
+    "设置 Brutal 带宽…::menu_ask 上行/下行Mbps(如50/300) cmd_hy2 speed"
+    "恢复 BBR 自适应拥塞控制::cmd_hy2 speed off"
     "开启 Hysteria2 混淆节点::cmd_hy2 obfs on"
     "关闭 Hysteria2 混淆节点::cmd_hy2 obfs off")
 

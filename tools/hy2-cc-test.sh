@@ -23,6 +23,10 @@ check "只设下行"                    "$(HY2_DOWN_MBPS=300 probe)" "brutal 300
 check "只设上行"                    "$(HY2_UP_MBPS=50 probe)" "brutal - 50mbps"
 check "空串视为未设置"              "$(HY2_UP_MBPS= HY2_DOWN_MBPS= probe)" "bbr - -"
 
+check "标签：默认"                  "$(hy2_cc_label)" "BBR（自适应）"
+check "标签：Brutal 双设"           "$(HY2_UP_MBPS=50 HY2_DOWN_MBPS=300 hy2_cc_label)" "Brutal（上行 50 / 下行 300 Mbps）"
+check "标签：只设一边"              "$(HY2_DOWN_MBPS=300 hy2_cc_label)" "Brutal（上行 未设 / 下行 300 Mbps）"
+
 D="$(mktemp -d)"; trap 'rm -rf "$D"' EXIT
 OUT_DIR="$D" bash "$ROOT/.github/scripts/build-install.sh" >/dev/null
 hard='^ *"congestion": "bbr",$'

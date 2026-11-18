@@ -42,6 +42,7 @@ cmd_info() {
       echo "  Hysteria2-H3:    UDP ${HY2_H3_PORT}（无混淆，随机端口）"
       echo "    认证密码:      ${HY2_PASSWORD}"
     fi
+    echo "    拥塞控制:      $(hy2_cc_label)"
     if [[ "${FEATURE_HY2_OBFS:-false}" == true ]]; then
       echo "  Hysteria2-obfs:  UDP ${HY2_PORT}（同一认证密码）"
       echo "    混淆:          salamander（Xray finalmask）"
@@ -1812,6 +1813,169 @@ cmd_masque() {
   esac
 }
 
+# 设置 / 关闭 Hysteria2 的 Brutal 带宽。带宽散落在多处且 resub 只读 client-config*，所以一起改：
+# 服务端入站（线上配置 + 节点库 inbound-hy2*.json 模板，否则 hy2 off/on 会还原成 bbr）、
+# 客户端链接（upmbps/downmbps 与 fm）、两份 Mihomo 的 up/down，最后写 node.env 并刷新订阅。
+# 用法：hy2 speed <上行Mbps> <下行Mbps> | hy2 speed <上行>/<下行> | hy2 speed off | hy2 speed（查看）
+cmd_hy2_speed() {
+  local up="" down="" usage="用法: ${MANAGE_CMD} hy2 speed <上行Mbps> <下行Mbps> | <上行>/<下行> | off"
+  if [[ $# -eq 0 ]]; then
+    echo "当前拥塞控制: $(hy2_cc_label)"
+    echo "$usage"
+    return 0
+  fi
+  if [[ "$1" != off ]]; then
+    if [[ $# -ge 2 ]]; then up="$1"; down="$2"
+    elif [[ "$1" =~ ^([0-9]+)[/,:]([0-9]+)$ ]]; then up="${BASH_REMATCH[1]}"; down="${BASH_REMATCH[2]}"
+    else fail "$usage"; fi
+    [[ "$up" =~ ^[1-9][0-9]{0,4}$ && "$down" =~ ^[1-9][0-9]{0,4}$ ]] || fail "带宽必须是 1–99999 的正整数（Mbps）。$usage"
+  fi
+  [[ -f "$NODE_ENV_FILE" ]] || fail "未找到 ${NODE_ENV_FILE}"
+  [[ -f "$XRAY_CONF" ]] || fail "未找到 Xray 配置 ${XRAY_CONF}"
+
+  local plan bakdir idx path kind specs=() f h
+  plan=$(mktemp -d) || fail "无法创建临时目录"
+  for f in "$XRAY_CONF" "${ALL_STORE_DIR}/inbound-hy2h3.json" "${ALL_STORE_DIR}/inbound-hy2obfs.json"; do
+    [[ -f "$f" ]] && specs+=("srv:$f")
+  done
+  for h in "$ALL_STORE_DIR" "${USER_HOME:-/home/ubuntu}" /home/ubuntu /home/opc /root; do
+    for f in "$h"/client-config*.txt; do [[ -f "$f" ]] && specs+=("txt:$f"); done
+    for f in "$h"/client-config*.yaml; do [[ -f "$f" ]] && specs+=("yaml:$f"); done
+  done
+
+  # 先在临时目录算出全部新内容，再校验，通过才动线上文件
+  python3 -I - "$plan" "$XRAY_CONF" "$up" "$down" "${specs[@]}" <<'SPEEDPY' || { rm -rf "$plan"; fail "生成新内容失败（原因见上），未改动任何文件"; }
+import json, os, re, sys
+from urllib.parse import quote, unquote
+
+plan, xray_conf, up, down = sys.argv[1:5]
+specs = sys.argv[5:]
+on = bool(up and down)
+
+def srv(text):
+    # 与 hy2_cc_json 同一映射：服务端视角 brutalUp = 下载 = down，brutalDown = 上传 = up
+    def rep(m):
+        ind = m.group(1)
+        if on:
+            return f'{ind}"congestion": "brutal",\n{ind}"brutalUp": "{down}mbps",\n{ind}"brutalDown": "{up}mbps",'
+        return f'{ind}"congestion": "bbr",'
+    return re.sub(r'(?m)^([ \t]*)"congestion":[ \t]*"[^"]*",(?:\n[ \t]*"brutal(?:Up|Down)":[ \t]*"[^"]*",)*', rep, text)
+
+def txt(text):
+    out = []
+    for line in text.split('\n'):
+        if line.startswith('hysteria2://'):
+            orig = line
+            m = re.search(r'&fm=([^&#]*)', line)
+            if m:
+                try:
+                    fm = json.loads(unquote(m.group(1)))
+                except ValueError:
+                    out.append(orig); continue
+                qp = fm.get('quicParams', {})
+                rest = {k: v for k, v in qp.items() if k not in ('congestion', 'brutalUp', 'brutalDown')}
+                # 客户端视角：brutalUp = 上传 = up，brutalDown = 下载 = down
+                head = {'congestion': 'brutal', 'brutalUp': f'{up}mbps', 'brutalDown': f'{down}mbps'} if on else {'congestion': 'bbr'}
+                fm['quicParams'] = {**head, **rest}
+                enc = quote(json.dumps(fm, separators=(',', ':'), ensure_ascii=False), safe='')
+                line = line[:m.start(1)] + enc + line[m.end(1):]
+            line = re.sub(r'&(?:up|down)mbps=\d+', '', line)
+            if on:
+                m = re.search(r'&fm=', line)
+                pos = m.start() if m else (line.index('#') if '#' in line else len(line))
+                line = line[:pos] + f'&upmbps={up}&downmbps={down}' + line[pos:]
+        out.append(line)
+    return '\n'.join(out)
+
+def yml(text):
+    lines = text.split('\n')
+    i = 0
+    while i < len(lines):
+        m = re.match(r'^(\s*)type:\s*hysteria2\s*$', lines[i])
+        if not m:
+            i += 1; continue
+        ind = m.group(1)
+        j = i
+        while j > 0 and (len(lines[j]) - len(lines[j].lstrip())) >= len(ind):
+            j -= 1
+        e = i + 1
+        while e < len(lines) and (not lines[e].strip() or (len(lines[e]) - len(lines[e].lstrip())) >= len(ind)):
+            e += 1
+        blk = lines[j:e]
+        blk = [l for l in blk if not re.match(rf'^{re.escape(ind)}(?:up|down):\s', l)]
+        ti = next(k for k, l in enumerate(blk) if re.match(r'^\s*type:\s*hysteria2\s*$', l))
+        if on:
+            blk[ti + 1:ti + 1] = [f'{ind}up: "{up} Mbps"', f'{ind}down: "{down} Mbps"']
+        lines[j:e] = blk
+        i = j + len(blk)
+    return '\n'.join(lines)
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+seen, changed = set(), []
+for n, spec in enumerate(specs):
+    kind, path = spec.split(':', 1)
+    real = os.path.realpath(path)
+    if real in seen:
+        continue
+    seen.add(real)
+    old = open(path, encoding='utf-8').read()
+    new = {'srv': srv, 'txt': txt, 'yaml': yml}[kind](old)
+    if new == old:
+        continue
+    if kind == 'yaml' and yaml:
+        yaml.safe_load(new)
+    open(os.path.join(plan, str(n)), 'w', encoding='utf-8').write(new)
+    if real == os.path.realpath(xray_conf):
+        open(os.path.join(plan, 'xray.json'), 'w', encoding='utf-8').write(new)
+    changed.append(f'{n}\t{kind}\t{path}')
+open(os.path.join(plan, 'manifest'), 'w', encoding='utf-8').write('\n'.join(changed) + ('\n' if changed else ''))
+print(f'{len(changed)} 个文件需要更新')
+SPEEDPY
+
+  if [[ -f "$plan/xray.json" ]] && ! "$XRAY_BIN" run -test -c "$plan/xray.json" >/dev/null 2>&1; then
+    rm -rf "$plan"; fail "新配置未通过 xray -test，未改动任何文件"
+  fi
+
+  if [[ -s "$plan/manifest" ]]; then
+    bakdir="${STATE_DIR}/backup-hy2-speed-$(date +%Y%m%d%H%M%S)"
+    mkdir -p "$bakdir" && chmod 700 "$bakdir" || { rm -rf "$plan"; fail "无法创建备份目录 $bakdir"; }
+    while IFS=$'\t' read -r idx kind path; do
+      cp -a "$path" "$bakdir/$idx.$(basename "$path")" || { rm -rf "$plan"; fail "备份 $path 失败，未改动任何文件"; }
+    done < "$plan/manifest"
+    # 先改服务端并重启；失败就把服务端文件还原，客户端文件还没动
+    while IFS=$'\t' read -r idx kind path; do
+      [[ "$kind" == srv ]] && cat "$plan/$idx" > "$path"
+    done < "$plan/manifest"
+    if [[ -f "$plan/xray.json" ]]; then
+      if ! { svc restart xray && sleep 1 && svc_active xray; }; then
+        while IFS=$'\t' read -r idx kind path; do
+          [[ "$kind" == srv ]] && cat "$bakdir/$idx.$(basename "$path")" > "$path"
+        done < "$plan/manifest"
+        svc restart xray || true
+        rm -rf "$plan"
+        fail "xray 重启失败，服务端配置已还原（备份 $bakdir）"
+      fi
+    fi
+    while IFS=$'\t' read -r idx kind path; do
+      [[ "$kind" == srv ]] || cat "$plan/$idx" > "$path"
+    done < "$plan/manifest"
+    info "已更新 $(wc -l < "$plan/manifest") 个文件，备份在 $bakdir"
+  fi
+  rm -rf "$plan"
+
+  update_node_env HY2_UP_MBPS "$up"
+  update_node_env HY2_DOWN_MBPS "$down"
+  export HY2_UP_MBPS="$up" HY2_DOWN_MBPS="$down"
+  info "Hysteria2 拥塞控制: $(hy2_cc_label)"
+  [[ -n "$up" ]] && warn "Brutal 按固定速率发包：带宽填得比真实上行 / 下行高会造成严重丢包，请按实际宽带填写"
+  cmd_resub
+  info "客户端需重新拉取订阅才会生效"
+}
+
 # Hysteria2 直连与混淆节点统一管理（UDP 随机高端口）
 cmd_hy2() {
   local subcmd="${1:-show}" port="${HY2_H3_PORT:-}" obfs_port="${HY2_PORT:-}" rc
@@ -1836,12 +2000,14 @@ cmd_hy2() {
       else
         echo -e "  Hysteria2 混淆节点:   ${YELLOW}未开启${NC}  (开启后监听 UDP ${obfs_port})"
       fi
+      echo -e "  拥塞控制:             ${CYAN}$(hy2_cc_label)${NC}"
       echo ""
       echo -e "  常用指令:"
       echo -e "    ${MANAGE_CMD} hy2 on            # 开启 Hysteria2 直连节点（UDP ${port}）"
       echo -e "    ${MANAGE_CMD} hy2 off           # 关闭全部 Hysteria2 节点（直连与混淆）"
       echo -e "    ${MANAGE_CMD} hy2 h3 off        # 只关闭直连节点，保留混淆节点"
       echo -e "    ${MANAGE_CMD} hy2 rotate        # 轮换认证密码并刷新订阅"
+      echo -e "    ${MANAGE_CMD} hy2 speed 50/300  # 启用 Brutal（上行/下行 Mbps）；speed off 恢复 BBR"
       echo -e "    ${MANAGE_CMD} hy2 obfs on       # 开启 Hysteria2 混淆节点（UDP ${obfs_port}）"
       echo -e "    ${MANAGE_CMD} hy2 obfs off      # 关闭 Hysteria2 混淆节点"
       echo ""
@@ -1927,9 +2093,10 @@ cmd_hy2() {
       svc restart xray || warn "xray 重启失败，请检查 ${XRAY_CONF} 并手动 systemctl restart xray"
       info "Hysteria2 认证密码已轮换，客户端需重新拉取订阅"
       ;;
+    speed) shift; cmd_hy2_speed "$@" ;;
     obfs-on) cmd_backup_server_node hy2obfs on ;;
     obfs-off) cmd_backup_server_node hy2obfs off ;;
-    *) echo "用法: ${MANAGE_CMD} hy2 [show|on|off|h3 on|h3 off|rotate|obfs on|obfs off]" ;;
+    *) echo "用法: ${MANAGE_CMD} hy2 [show|on|off|h3 on|h3 off|rotate|speed|obfs on|obfs off]" ;;
   esac
 }
 
