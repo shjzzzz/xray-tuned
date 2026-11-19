@@ -199,6 +199,7 @@ _menu_define() {
     "查看运行日志 (log)::menu_choose MENU_LOG"
     "重启全部服务 (restart)::cmd_restart"
     "启动 / 停止服务 (start / stop)::menu_choose MENU_STARTSTOP"
+    "更新 xh 管理脚本 (selfupdate)::menu_choose MENU_SELFUPDATE"
     "更新 Xray-core 内核版本 (update)::menu_choose MENU_UPDATE"
     "Nginx 版本检查与升级编译 (nginx)::menu_choose MENU_NGINX"
     "保活自愈服务管理 (keepalive)::menu_onoff cmd_keepalive"
@@ -240,6 +241,19 @@ _menu_define() {
   MENU_WARP=("WARP 出站解锁"
     "查看状态::cmd_warp status"
     "更新::cmd_warp update")
+
+  MENU_SELFUPDATE=("更新 xh 管理脚本"
+    "检查最新版本::cmd_selfupdate show"
+    "升级到最新正式版::cmd_selfupdate"
+    "升级到指定版本…::menu_ask 版本号(如v5.6.9) cmd_selfupdate")
+
+  MENU_UPDATES=("[7] 版本与组件更新"
+    "更新 xh 管理脚本 (selfupdate)::menu_choose MENU_SELFUPDATE"
+    "更新 Xray-core 内核版本 (update)::menu_choose MENU_UPDATE"
+    "Nginx 版本检查与升级编译 (nginx)::menu_choose MENU_NGINX"
+    "Xray 内核每周自动更新设置 (autoupdate)::menu_choose MENU_AUTOUPDATE"
+    "更新 cloudflared 隧道内核 (argo update)::cmd_argo update"
+    "更新 WARP 客户端 (warp update)::cmd_warp update")
 }
 _menu_define
 
@@ -256,11 +270,12 @@ cmd_menu() {
     echo -e "  ${GREEN}[4]${NC} Cloudflare 智能优选与证书 (Cloudflare & Certs)"
     echo -e "  ${GREEN}[5]${NC} 服务生命周期与自愈 (Service & System)"
     echo -e "  ${GREEN}[6]${NC} 高级隧道与扩展网络 (Argo & WARP)"
-    echo -e "  ${RED}[7]${NC} 卸载与清理 (Uninstall)"
+    echo -e "  ${GREEN}[7]${NC} 版本与组件更新 (Updates: xh/Xray/Nginx)"
+    echo -e "  ${RED}[8]${NC} 卸载与清理 (Uninstall)"
     echo -e "  ${YELLOW}[0]${NC} 退出终端 (Exit)"
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
     echo -e "  快捷直达: 11(状态) 12(节点) 13(订阅) 14(重启) 15(日志) 16(测速) 17(后量子PQ)"
-    read -rp "请选择操作分类 [0-7] 或快捷数字: " choice || break
+    read -rp "请选择操作分类 [0-8] 或快捷数字: " choice || break
 
     case "$choice" in
       1) menu_loop MENU_NODE ;;
@@ -269,7 +284,8 @@ cmd_menu() {
       4) menu_loop MENU_CF ;;
       5) menu_loop MENU_SVC ;;
       6) menu_loop MENU_TUNNEL ;;
-      7)
+      7) menu_loop MENU_UPDATES ;;
+      8)
         cmd_uninstall
         break
         ;;

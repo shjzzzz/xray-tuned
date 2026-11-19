@@ -51,15 +51,15 @@ append_profile() {
 #                   直接导致 CDN 节点握手失败，默认开启对多数人是个陷阱。
 # 两个都可用环境变量覆盖，无需改脚本。
 
-FEATURE_XPADDING=${FEATURE_XPADDING:-false}
+FEATURE_XPADDING=${FEATURE_XPADDING:-true}
 FEATURE_CDN_ECH=${FEATURE_CDN_ECH:-true}
-FEATURE_CDN_H2=${FEATURE_CDN_H2:-false}
-FEATURE_CDN_H3=${FEATURE_CDN_H3:-false}
+FEATURE_CDN_H2=${FEATURE_CDN_H2:-true}
+FEATURE_CDN_H3=${FEATURE_CDN_H3:-true}
 FEATURE_TLS_PQ_XHTTP=${FEATURE_TLS_PQ_XHTTP:-false}
 FEATURE_TLS_PQ_VISION=${FEATURE_TLS_PQ_VISION:-false}
 FEATURE_REALITY_PQ_VISION=${FEATURE_REALITY_PQ_VISION:-false}
 FEATURE_REALITY_VISION=${FEATURE_REALITY_VISION:-false}
-FEATURE_REALITY_XHTTP=${FEATURE_REALITY_XHTTP:-true}
+FEATURE_REALITY_XHTTP=${FEATURE_REALITY_XHTTP:-false}
 FEATURE_REALITY_UP_CDN_DOWN=${FEATURE_REALITY_UP_CDN_DOWN:-false}
 FEATURE_UP_CDN_DOWN_MIHOMO=${FEATURE_UP_CDN_DOWN_MIHOMO:-${FEATURE_REALITY_UP_CDN_DOWN:-false}}
 FEATURE_HY2=${FEATURE_HY2:-true}
@@ -71,7 +71,7 @@ FEATURE_CDN_UP_REALITY_DOWN=${FEATURE_CDN_UP_REALITY_DOWN:-false}
 FEATURE_PORT_HOPPING=${FEATURE_PORT_HOPPING:-false}
 FEATURE_BRUTAL=${FEATURE_BRUTAL:-false}
 BRUTAL_DEFAULT_MBPS=${BRUTAL_DEFAULT_MBPS:-auto}
-REALITY_MIN_CLIENT_VER=${REALITY_MIN_CLIENT_VER:-default}
+REALITY_MIN_CLIENT_VER=${REALITY_MIN_CLIENT_VER:-1.8.0}
 XRAY_DEFAULT_VERSION=${XRAY_DEFAULT_VERSION:-26.11.9}
 PROFILE
 }
@@ -105,7 +105,11 @@ cp "$OUT_DIR/install.sh" "$OUT_DIR/install-xpadding.sh"
 
 # 生成干净的 xh 独立可执行管理脚本
 sed -n '/cat > "\$MANAGE_BIN" << .XHMANAGEEOF./,/^XHMANAGEEOF$/p' "$OUT_DIR/install.sh" | sed '1d;$d' > "$OUT_DIR/xh"
-sed -i 's|@@XH_VERSION@@|5.6.2|' "$OUT_DIR/xh"
+_xh_ver="${GITHUB_REF_NAME:-}"
+[[ "$_xh_ver" == v* ]] || _xh_ver=$(git -C "$ROOT_DIR" describe --tags --abbrev=0 2>/dev/null || true)
+_xh_ver="${_xh_ver#v}"
+_xh_ver="${_xh_ver:-5.6.9}"
+sed -i "s|@@XH_VERSION@@|${_xh_ver}|" "$OUT_DIR/xh"
 chmod +x "$OUT_DIR/xh"
 
 echo "Generated $OUT_DIR/install.sh, $OUT_DIR/install-xpadding.sh, and $OUT_DIR/xh"

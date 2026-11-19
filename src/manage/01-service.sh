@@ -566,6 +566,50 @@ cmd_uninstall() {
   rm -f /usr/local/bin/xh
 }
 
+# 更新 xh 管理脚本自身：从 GitHub Release 拉取并校验后原子替换
+# 用法: xh selfupdate [show|<tag>]
+cmd_selfupdate() {
+  local sub="${1:-}" repo="${PROJECT_REPO:-shjzzzz/xray-tuned}"
+  local target_bin="/usr/local/bin/xh"
+  local current="${XH_VERSION:-unknown}"
+  local latest_tag
+
+  latest_tag=$(curl -fsSL --max-time 15 "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
+    | grep -m1 '"tag_name"' | cut -d'"' -f4 || true)
+
+  if [[ "$sub" == "show" ]]; then
+    echo "当前 xh 版本: v${current#v}"
+    echo "GitHub 最新:  ${latest_tag:-获取失败}"
+    return 0
+  fi
+
+  local want_tag="${sub:-$latest_tag}"
+  [[ -n "$want_tag" ]] || fail "无法获取 ${repo} 最新版本号，可手动指定: xh selfupdate v5.6.9"
+  [[ "$want_tag" == v* ]] || want_tag="v${want_tag}"
+
+  if [[ -z "$sub" && "v${current#v}" == "$want_tag" ]]; then
+    info "当前 xh 已是最新版本 (${want_tag})"
+    return 0
+  fi
+
+  local url="https://github.com/${repo}/releases/download/${want_tag}/xh"
+  local tmp="/tmp/xh.selfupdate.$$"
+  trap 'rm -f "$tmp"' RETURN
+
+  info "正在下载 xh ${want_tag} (${url})..."
+  curl -fsSL --max-time 30 "$url" -o "$tmp" || fail "下载失败: ${url}"
+
+  [[ -s "$tmp" ]] || fail "下载的 xh 文件为空"
+  [[ "$(head -n1 "$tmp")" == "#!/bin/bash"* ]] || fail "下载内容不是有效的 bash 脚本"
+  grep -q "cmd_menu" "$tmp" || fail "下载内容缺少主菜单定义，已中止替换"
+  bash -n "$tmp" || fail "下载的 xh 脚本语法校验失败，已中止替换"
+
+  chmod 755 "$tmp"
+  mv -f "$tmp" "$target_bin"
+  info "xh 已更新: v${current#v} -> ${want_tag} (${target_bin})"
+  info "注：当前进程仍为旧脚本内存副本，下一次执行 xh 即生效"
+}
+
 # ==================================================
 # 可选节点开关：h2direct / hy2obfs / split（上下行分离两条）；各自的默认开关状态见 01-env.sh
 # ==================================================

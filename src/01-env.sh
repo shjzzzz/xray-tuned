@@ -96,9 +96,6 @@ XRAY_CHANNEL=${XRAY_CHANNEL:-stable}
 #  scMinPostsIntervalMs、QUIC 窗口 fm）。XHTTP 服务端 mode 用默认 auto（同时接受 auto / packet-up / stream-up 客户端）。
 # 拥塞算法由内核 net.ipv4.tcp_congestion_control 决定。XRAY_DEFAULTS=false 恢复旧版调优输出。
 XRAY_DEFAULTS=${XRAY_DEFAULTS:-true}
-if [[ "$XRAY_DEFAULTS" == true ]]; then
-  FEATURE_XPADDING=false
-fi
 AUTO=${AUTO:-0}
 
 # ==================================================
@@ -138,11 +135,11 @@ for _bw in "$HY2_UP_MBPS" "$HY2_DOWN_MBPS"; do
   [[ -z "$_bw" || "$_bw" =~ ^[1-9][0-9]*$ ]] || error "HY2_UP_MBPS / HY2_DOWN_MBPS 必须是正整数（Mbps），当前: ${_bw}"
 done
 
-# FEATURE_CDN_H2：是否生成经 CDN 的 TCP(h2) 节点 VLESS-XHTTP-CDN-H2（默认关闭；需要开启时 FEATURE_CDN_H2=true 或装好后 xh cdnh2 on）。
-FEATURE_CDN_H2=${FEATURE_CDN_H2:-false}
+# FEATURE_CDN_H2：是否生成经 CDN 的 TCP(h2) 节点 VLESS-XHTTP-CDN-H2（默认开启；关闭用 FEATURE_CDN_H2=false 或装好后 xh cdnh2 off）。
+FEATURE_CDN_H2=${FEATURE_CDN_H2:-true}
 
-# FEATURE_CDN_H3：是否生成经 CDN 的 QUIC(h3) 节点 VLESS-XHTTP-CDN-H3（默认关闭；需要开启时 FEATURE_CDN_H3=true 或装好后 xh cdnh3 on）。
-FEATURE_CDN_H3=${FEATURE_CDN_H3:-false}
+# FEATURE_CDN_H3：是否生成经 CDN 的 QUIC(h3) 节点 VLESS-XHTTP-CDN-H3（默认开启；关闭用 FEATURE_CDN_H3=false 或装好后 xh cdnh3 off）。
+FEATURE_CDN_H3=${FEATURE_CDN_H3:-true}
 
 # FEATURE_BLOCK_CN / FEATURE_BLOCK_ADS（v4.9.53，默认关闭）：出站屏蔽回国 IP（geoip:cn）/ 广告域名
 # （geosite:category-ads-all），参考 zxcvos/Xray-script 的可选规则。运行期用 xh block cn|ads on|off 切换。
@@ -185,9 +182,9 @@ FEATURE_BRUTAL_EXPLICIT="${FEATURE_BRUTAL+set}"
 FEATURE_BRUTAL=${FEATURE_BRUTAL:-false}
 BRUTAL_DEFAULT_MBPS=${BRUTAL_DEFAULT_MBPS:-auto}
 
-# REALITY_MIN_CLIENT_VER：Reality 客户端最低版本，默认 default（严格模式：使用 Xray 最新内核默认版本校验，强制支持 X25519MLKEM768 后量子 key share）。
+# REALITY_MIN_CLIENT_VER：Reality 客户端最低版本，默认 1.8.0（兼容模式：支持 mihomo/Clash/sing-box；设为 default 使用内核严格模式）。
 # 兼容别名：MIN_CLIENT_VER、MINVERSION、MIN_VERSION。
-REALITY_MIN_CLIENT_VER="${REALITY_MIN_CLIENT_VER:-${MIN_CLIENT_VER:-${MINVERSION:-${MIN_VERSION:-default}}}}"
+REALITY_MIN_CLIENT_VER="${REALITY_MIN_CLIENT_VER:-${MIN_CLIENT_VER:-${MINVERSION:-${MIN_VERSION:-1.8.0}}}}"
 
 # ==================================================
 # Xray v26.9.30+ 前沿新特性开关（默认可选）
@@ -219,10 +216,9 @@ FEATURE_TLS_PQ_VISION=${FEATURE_TLS_PQ_VISION:-false}
 FEATURE_REALITY_PQ_VISION=${FEATURE_REALITY_PQ_VISION:-false}
 
 # FEATURE_REALITY_VISION / FEATURE_REALITY_XHTTP：Reality 443 入站上的直连节点。
-# 默认仅启用 REALITY_XHTTP（VLESS-Reality-XHTTP-Direct）；其它 Reality 节点（REALITY+PQ+Vision、Vision-Direct、上下行分离）默认关闭，整合进 xh reality / 功能菜单管理。
-# 关闭 = 服务端去掉对应的 clients 项 / fallback 项并从订阅里移除节点；装好后用 xh reality 菜单/命令切换。
+# 默认全部关闭（由 CDN-H2/H3、XHTTP-Direct-H3 与 Hysteria2 组成默认节点集）；装好后用 xh reality 菜单/命令按需开启。
 FEATURE_REALITY_VISION=${FEATURE_REALITY_VISION:-false}
-FEATURE_REALITY_XHTTP=${FEATURE_REALITY_XHTTP:-true}
+FEATURE_REALITY_XHTTP=${FEATURE_REALITY_XHTTP:-false}
 NOISE_EXP_PACKET=${NOISE_EXP_PACKET:-"<b 16030100><r 32><t><c><rd 8>"}
 NOISE_EXP_DELAY=${NOISE_EXP_DELAY:-"10-50"}
 
