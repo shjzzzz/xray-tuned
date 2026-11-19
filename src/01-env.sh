@@ -174,6 +174,7 @@ FEATURE_XHTTP_VLESSENC=${FEATURE_XHTTP_VLESSENC:-true}
 # FEATURE_PORT_HOPPING：UDP 端口跳跃（默认关闭）。
 # 避免客户端在服务端未配置 nat/iptables 端口段重定向时握手失败，或劫持同机其他 UDP 服务。
 FEATURE_PORT_HOPPING=${FEATURE_PORT_HOPPING:-false}
+PORT_HOP_RANGE=${PORT_HOP_RANGE:-55000-62000}
 
 # FEATURE_BRUTAL：TCP Brutal (HyNetworks/tcp-brutal) 极速拥塞控制（默认关闭：需要 DKMS 编译内核模块，新内核上容易失败；FEATURE_BRUTAL=true 或 xh brutal on 开启）。
 # 当系统内核存在 brutal 模块时，自动为 Xray TCP 入站启用 Brutal 拥塞控制。

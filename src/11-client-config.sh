@@ -400,8 +400,8 @@ hy2_client_fm_param() {
 
 if [[ "$FEATURE_HY2" == true && "${FEATURE_HY2_OBFS:-false}" == true ]]; then
   if [[ "${FEATURE_PORT_HOPPING:-false}" == true ]]; then
-    HY2_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_PORT}/?sni=${REALITY_DOMAIN}&mport=${HY2_PORT},${PORT_HOP_RANGE:-40000-50000}&alpn=h3,h2&obfs=salamander&obfs-password=$(rawurlencode "$OBFS_PASSWORD")${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "$OBFS_PASSWORD" "${HY2_PORT},${PORT_HOP_RANGE:-40000-50000}")#Hysteria2-TLS-BBR-Salamander"
-    MIHOMO_HY2_PORTS_LINE=$(printf '\n    ports: %s,%s' "${HY2_PORT}" "${PORT_HOP_RANGE:-40000-50000}")
+    HY2_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_PORT}/?sni=${REALITY_DOMAIN}&mport=${HY2_PORT},${PORT_HOP_RANGE:-55000-62000}&alpn=h3,h2&obfs=salamander&obfs-password=$(rawurlencode "$OBFS_PASSWORD")${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "$OBFS_PASSWORD" "${HY2_PORT},${PORT_HOP_RANGE:-55000-62000}")#Hysteria2-TLS-BBR-Salamander"
+    MIHOMO_HY2_PORTS_LINE=$(printf '\n    ports: %s,%s' "${HY2_PORT}" "${PORT_HOP_RANGE:-55000-62000}")
   else
     HY2_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_PORT}/?sni=${REALITY_DOMAIN}&alpn=h3,h2&obfs=salamander&obfs-password=$(rawurlencode "$OBFS_PASSWORD")${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "$OBFS_PASSWORD" "")#Hysteria2-TLS-BBR-Salamander"
     MIHOMO_HY2_PORTS_LINE=""
