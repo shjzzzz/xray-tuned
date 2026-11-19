@@ -65,7 +65,6 @@ proxies:
     packet-encoding: xudp
     network: xhttp
     alpn:
-      - h3
       - h2
     servername: ${CDN_DOMAIN}
     client-fingerprint: chrome
@@ -97,7 +96,6 @@ proxies:
     network: xhttp
     alpn:
       - h3
-      - h2
     servername: ${CDN_DOMAIN}
     client-fingerprint: chrome
     encryption: "${XHTTP_ENCRYPTION}"${MIHOMO_ECH_PROXY_BLOCK}
