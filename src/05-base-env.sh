@@ -334,7 +334,7 @@ if [[ "$XRAY_DEFAULTS" == true ]]; then
 ,
                     "scStreamUpServerSecs": "20-80",
                     "scMaxEachPostBytes": 100000000,
-                    "scMaxBufferedPosts": 100
+                    "scMaxBufferedPosts": 200
 EOF
 )
 elif [[ "$FEATURE_XPADDING" == true ]]; then
@@ -348,7 +348,7 @@ elif [[ "$FEATURE_XPADDING" == true ]]; then
                     "xPaddingMethod": "${XHTTP_PADDING_METHOD}",
                     "scStreamUpServerSecs": "20-80",
                     "scMaxEachPostBytes": 100000000,
-                    "scMaxBufferedPosts": 100
+                    "scMaxBufferedPosts": 200
 EOF
 )
 else
@@ -357,7 +357,7 @@ else
                     "xPaddingBytes": "100-1000",
                     "scStreamUpServerSecs": "20-80",
                     "scMaxEachPostBytes": 100000000,
-                    "scMaxBufferedPosts": 100
+                    "scMaxBufferedPosts": 200
 EOF
 )
 fi
