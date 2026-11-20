@@ -346,6 +346,7 @@ if [[ "$XRAY_DEFAULTS" == true ]]; then
   # 若误设为 300-600 秒，长连接空闲期间 5~10 分钟无保活包，必然被中间路由/NAT/CDN 静默掐断。
   XRAY_XHTTP_PADDING_JSON=$(cat <<EOF
 ,
+                    "xPaddingBytes": "100-1500",
                     "scStreamUpServerSecs": "20-80",
                     "scMaxEachPostBytes": 100000000,
                     "scMaxBufferedPosts": 200
@@ -354,7 +355,7 @@ EOF
 elif [[ "$FEATURE_XPADDING" == true ]]; then
   XRAY_XHTTP_PADDING_JSON=$(cat <<EOF
 ,
-                    "xPaddingBytes": "100-1000",
+                    "xPaddingBytes": "100-1500",
                     "xPaddingObfsMode": true,
                     "xPaddingKey": "${XHTTP_PADDING_KEY}",
                     "xPaddingHeader": "${XHTTP_PADDING_HEADER}",
@@ -368,7 +369,7 @@ EOF
 else
   XRAY_XHTTP_PADDING_JSON=$(cat <<EOF
 ,
-                    "xPaddingBytes": "100-1000",
+                    "xPaddingBytes": "100-1500",
                     "scStreamUpServerSecs": "20-80",
                     "scMaxEachPostBytes": 100000000,
                     "scMaxBufferedPosts": 200

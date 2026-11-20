@@ -266,6 +266,8 @@ for tpath in [txt_file, "/etc/xhttp-cdn/all/client-config.txt"]:
                 line = re.sub(r'([&?])alpn=[^&#]*', r'\1alpn=h3', line)
             elif "VLESS-XHTTP-CDN-H2" in tag:
                 line = re.sub(r'([&?])alpn=[^&#]*', r'\1alpn=h2', line)
+        elif "VLESS-XHTTP-Direct-H3" in tag:
+            line = re.sub(r'([&?])alpn=[^&#]*', r'\1alpn=h3', line)
         elif "Reality-XHTTP-Direct" in tag:
             line = line.replace("mode=auto", "mode=stream-up")
         elif "Reality-Up-CDN-Down" in tag and "downloadSettings" in line and cdn_addr:
@@ -372,6 +374,8 @@ if yaml:
                         p["xhttp-opts"]["mode"] = "auto"
                         p["xhttp-opts"]["reuse-settings"] = dict(unified_reuse)
                 elif "Reality-XHTTP-Direct" in pname or "Direct-H2" in pname or "Direct-H3" in pname:
+                    if "Direct-H3" in pname:
+                        p["alpn"] = ["h3"]
                     if "xhttp-opts" in p:
                         p["xhttp-opts"]["reuse-settings"] = dict(unified_reuse)
                 elif "Reality-Up-CDN-Down" in pname:
