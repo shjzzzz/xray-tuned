@@ -80,6 +80,7 @@ _menu_define() {
     "Reality 核心节点管理 (reality)::menu_choose MENU_REALITY"
     "上下行分离节点管理 (split)::menu_choose MENU_SPLIT"
     "Hysteria2 直连与混淆管理 (hy2)::menu_choose MENU_HY2"
+    "XDNS DNS 隧道穿透管理 (xdns)::menu_choose MENU_XDNS"
     "XHTTP-Direct-H3 直连管理 (h3direct)::menu_onoff cmd_h3direct"
     "XHTTP-Direct-H2 直连管理 (h2direct)::menu_onoff cmd_h2direct"
     "CDN TCP(h2) 节点开关 (cdnh2)::menu_onoff cmd_cdnh2"
@@ -127,6 +128,12 @@ _menu_define() {
     "恢复 BBR 自适应拥塞控制::cmd_hy2 speed off"
     "开启 Hysteria2 混淆节点::cmd_hy2 obfs on"
     "关闭 Hysteria2 混淆节点::cmd_hy2 obfs off")
+
+  MENU_XDNS=("XDNS DNS 隧道穿透管理"
+    "查看状态与 DNS NS 配置指引::cmd_xdns show"
+    "交互式配置 NS 域名 / 端口 / 解析器::cmd_xdns setup"
+    "开启 XDNS 隧道入站::cmd_xdns on"
+    "关闭 XDNS 隧道入站::cmd_xdns off")
 
   MENU_MINVER=("Reality 最低客户端版本"
     "查看状态::cmd_minversion show"

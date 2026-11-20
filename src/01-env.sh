@@ -99,24 +99,22 @@ XRAY_DEFAULTS=${XRAY_DEFAULTS:-true}
 AUTO=${AUTO:-0}
 
 # ==================================================
-# 节点集：默认 8 条核心节点（与实机当前一致），全部由 Xray 单核心提供
+# 节点集：默认 6 条核心节点（与当前实机配置一致），全部由 Xray 单核心提供
 # ==================================================
-#   1. VLESS-TLS+PQ+XHTTP+CDN        经 CDN，TLS 1.3 + ML-KEM-768
-#   2. VLESS-REALITY+PQ+Vision       直连 TCP 443，REALITY + ML-KEM-768
-#   3. VLESS-XHTTP-Direct-H3         直连 UDP 8443，QUIC/h3
-#   4. VLESS-XHTTP-Direct-H2         直连 TCP 8445，h2
-#   5. Hysteria2-H3-Direct           直连 UDP 随机高端口，标准 HTTP/3
-#   6. Hysteria2-TLS-BBR-Salamander  直连 UDP 随机高端口，salamander 混淆
-#   7. VLESS-Reality-Vision-Direct   直连 TCP 443，xtls-rprx-vision 零拷贝直通
-#   8. VLESS-Reality-XHTTP-Direct    直连 TCP 443，XHTTP 上下行不分离
-# 备用（默认关闭）：CDN-H2、CDN-H3、上下行分离、MASQUE 等。
+#   1. VLESS-XHTTP-CDN-H3            经 Cloudflare CDN，QUIC/h3 + XHTTP + VLESS Encryption
+#   2. VLESS-Reality-XHTTP-Direct    直连 TCP 443，REALITY + XHTTP + VLESS Encryption
+#   3. VLESS-XHTTP-Direct-H3         直连 UDP 8443，QUIC/h3 + XHTTP + VLESS Encryption
+#   4. Hysteria2-H3-Direct           直连 UDP 随机高端口 + 端口跳跃，Brutal 1000M + Noise
+#   5. Hysteria2-TLS-BBR-Salamander  直连 UDP 随机高端口 + 端口跳跃，Salamander 混淆 + Brutal 1000M + Noise
+#   6. VLESS-XDNS-Tunnel             UDP 5353（公网 UDP 53 重定向），FinalMask XDNS 隧道
+# 备用（默认关闭）：CDN-H2、H2-Direct、Reality-Vision、后量子 PQ、上下行分离、MASQUE、XDRIVE 等。
 #
 FEATURE_H3_DIRECT=${FEATURE_H3_DIRECT:-true}
 # v4.9.78 起 Hysteria2 重新默认安装（与本机当前节点集一致）；不需要时 FEATURE_HY2=false，或装好后 xh hy2 off。
 FEATURE_HY2=${FEATURE_HY2:-true}
-# FEATURE_HY2_H3（v4.9.26）：在 UDP 443 上再开一条**不加混淆**的 Hysteria2（Hysteria2-H3-Direct），
+# FEATURE_HY2_H3（v4.9.26）：在随机高端口上再开一条**不加混淆**的 Hysteria2（Hysteria2-H3-Direct），
 # 流量形态就是一个普通网站的 HTTP/3，是 UDP 里最不容易被运营商按端口/特征 QoS 的样子。
-# 依附于 FEATURE_HY2（共用认证密码与证书）；UDP 443 被占用时自动关闭。v4.9.28 起为 Xray 唯一的 Hysteria2 节点。
+# 依附于 FEATURE_HY2（共用认证密码与证书）。
 FEATURE_HY2_H3=${FEATURE_HY2_H3:-true}
 # FEATURE_HY2_OBFS（v4.9.28）：salamander 混淆的 Hysteria2-Obfs-Direct。v4.9.78 起默认开启（依附于 Hysteria2 总开关）。
 # 不需要时：FEATURE_HY2_OBFS=false bash install.sh，或装好后 xh hy2 obfs off。
@@ -126,17 +124,16 @@ FEATURE_HY2_OBFS=${FEATURE_HY2_OBFS:-true}
 # 允许环境变量显式指定，未指定时由 05-base-env.sh 自动生成随机可用端口。
 HY2_H3_PORT=${HY2_H3_PORT:-}
 HY2_PORT=${HY2_PORT:-}
-# Hysteria2 Brutal（默认关闭，使用 BBR）：同时给出 HY2_UP_MBPS / HY2_DOWN_MBPS（客户端上行 / 下行，Mbps）才启用，
-# 服务端入站与客户端链接共用这一对值。Brutal 是固定速率发包，必须对齐真实带宽；高于真实上行会造成上传严重丢包。
-# 例：HY2_UP_MBPS=1000 HY2_DOWN_MBPS=1000 bash install.sh
-HY2_UP_MBPS=${HY2_UP_MBPS:-}
-HY2_DOWN_MBPS=${HY2_DOWN_MBPS:-}
+# Hysteria2 Brutal（默认 1000/1000 Mbps，与当前实机一致）：同时给出 HY2_UP_MBPS / HY2_DOWN_MBPS（客户端上行 / 下行，Mbps）即启用，
+# 服务端入站与客户端链接共用这一对值；设为 "" 或装好后 `xh hy2 speed off` 可切回 BBR 自适应。
+HY2_UP_MBPS=${HY2_UP_MBPS:-1000}
+HY2_DOWN_MBPS=${HY2_DOWN_MBPS:-1000}
 for _bw in "$HY2_UP_MBPS" "$HY2_DOWN_MBPS"; do
   [[ -z "$_bw" || "$_bw" =~ ^[1-9][0-9]*$ ]] || error "HY2_UP_MBPS / HY2_DOWN_MBPS 必须是正整数（Mbps），当前: ${_bw}"
 done
 
-# FEATURE_CDN_H2：是否生成经 CDN 的 TCP(h2) 节点 VLESS-XHTTP-CDN-H2（默认开启；关闭用 FEATURE_CDN_H2=false 或装好后 xh cdnh2 off）。
-FEATURE_CDN_H2=${FEATURE_CDN_H2:-true}
+# FEATURE_CDN_H2：是否生成经 CDN 的 TCP(h2) 节点 VLESS-XHTTP-CDN-H2（默认关闭；开启用 FEATURE_CDN_H2=true 或装好后 xh cdnh2 on）。
+FEATURE_CDN_H2=${FEATURE_CDN_H2:-false}
 
 # FEATURE_CDN_H3：是否生成经 CDN 的 QUIC(h3) 节点 VLESS-XHTTP-CDN-H3（默认开启；关闭用 FEATURE_CDN_H3=false 或装好后 xh cdnh3 off）。
 FEATURE_CDN_H3=${FEATURE_CDN_H3:-true}
@@ -171,9 +168,8 @@ FEATURE_CDN_UP_REALITY_DOWN=${FEATURE_CDN_UP_REALITY_DOWN:-false}
 # FEATURE_XHTTP_VLESSENC（v4.9.29）：8001 XHTTP 入站启用 VLESS Encryption（X25519 临时密钥，抗中间人嗅探解密）。
 FEATURE_XHTTP_VLESSENC=${FEATURE_XHTTP_VLESSENC:-true}
 
-# FEATURE_PORT_HOPPING：UDP 端口跳跃（默认关闭）。
-# 避免客户端在服务端未配置 nat/iptables 端口段重定向时握手失败，或劫持同机其他 UDP 服务。
-FEATURE_PORT_HOPPING=${FEATURE_PORT_HOPPING:-false}
+# FEATURE_PORT_HOPPING：UDP 端口跳跃（默认开启，与当前实机配置一致；关闭用 FEATURE_PORT_HOPPING=false）。
+FEATURE_PORT_HOPPING=${FEATURE_PORT_HOPPING:-true}
 PORT_HOP_RANGE=${PORT_HOP_RANGE:-55000-62000}
 
 # FEATURE_BRUTAL：TCP Brutal (HyNetworks/tcp-brutal) 极速拥塞控制（默认关闭：需要 DKMS 编译内核模块，新内核上容易失败；FEATURE_BRUTAL=true 或 xh brutal on 开启）。
@@ -206,20 +202,28 @@ XDRIVE_REFRESH_TOKEN=${XDRIVE_REFRESH_TOKEN:-""}
 XDRIVE_ENCRYPTION=${XDRIVE_ENCRYPTION:-""}
 XDRIVE_DECRYPTION=${XDRIVE_DECRYPTION:-""}
 
+# FEATURE_XDNS: 基于 FinalMask xdns 的 DNS 隧道穿透（默认开启；XDNS_DOMAIN 留空时默认沿用 REALITY_DOMAIN）
+FEATURE_XDNS=${FEATURE_XDNS:-true}
+XDNS_DOMAIN=${XDNS_DOMAIN:-""}
+XDNS_PORT=${XDNS_PORT:-5353}
+XDNS_REDIRECT_53=${XDNS_REDIRECT_53:-true}
+XDNS_RESOLVERS=${XDNS_RESOLVERS:-"udp://8.8.8.8:53,tcp://1.1.1.1:53"}
+XDNS_ENCRYPTION=${XDNS_ENCRYPTION:-""}
+XDNS_DECRYPTION=${XDNS_DECRYPTION:-""}
+
 # FEATURE_NOISE_EXP: Finalmask Noise dynamic expression 动态模板混淆（防 UDP DPI 识别）
 FEATURE_NOISE_EXP=${FEATURE_NOISE_EXP:-true}
-# FEATURE_NOISE_LINKS（v4.9.81，默认关闭）：客户端链接的 fm 里是否也带 noise 项。服务端入站的 noise 只是发送方行为，
-# 老客户端不受影响；但链接里的 noise.exp 在 Xray < 26.9.30 的客户端内核里无法解析，v2rayN 会报「运行内核失败」。
-# 确认所有客户端内核都 >= 26.9.30 后再开：xh noise links on。
-# 三个后量子 (ML-KEM-768) 节点开关：TLS_PQ_XHTTP（CDN）默认关闭，REALITY_PQ_VISION（直连 443）默认开启，TLS_PQ_VISION 默认关闭。
+# FEATURE_NOISE_LINKS：客户端链接的 fm 里是否也带 noise 项（默认开启，要求客户端 Xray 内核 >= 26.9.30；老客户端可 `xh noise links off`）。
+FEATURE_NOISE_LINKS=${FEATURE_NOISE_LINKS:-true}
+# 三个后量子 (ML-KEM-768) 节点开关：默认全部关闭，装好后用 `xh pq` 按需开启。
 FEATURE_TLS_PQ_XHTTP=${FEATURE_TLS_PQ_XHTTP:-false}
 FEATURE_TLS_PQ_VISION=${FEATURE_TLS_PQ_VISION:-false}
 FEATURE_REALITY_PQ_VISION=${FEATURE_REALITY_PQ_VISION:-false}
 
 # FEATURE_REALITY_VISION / FEATURE_REALITY_XHTTP：Reality 443 入站上的直连节点。
-# 默认全部关闭（由 CDN-H2/H3、XHTTP-Direct-H3 与 Hysteria2 组成默认节点集）；装好后用 xh reality 菜单/命令按需开启。
+# 默认开启 Reality-XHTTP-Direct，关闭 Reality-Vision-Direct（与当前实机配置一致）；装好后用 xh reality 菜单/命令按需切换。
 FEATURE_REALITY_VISION=${FEATURE_REALITY_VISION:-false}
-FEATURE_REALITY_XHTTP=${FEATURE_REALITY_XHTTP:-false}
+FEATURE_REALITY_XHTTP=${FEATURE_REALITY_XHTTP:-true}
 NOISE_EXP_PACKET=${NOISE_EXP_PACKET:-"<b 16030100><r 32><t><c><rd 8>"}
 NOISE_EXP_DELAY=${NOISE_EXP_DELAY:-"10-50"}
 
@@ -248,7 +252,7 @@ check_unknown_env_vars() {
   # 只看长得像本项目参数的变量，避免把系统里成百上千的环境变量全扫一遍
   while IFS= read -r name; do
     grep -q "\b${name}\b" <<< "$code" || unknown+=("$name")
-  done < <(compgen -v | grep -E '^(AUTO|FEATURE_|CDN_|REALITY_|XHTTP_|HY2_|OBFS_|H2_|H3_|IP_CHOICE|FALLBACK_|VISION_|KEEP_|NODE_|XRAY_|MIN_CLIENT_VER|MINVERSION|MIN_VERSION|MASQUE_|XDRIVE_|NOISE_)')
+  done < <(compgen -v | grep -E '^(AUTO|FEATURE_|CDN_|REALITY_|XHTTP_|HY2_|OBFS_|H2_|H3_|IP_CHOICE|FALLBACK_|VISION_|KEEP_|NODE_|XRAY_|MIN_CLIENT_VER|MINVERSION|MIN_VERSION|MASQUE_|XDRIVE_|XDNS_|NOISE_)')
 
   [[ ${#unknown[@]} -eq 0 ]] && return 0
   warn "以下环境变量本脚本不认识，已被忽略（通常是拼写或版本差异）："

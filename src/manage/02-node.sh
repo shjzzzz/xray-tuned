@@ -2312,6 +2312,304 @@ cmd_xdrive() {
   esac
 }
 
+# 确保 XDNS 的 VLESS Encryption 密钥对存在，缺失时用 xray vlessenc 生成并写入 node.env
+xdns_ensure_keys() {
+  [[ -n "${XDNS_DECRYPTION:-}" && -n "${XDNS_ENCRYPTION:-}" ]] && return 0
+  local out enc dec
+  out=$("$XRAY_BIN" vlessenc 2>/dev/null) || fail "xray vlessenc 失败，无法生成 XDNS 加密密钥"
+  enc=$(awk -F'"' '/Authentication: X25519/{f=1} f && /"encryption"/{print $4; exit}' <<< "$out")
+  dec=$(awk -F'"' '/Authentication: X25519/{f=1} f && /"decryption"/{print $4; exit}' <<< "$out")
+  [[ -n "$enc" && -n "$dec" ]] || fail "解析 xray vlessenc 输出失败"
+  update_node_env XDNS_ENCRYPTION "$enc"
+  update_node_env XDNS_DECRYPTION "$dec"
+  export XDNS_ENCRYPTION="$enc" XDNS_DECRYPTION="$dec"
+}
+
+# 将逗号分隔列表渲染为 JSON 字符串数组（去除空白与空项）
+_xdns_csv_to_json_array() {
+  python3 - "$1" <<'PY'
+import json, sys
+items = [x.strip() for x in sys.argv[1].split(',') if x.strip()]
+print(json.dumps(items, ensure_ascii=False))
+PY
+}
+
+# 管理外部 UDP 53 -> XDNS_PORT 的 NAT 重定向（仅清理带 xray-xdns-53 注释的规则，不碰 127.0.0.53 本地 DNS）
+xdns_sync_iptables_53() {
+  local act="$1" port="${XDNS_PORT:-5353}" ipt rule_num
+  for ipt in iptables ip6tables; do
+    command -v "$ipt" >/dev/null 2>&1 || continue
+    # 先彻底清除旧规则，避免残留旧端口重定向（遵循防黑洞规范）
+    while true; do
+      rule_num=$("$ipt" -t nat -L PREROUTING --line-numbers -n 2>/dev/null | awk '/xray-xdns-53/{print $1; exit}')
+      [[ -n "$rule_num" ]] || break
+      "$ipt" -t nat -D PREROUTING "$rule_num" 2>/dev/null || break
+    done
+    if [[ "$act" == on && "$port" != "53" ]]; then
+      "$ipt" -t nat -A PREROUTING ! -i lo -p udp --dport 53 -m comment --comment "xray-xdns-53" -j REDIRECT --to-ports "$port" 2>/dev/null || \
+        warn "${ipt} 添加 UDP 53 -> ${port} 重定向失败，请检查权限或手动放行"
+    fi
+  done
+  if command -v netfilter-persistent >/dev/null 2>&1; then
+    netfilter-persistent save >/dev/null 2>&1 || true
+  elif command -v iptables-save >/dev/null 2>&1 && [[ -d /etc/iptables ]]; then
+    iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+    ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true
+  fi
+}
+
+render_xdns_inbound() {
+  xdns_ensure_keys
+  local port="${XDNS_PORT:-5353}" domains_json
+  domains_json=$(_xdns_csv_to_json_array "${XDNS_DOMAIN:-t.example.com}")
+  cat <<XDNSEOF
+,
+        {
+            "tag": "vless-xdns",
+            "listen": "0.0.0.0",
+            "port": ${port},
+            "protocol": "vless",
+            "settings": {
+                "clients": [
+                    {
+                        "id": "${UUID2}",
+                        "level": 0
+                    }
+                ],
+                "decryption": "${XDNS_DECRYPTION}"
+            },
+            "streamSettings": {
+                "network": "kcp",
+                "kcpSettings": {
+                    "mtu": 900
+                },
+                "finalmask": {
+                    "udp": [
+                        {
+                            "type": "xdns",
+                            "settings": {
+                                "domains": [
+                                    {
+                                        "names": ${domains_json}
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+            "sniffing": {
+                "enabled": true,
+                "destOverride": ["http", "tls", "quic"],
+                "metadataOnly": false,
+                "routeOnly": false
+            }
+        }
+XDNSEOF
+}
+
+generate_xdns_client_config() {
+  xdns_ensure_keys
+  local target="${USER_HOME:-/root}/xdns-client.json"
+  local domains_json resolvers_json client_port
+  domains_json=$(_xdns_csv_to_json_array "${XDNS_DOMAIN:-t.example.com}")
+  resolvers_json=$(_xdns_csv_to_json_array "${XDNS_RESOLVERS:-udp://8.8.8.8:53,tcp://1.1.1.1:53}")
+  if [[ "${XDNS_REDIRECT_53:-true}" == true ]]; then
+    client_port=53
+  else
+    client_port="${XDNS_PORT:-5353}"
+  fi
+  cat > "$target" <<XDCEOF
+{
+    "remarks": "VLESS-XDNS-Tunnel",
+    "outbounds": [
+        {
+            "tag": "proxy-xdns",
+            "protocol": "vless",
+            "settings": {
+                "vnext": [
+                    {
+                        "address": "${VPS_IP:-127.0.0.1}",
+                        "port": ${client_port},
+                        "users": [
+                            {
+                                "id": "${UUID2}",
+                                "encryption": "${XDNS_ENCRYPTION}"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "streamSettings": {
+                "network": "kcp",
+                "kcpSettings": {
+                    "mtu": 900
+                },
+                "finalmask": {
+                    "udp": [
+                        {
+                            "type": "xdns",
+                            "settings": {
+                                "domains": [
+                                    {
+                                        "names": ${domains_json}
+                                    }
+                                ],
+                                "resolvers": [
+                                    {
+                                        "addrs": ${resolvers_json},
+                                        "worker": 32
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    ]
+}
+XDCEOF
+  chmod 600 "$target" 2>/dev/null || true
+  chown "$(stat -c '%u:%g' "${USER_HOME:-/root}")" "$target" 2>/dev/null || true
+}
+
+# XDNS DNS 隧道穿透代理管理 (FinalMask xdns)
+cmd_xdns() {
+  local subcmd="${1:-show}" rc
+  case "$subcmd" in
+    show|status)
+      echo ""
+      echo -e "${CYAN}=== XDNS DNS 隧道穿透代理 (FinalMask xdns) ===${NC}"
+      if [[ "${FEATURE_XDNS:-false}" == true ]]; then
+        echo -e "  XDNS 隧道入站:        ${GREEN}已开启${NC}  (UDP 监听端口 ${XDNS_PORT:-5353})"
+      else
+        echo -e "  XDNS 隧道入站:        ${YELLOW}未开启${NC}"
+      fi
+      echo -e "  NS 隧道域名:          ${XDNS_DOMAIN:-未配置}"
+      echo -e "  本机监听端口 (UDP):   ${XDNS_PORT:-5353}"
+      echo -e "  外部 UDP 53 重定向:   $([[ "${XDNS_REDIRECT_53:-true}" == true ]] && echo "${GREEN}开启${NC} (公网 UDP 53 -> ${XDNS_PORT:-5353}，不冲突 127.0.0.53)" || echo "${YELLOW}关闭${NC}")"
+      echo -e "  客户端解析器:         ${XDNS_RESOLVERS:-udp://8.8.8.8:53,tcp://1.1.1.1:53}"
+      echo -e "  客户端配置示例:       ${USER_HOME:-/root}/xdns-client.json"
+      echo ""
+      echo -e "  DNS 权威记录配置指引 (自备域名):"
+      echo -e "    1. 添加 A 记录:  ns1.<你的主域名>  ->  ${VPS_IP:-<VPS公网IP>} (关闭 CDN 代理/仅 DNS)"
+      echo -e "    2. 添加 NS 记录: ${XDNS_DOMAIN:-t.<你的主域名>}  ->  ns1.<你的主域名>"
+      echo -e "    3. 确保云厂商安全组已放行 UDP 53 (以及 ${XDNS_PORT:-5353})"
+      echo ""
+      echo -e "  常用指令:"
+      echo -e "    ${MANAGE_CMD} xdns show          # 查看 XDNS 状态与 DNS 配置指引"
+      echo -e "    ${MANAGE_CMD} xdns setup         # 交互式配置 NS 域名、监听端口与解析器"
+      echo -e "    ${MANAGE_CMD} xdns on            # 开启 XDNS DNS 隧道入站"
+      echo -e "    ${MANAGE_CMD} xdns off           # 关闭 XDNS DNS 隧道入站"
+      echo ""
+      ;;
+    setup)
+      echo ""
+      echo -e "${CYAN}=== 配置 XDNS DNS 隧道参数 ===${NC}"
+      echo "提示: 请先在域名解析商处为隧道子域配置 NS 记录指向本机 A 记录。"
+      local domain port redir resolvers
+      read -rp "请输入 NS 隧道域名 (多个用逗号分隔，如 t.example.com) [${XDNS_DOMAIN:-}]: " domain
+      [[ -z "$domain" ]] && domain="${XDNS_DOMAIN:-}"
+      [[ -n "$domain" ]] || fail "NS 隧道域名不能为空！"
+      if [[ ! "$domain" =~ ^[A-Za-z0-9.,_-]+$ ]] || [[ "$domain" != *.* ]]; then
+        fail "域名格式非法: ${domain}"
+      fi
+
+      read -rp "请输入本机 UDP 监听端口 (避开 127.0.0.53:53 冲突，默认 5353) [${XDNS_PORT:-5353}]: " port
+      [[ -z "$port" ]] && port="${XDNS_PORT:-5353}"
+      if [[ ! "$port" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
+        fail "端口非法: ${port}（需为 1-65535）"
+      fi
+
+      read -rp "是否自动添加外部 UDP 53 -> ${port} 的 iptables 重定向？(Y/n) [$([[ "${XDNS_REDIRECT_53:-true}" == true ]] && echo Y || echo n)]: " redir
+      case "${redir,,}" in
+        n|no|false) redir="false" ;;
+        y|yes|true) redir="true" ;;
+        "") redir="${XDNS_REDIRECT_53:-true}" ;;
+        *) fail "无效输入: ${redir}（请输入 y 或 n）" ;;
+      esac
+
+      read -rp "请输入客户端 DNS 解析器 (支持 udp:// tcp:// https://，逗号分隔) [${XDNS_RESOLVERS:-udp://8.8.8.8:53,tcp://1.1.1.1:53}]: " resolvers
+      [[ -z "$resolvers" ]] && resolvers="${XDNS_RESOLVERS:-udp://8.8.8.8:53,tcp://1.1.1.1:53}"
+
+      update_node_env XDNS_DOMAIN "$domain"
+      update_node_env XDNS_PORT "$port"
+      update_node_env XDNS_REDIRECT_53 "$redir"
+      update_node_env XDNS_RESOLVERS "$resolvers"
+      export XDNS_DOMAIN="$domain" XDNS_PORT="$port" XDNS_REDIRECT_53="$redir" XDNS_RESOLVERS="$resolvers"
+
+      mkdir -p "${ALL_STORE_DIR}"
+      render_xdns_inbound > "${ALL_STORE_DIR}/inbound-xdns.json"
+      chmod 600 "${ALL_STORE_DIR}/inbound-xdns.json"
+
+      generate_xdns_client_config
+
+      info "XDNS 参数配置成功并已保存！"
+      if [[ "${FEATURE_XDNS:-false}" == true ]]; then
+        info "正在重新加载线上 XDNS 配置 ..."
+        backup_inbound_edit xdns off "tag:vless-xdns" >/dev/null 2>&1 || true
+        backup_inbound_edit xdns on "tag:vless-xdns"
+        backup_open_port udp "$port"
+        if [[ "$redir" == true ]]; then
+          backup_open_port udp 53
+          xdns_sync_iptables_53 on
+        else
+          xdns_sync_iptables_53 off
+        fi
+      else
+        info "可运行 ${MANAGE_CMD} xdns on 开启入站"
+      fi
+      ;;
+    on)
+      if [[ "${FEATURE_XDNS:-false}" == true ]]; then info "XDNS 隧道入站已经是开启状态"; return 0; fi
+      if [[ -z "${XDNS_DOMAIN:-}" ]]; then
+        warn "XDNS NS 域名尚未配置，现在进入交互式配置："
+        cmd_xdns setup || return 1
+      fi
+      backup_store_check
+      [[ -f "$NODE_ENV_FILE" ]] || fail "未找到 ${NODE_ENV_FILE}，无法保存开关状态"
+      local port="${XDNS_PORT:-5353}"
+      if backup_port_busy udp "$port" xdns; then
+        fail "UDP 端口 ${port} 已被其他进程占用，请运行 ${MANAGE_CMD} xdns setup 更换端口"
+      fi
+      mkdir -p "${ALL_STORE_DIR}"
+      render_xdns_inbound > "${ALL_STORE_DIR}/inbound-xdns.json"
+      chmod 600 "${ALL_STORE_DIR}/inbound-xdns.json"
+
+      info "正在开启 XDNS DNS 隧道入站 (UDP ${port}) ..."
+      backup_inbound_edit xdns on "tag:vless-xdns"; rc=$?
+      if [[ $rc -ne 0 && $rc -ne 3 ]]; then
+        fail "服务端入站写入失败，未改动配置"
+      fi
+      backup_open_port udp "$port"
+      if [[ "${XDNS_REDIRECT_53:-true}" == true ]]; then
+        backup_open_port udp 53
+        xdns_sync_iptables_53 on
+      fi
+      update_node_env FEATURE_XDNS true
+      export FEATURE_XDNS=true
+      generate_xdns_client_config
+      info "XDNS DNS 隧道入站已开启（tag: vless-xdns，UDP ${port}）。"
+      info "客户端配置文件已生成: ${USER_HOME:-/root}/xdns-client.json"
+      ;;
+    off)
+      if [[ "${FEATURE_XDNS:-false}" != true ]]; then info "XDNS 隧道入站本来就是关闭状态"; return 0; fi
+      backup_store_check
+      info "正在关闭 XDNS DNS 隧道入站 ..."
+      backup_inbound_edit xdns off "tag:vless-xdns"; rc=$?
+      [[ $rc -eq 0 || $rc -eq 3 ]] || fail "移除服务端入站失败"
+      xdns_sync_iptables_53 off
+      update_node_env FEATURE_XDNS false
+      export FEATURE_XDNS=false
+      info "XDNS DNS 隧道入站已关闭（已清理 UDP 53 重定向规则）"
+      ;;
+    *)
+      echo "用法: ${MANAGE_CMD} xdns [show|setup|on|off]"
+      ;;
+  esac
+}
+
 render_hy2_obfs_inbound() {
   cat <<HY2EOF
 ,

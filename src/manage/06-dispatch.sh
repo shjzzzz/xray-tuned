@@ -36,6 +36,7 @@ xray-xhttp 全能管理命令 (v${XH_VERSION:-5.6.1})
   xh noise [show|on|off|links on|off|sync] Finalmask Noise 动态混淆管理
   xh masque [show|on|off] MASQUE RFC 9484 CONNECT-IP 隧道管理
   xh xdrive [show|on|off] XDRIVE 网盘穿透代理管理
+  xh xdns [show|setup|on|off] XDNS DNS 隧道穿透管理 (FinalMask)
   xh h3direct [on|off]  XHTTP-Direct-H3 (QUIC/UDP) 直连节点开关
   xh h2direct [on|off]  XHTTP-Direct-H2 直连节点开关
   xh cdnh2 [on|off]     CDN TCP(h2) 节点开关
@@ -112,6 +113,7 @@ case "${1:-}" in
   noise)      shift; cmd_noise "$@" ;;
   masque)     shift; cmd_masque "$@" ;;
   xdrive)     shift; cmd_xdrive "$@" ;;
+  xdns)       shift; cmd_xdns "$@" ;;
   pq)         shift; cmd_pq "$@" ;;
   reality)    shift; cmd_reality "$@" ;;
   split)      shift; cmd_split "$@" ;;

@@ -123,6 +123,10 @@ ensure_firewall_ports() {
   [[ -n "${HY2_H3_PORT:-}" ]] && default_ports+=("$HY2_H3_PORT")
   [[ -n "${HY2_PORT:-}" ]] && default_ports+=("$HY2_PORT")
   [[ -n "${MASQUE_PORT:-}" ]] && default_ports+=("$MASQUE_PORT")
+  if [[ "${FEATURE_XDNS:-false}" == true ]]; then
+    default_ports+=("${XDNS_PORT:-5353}")
+    [[ "${XDNS_REDIRECT_53:-true}" == true ]] && default_ports+=(53)
+  fi
 
   if command -v iptables >/dev/null 2>&1; then
     for port in "${default_ports[@]}"; do
@@ -151,6 +155,16 @@ ensure_firewall_ports() {
         iptables -I INPUT 2 -p udp --dport 443 -m conntrack --ctstate INVALID -j DROP 2>/dev/null || true
       iptables -C INPUT -p udp --dport 443 -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name hy_qdos_443 -j DROP 2>/dev/null || \
         iptables -I INPUT 3 -p udp --dport 443 -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name hy_qdos_443 -j DROP 2>/dev/null || true
+    fi
+    # XDNS：公网 UDP 53 -> XDNS_PORT NAT 重定向（不碰 lo / 127.0.0.53 本地 DNS）
+    if [[ "${FEATURE_XDNS:-false}" == true && "${XDNS_REDIRECT_53:-true}" == true && "${XDNS_PORT:-5353}" != "53" ]]; then
+      local _rnum
+      while true; do
+        _rnum=$(iptables -t nat -L PREROUTING --line-numbers -n 2>/dev/null | awk '/xray-xdns-53/{print $1; exit}')
+        [[ -n "$_rnum" ]] || break
+        iptables -t nat -D PREROUTING "$_rnum" 2>/dev/null || break
+      done
+      iptables -t nat -A PREROUTING ! -i lo -p udp --dport 53 -m comment --comment "xray-xdns-53" -j REDIRECT --to-ports "${XDNS_PORT:-5353}" 2>/dev/null || true
     fi
   fi
   if command -v ip6tables >/dev/null 2>&1; then

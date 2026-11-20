@@ -668,6 +668,88 @@ elif [[ "$FEATURE_XDRIVE" == true && -n "${XDRIVE_FOLDER:-}" && -n "${XDRIVE_CLI
   info "已启用 XDRIVE 网盘穿透代理 (Google Drive)"
 fi
 
+# XDNS DNS 隧道穿透代理 (FinalMask xdns，默认开启；XDNS_DOMAIN 留空时默认沿用 REALITY_DOMAIN)
+xdns_ensure_keys() {
+  [[ -n "${XDNS_DECRYPTION:-}" && -n "${XDNS_ENCRYPTION:-}" ]] && return 0
+  local out
+  out=$(xray vlessenc 2>/dev/null) || return 1
+  XDNS_ENCRYPTION=$(awk -F'"' '/Authentication: X25519/{f=1} f && /"encryption"/{print $4; exit}' <<< "$out")
+  XDNS_DECRYPTION=$(awk -F'"' '/Authentication: X25519/{f=1} f && /"decryption"/{print $4; exit}' <<< "$out")
+  [[ -n "$XDNS_ENCRYPTION" && -n "$XDNS_DECRYPTION" ]]
+}
+
+_xdns_csv_to_json_array() {
+  python3 - "$1" <<'PY'
+import json, sys
+items = [x.strip() for x in sys.argv[1].split(',') if x.strip()]
+print(json.dumps(items, ensure_ascii=False))
+PY
+}
+
+xray_xdns_inbound() {
+  local port="${XDNS_PORT:-5353}" domains_json
+  domains_json=$(_xdns_csv_to_json_array "${XDNS_DOMAIN:-${REALITY_DOMAIN:-t.example.com}}")
+  cat <<XDNSEOF
+,
+        {
+            "tag": "vless-xdns",
+            "listen": "0.0.0.0",
+            "port": ${port},
+            "protocol": "vless",
+            "settings": {
+                "clients": [
+                    {
+                        "id": "${UUID2}",
+                        "level": 0
+                    }
+                ],
+                "decryption": "${XDNS_DECRYPTION:-none}"
+            },
+            "streamSettings": {
+                "network": "kcp",
+                "kcpSettings": {
+                    "mtu": 900
+                },
+                "finalmask": {
+                    "udp": [
+                        {
+                            "type": "xdns",
+                            "settings": {
+                                "domains": [
+                                    {
+                                        "names": ${domains_json}
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+            "sniffing": {
+                "enabled": true,
+                "destOverride": ["http", "tls", "quic"],
+                "metadataOnly": false,
+                "routeOnly": false
+            }
+        }
+XDNSEOF
+}
+
+XRAY_XDNS_INBOUND=""
+if [[ "${FEATURE_XDNS:-false}" == true ]]; then
+  [[ -n "${XDNS_DOMAIN:-}" ]] || XDNS_DOMAIN="${REALITY_DOMAIN:-}"
+  if [[ -z "${XDNS_DOMAIN:-}" ]]; then
+    warn "XDNS 缺少隧道域名，已跳过 XDNS 入站"
+    FEATURE_XDNS=false
+  elif ! xdns_ensure_keys; then
+    warn "XDNS 需要 VLESS Encryption 密钥（xray vlessenc 失败），已跳过 XDNS 入站"
+    FEATURE_XDNS=false
+  else
+    XRAY_XDNS_INBOUND=$(printf '\n        // >>xh:xdns\n%s\n        // <<xh:xdns\n' "$(xray_xdns_inbound)")
+    info "已启用 XDNS DNS 隧道穿透代理: UDP ${XDNS_PORT:-5353} (NS 域名: ${XDNS_DOMAIN})"
+  fi
+fi
+
 info "写入 /etc/nginx/nginx.conf ..."
 cat > /etc/nginx/nginx.conf << NGINXEOF
 @@include templates/nginx.conf.tmpl
@@ -774,8 +856,15 @@ info "写入 ${NODE_ENV_FILE} ..."
   printf 'XDRIVE_REFRESH_TOKEN=%q\n'   "${XDRIVE_REFRESH_TOKEN:-}"
   printf 'XDRIVE_ENCRYPTION=%q\n'     "${XDRIVE_ENCRYPTION:-}"
   printf 'XDRIVE_DECRYPTION=%q\n'     "${XDRIVE_DECRYPTION:-}"
-  printf 'FEATURE_NOISE_EXP=%q\n'      "${FEATURE_NOISE_EXP:-false}"
-  printf 'FEATURE_NOISE_LINKS=%q\n'    "${FEATURE_NOISE_LINKS:-false}"
+  printf 'FEATURE_XDNS=%q\n'          "${FEATURE_XDNS:-false}"
+  printf 'XDNS_DOMAIN=%q\n'           "${XDNS_DOMAIN:-}"
+  printf 'XDNS_PORT=%q\n'             "${XDNS_PORT:-5353}"
+  printf 'XDNS_REDIRECT_53=%q\n'      "${XDNS_REDIRECT_53:-true}"
+  printf 'XDNS_RESOLVERS=%q\n'        "${XDNS_RESOLVERS:-udp://8.8.8.8:53,tcp://1.1.1.1:53}"
+  printf 'XDNS_ENCRYPTION=%q\n'       "${XDNS_ENCRYPTION:-}"
+  printf 'XDNS_DECRYPTION=%q\n'       "${XDNS_DECRYPTION:-}"
+  printf 'FEATURE_NOISE_EXP=%q\n'      "${FEATURE_NOISE_EXP:-true}"
+  printf 'FEATURE_NOISE_LINKS=%q\n'    "${FEATURE_NOISE_LINKS:-true}"
   printf 'FEATURE_REALITY_VISION=%q\n'  "${FEATURE_REALITY_VISION:-false}"
   printf 'FEATURE_REALITY_XHTTP=%q\n'   "${FEATURE_REALITY_XHTTP:-true}"
   printf 'FEATURE_TLS_PQ_XHTTP=%q\n'    "${FEATURE_TLS_PQ_XHTTP:-false}"
@@ -803,6 +892,7 @@ xray_hy2_obfs_inbound   > /etc/xhttp-cdn/all/inbound-hy2obfs.json
 xray_hy2_h3_inbound     > /etc/xhttp-cdn/all/inbound-hy2h3.json
 xray_masque_inbound     > /etc/xhttp-cdn/all/inbound-masque.json
 xray_xdrive_inbound     > /etc/xhttp-cdn/all/inbound-xdrive.json
+xray_xdns_inbound       > /etc/xhttp-cdn/all/inbound-xdns.json
 chmod 700 /etc/xhttp-cdn/all; chmod 600 /etc/xhttp-cdn/all/inbound-*.json
 
 echo ""
