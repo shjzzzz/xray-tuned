@@ -299,7 +299,6 @@ if yaml:
                         "packet-encoding": "xudp",
                         "encryption": q("encryption", "none"),
                         "network": "xhttp",
-                        "alpn": ["h2"],
                         "servername": reality_domain,
                         "client-fingerprint": "chrome",
                         "reality-opts": {
@@ -3465,7 +3464,7 @@ cmd_pq() {
           if [[ -f "${ALL_STORE_DIR}/client-config.txt" ]] && ! grep -q "VLESS-REALITY+PQ+Vision" "${ALL_STORE_DIR}/client-config.txt"; then
             local _spx_q=""
             [[ -n "${REALITY_SPX_HASH:-}" ]] && _spx_q="&spx=%2F${REALITY_SPX_HASH}"
-            echo "vless://${UUID1}@${VPS_IP_URI:-${VPS_IP}}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${_spx_q}&type=tcp&headerType=none&packetEncoding=xudp#VLESS-REALITY+PQ+Vision" >> "${ALL_STORE_DIR}/client-config.txt"
+            echo "vless://${UUID1}@${VPS_IP_URI:-${VPS_IP}}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${_spx_q}&type=tcp&headerType=none&packetEncoding=xudp#VLESS-REALITY+PQ+Vision" >> "${ALL_STORE_DIR}/client-config.txt"
           fi
           update_node_env "FEATURE_REALITY_PQ_VISION" "true"
           export FEATURE_REALITY_PQ_VISION=true
