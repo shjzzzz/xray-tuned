@@ -998,3 +998,10 @@
 - **改动**：管理员密码换随机 24 位（bcrypt 哈希在 `config.yaml` 的 `App.Users`，明文仅存 `/root/.pika/admin-credentials.txt`，权限 600）；端口改 `127.0.0.1:8080:8080`；`ip_trust_list` 收窄为 `127.0.0.1/32` + `172.18.0.1/32`（docker 网桥网关）；nginx TLS 反代公网 TCP **9443**（`/etc/nginx/conf.d/pika.conf` + `pika-proxy.inc`，`nginx.conf` http 块内 `# BEGIN pika-tls … # END pika-tls` 一行 include，未知 SNI `ssl_reject_handshake`，`/api/login` 限速 10r/m burst5 返回 429，XFF 用 `$remote_addr` 覆盖）；9443 加入 `ip_local_reserved_ports`，iptables/ip6tables 放行并持久化。
 - **陷阱**：`09-server-config.sh` 重新生成 `nginx.conf` 会覆盖 pika-tls 标记块，需补回；xh 没有独立放行清单，放行即 iptables 规则本身。
 - **局限**：云安全组（OCI）需放行 TCP 9443，本机无法核实（2026-11-13 复核：本机监听与 iptables 均通，自测 200）。详见 `/root/memory.md` §5.3。
+
+## 57. Xray-core main 编译、XDNS 集成、默认节点对齐与新版特性迁移（2026-11-20）
+- **内核编译**：安装 Go 1.27.4，从 `XTLS/Xray-core` `main`（`02cf0f6`）编译部署 `/usr/local/bin/xray`（备份 `xray.bak-26.11.9-676eaf6`）。
+- **XDNS 集成**（`757d446`）：新增 `xh xdns [show|setup|on|off]` 与菜单 `[1] -> [8]`，安装期默认闭环（`vless + kcp + VLESS Encryption + finalmask.udp(xdns)`，监听 UDP 5353 + `! -i lo` 公网 UDP 53 NAT 重定向，未传 `XDNS_DOMAIN` 时沿用 `REALITY_DOMAIN`）。同步对齐默认安装 6 节点与开关（`FEATURE_CDN_H2=false`、`FEATURE_REALITY_XHTTP=true`、`FEATURE_PORT_HOPPING=true`、`HY2_UP/DOWN_MBPS=1000`、`FEATURE_NOISE_LINKS=true`、`FEATURE_XDNS=true`）。
+- **REALITY ALPN 清理**（`77cfa0a`）：核实 `Xray-core` 源码（REALITY 仅 TCP 且 `NextProtos: nil`，`splithttp` 对 REALITY 写死 HTTP/2），移除全部 REALITY 链接与 Mihomo 配置中多余的硬编码 `alpn`；H3/H2 切换由客户端策略组在 QUIC/H3 与 REALITY TCP 节点间完成。
+- **新版特性对齐**（`919cd93`）：线上与模板将 `finalRules` 迁移为 `firewall`、`blackhole` 替换为 `freedom` + `firewall` 阻断规则，丢弃 `minClientVer: "1.8.0"` 改为 `default` 严格校验；`xray -test` 实测 0 Warning。
+- **约束**：`freedom.firewall` 替代 `blackhole` 需当前 `main` 或更新的 Xray-core，勿降级回旧版 `v26.11.9`；详见 `/root/memory.md` §15。
