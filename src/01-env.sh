@@ -179,9 +179,9 @@ FEATURE_BRUTAL_EXPLICIT="${FEATURE_BRUTAL+set}"
 FEATURE_BRUTAL=${FEATURE_BRUTAL:-false}
 BRUTAL_DEFAULT_MBPS=${BRUTAL_DEFAULT_MBPS:-auto}
 
-# REALITY_MIN_CLIENT_VER：Reality 客户端最低版本，默认 default（严格模式：使用最新 Xray 内核默认校验；需兼容老客户端可设为 1.8.0 或运行 xh minversion on）。
+# REALITY_MIN_CLIENT_VER：Reality 客户端最低版本，默认 1.8.0（兼容 Shadowrocket / Mihomo / sing-box 等非 Xray-core 客户端；如需严格模式可设为 default 或运行 xh minversion off）。
 # 兼容别名：MIN_CLIENT_VER、MINVERSION、MIN_VERSION。
-REALITY_MIN_CLIENT_VER="${REALITY_MIN_CLIENT_VER:-${MIN_CLIENT_VER:-${MINVERSION:-${MIN_VERSION:-default}}}}"
+REALITY_MIN_CLIENT_VER="${REALITY_MIN_CLIENT_VER:-${MIN_CLIENT_VER:-${MINVERSION:-${MIN_VERSION:-1.8.0}}}}"
 
 # ==================================================
 # Xray v26.9.30+ 前沿新特性开关（默认可选）

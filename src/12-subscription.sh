@@ -125,6 +125,8 @@ for line in lines:
             if sec != "reality" or q("flow") != "xtls-rprx-vision":
                 if q("alpn"):
                     clean_qs["alpn"] = q("alpn")
+                elif sec == "reality" and net == "xhttp":
+                    clean_qs["alpn"] = "h2"
             clean_qs.pop("tfo", None)
             clean_qs.pop("insecure", None)
             clean_qs.pop("allowInsecure", None)
