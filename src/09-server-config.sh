@@ -274,6 +274,7 @@ xray_h3_direct_inbound() {
                 // 与客户端链接的 fm 成对使用（仅一端调只提升对应方向）。
                 "finalmask": {
                     "quicParams": {
+                        "keepAlivePeriod": 10,
                         "initStreamReceiveWindow": 8388608,
                         "maxStreamReceiveWindow": 67108864,
                         "initConnectionReceiveWindow": 16777216,
@@ -708,7 +709,13 @@ xray_xdns_inbound() {
             "streamSettings": {
                 "network": "kcp",
                 "kcpSettings": {
-                    "mtu": 900
+                    "mtu": 900,
+                    "tti": 20,
+                    "uplinkCapacity": 20,
+                    "downlinkCapacity": 50,
+                    "congestion": true,
+                    "readBufferSize": 4,
+                    "writeBufferSize": 4
                 },
                 "finalmask": {
                     "udp": [

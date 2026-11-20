@@ -2380,7 +2380,13 @@ render_xdns_inbound() {
             "streamSettings": {
                 "network": "kcp",
                 "kcpSettings": {
-                    "mtu": 900
+                    "mtu": 900,
+                    "tti": 20,
+                    "uplinkCapacity": 20,
+                    "downlinkCapacity": 50,
+                    "congestion": true,
+                    "readBufferSize": 4,
+                    "writeBufferSize": 4
                 },
                 "finalmask": {
                     "udp": [
@@ -2442,7 +2448,13 @@ generate_xdns_client_config() {
             "streamSettings": {
                 "network": "kcp",
                 "kcpSettings": {
-                    "mtu": 900
+                    "mtu": 900,
+                    "tti": 20,
+                    "uplinkCapacity": 20,
+                    "downlinkCapacity": 50,
+                    "congestion": true,
+                    "readBufferSize": 4,
+                    "writeBufferSize": 4
                 },
                 "finalmask": {
                     "udp": [

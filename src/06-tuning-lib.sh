@@ -471,8 +471,9 @@ apply_system_tuning() {
   try_sysctl net.ipv4.tcp_syncookies 1
   try_sysctl net.ipv4.tcp_tw_reuse 1
   # 关闭 ECN：公网多数跨境中间设备对 ECN 处理不规范常导致黑洞丢包，设为 0 保障全网最佳可达性
-  try_sysctl net.ipv4.tcp_ecn 0
-  try_sysctl net.ipv4.tcp_ecn_fallback 0
+  # 被动 TCP ECN (2) + 黑洞回退 (1)：仅在对端支持 ECN 时协商 CE 拥塞标记（配合 BBRv3 降低丢包抖动），不主动发 ECN SYN 避免老旧中间盒黑洞
+  try_sysctl net.ipv4.tcp_ecn 2
+  try_sysctl net.ipv4.tcp_ecn_fallback 1
   # fs.suid_dumpable = 0：setuid / 中途切换过身份的进程崩溃时不产生 core dump。
   # 代理进程内存里有私钥、UUID、解密后的流量，默认值 2（suidsafe）仍会 dump 到 core_pattern 指定处；
   # 0 则一律不 dump。配合 limits.conf 的 `* hard core 0` 与 core_pattern = core。

@@ -130,7 +130,7 @@ XMUX_ENC="%22xmux%22%3A%7B%22maxConcurrency%22%3A%2216-32%22%2C%22cMaxReuseTimes
 XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A15%7D"
 # XHTTP/3（Direct-H3、CDN-H3）下载方向吃的是**客户端**的 QUIC 接收窗口：长 RTT + 丢包时，默认窗口会把吞吐卡住。
 # 用链接的 fm（finalmask）参数把窗口拉满放大：流 初始 8MB / 上限 64MB，连接 初始 16MB / 上限 128MB（兼顾极限吞吐与移动端 50MB 内存安全上限）。
-XH3_FM_PARAM="&fm=$(rawurlencode '{"quicParams":{"initStreamReceiveWindow":8388608,"maxStreamReceiveWindow":67108864,"initConnectionReceiveWindow":16777216,"maxConnectionReceiveWindow":134217728}}')"
+XH3_FM_PARAM="&fm=$(rawurlencode '{"quicParams":{"keepAlivePeriod":10,"initStreamReceiveWindow":8388608,"maxStreamReceiveWindow":67108864,"initConnectionReceiveWindow":16777216,"maxConnectionReceiveWindow":134217728}}')"
 
 if [[ "$FEATURE_XPADDING" == true ]]; then
   XPAD_FIELDS_ENC="%22xPaddingBytes%22%3A%22100-1000%22%2C%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22${XHTTP_PADDING_METHOD}%22%2C%22xPaddingPlacement%22%3A%22${XHTTP_PADDING_PLACEMENT}%22%2C%22xPaddingHeader%22%3A%22${XHTTP_PADDING_HEADER}%22%2C%22xPaddingKey%22%3A%22${XHTTP_PADDING_KEY}%22"
