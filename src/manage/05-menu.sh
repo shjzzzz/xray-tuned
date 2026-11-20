@@ -80,7 +80,10 @@ _menu_define() {
     "Reality 核心节点管理 (reality)::menu_choose MENU_REALITY"
     "上下行分离节点管理 (split)::menu_choose MENU_SPLIT"
     "Hysteria2 直连与混淆管理 (hy2)::menu_choose MENU_HY2"
+    "Finalmask Noise 动态混淆管理 (noise)::menu_choose MENU_NOISE"
     "XDNS DNS 隧道穿透管理 (xdns)::menu_choose MENU_XDNS"
+    "MASQUE L3 隧道管理 (masque)::menu_onoff cmd_masque"
+    "XDRIVE 网盘穿透管理 (xdrive)::menu_choose MENU_XDRIVE"
     "XHTTP-Direct-H3 直连管理 (h3direct)::menu_onoff cmd_h3direct"
     "XHTTP-Direct-H2 直连管理 (h2direct)::menu_onoff cmd_h2direct"
     "CDN TCP(h2) 节点开关 (cdnh2)::menu_onoff cmd_cdnh2"
@@ -134,6 +137,20 @@ _menu_define() {
     "交互式配置 NS 域名 / 端口 / 解析器::cmd_xdns setup"
     "开启 XDNS 隧道入站::cmd_xdns on"
     "关闭 XDNS 隧道入站::cmd_xdns off")
+
+  MENU_NOISE=("Finalmask Noise 动态混淆管理"
+    "查看状态与混淆表达式::cmd_noise show"
+    "开启服务端 Noise 动态混淆::cmd_noise on"
+    "关闭服务端 Noise 动态混淆::cmd_noise off"
+    "客户端链接附带 Noise (需内核>=26.9.30) 开启::cmd_noise links on"
+    "客户端链接附带 Noise 关闭::cmd_noise links off"
+    "仅同步客户端链接参数::cmd_noise sync")
+
+  MENU_XDRIVE=("XDRIVE 网盘穿透代理 (Google Drive)"
+    "查看状态与 OAuth 配置指引::cmd_xdrive show"
+    "交互式配置 Google Drive 凭据::cmd_xdrive setup"
+    "开启 XDRIVE 穿透入站::cmd_xdrive on"
+    "关闭 XDRIVE 穿透入站::cmd_xdrive off")
 
   MENU_MINVER=("Reality 最低客户端版本"
     "查看状态::cmd_minversion show"

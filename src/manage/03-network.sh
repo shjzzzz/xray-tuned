@@ -788,41 +788,63 @@ for idx, (name, raw_line, parsed) in enumerate(nodes, 1):
     proc = None
 
     if parsed.scheme == "hysteria2":
-        core_type = "sing-box"
+        core_type = "xray"
         qs = urllib.parse.parse_qs(parsed.query)
         q = lambda k, d=None: qs.get(k, [d])[0]
+        sni = q("sni", "")
+        alpn_raw = q("alpn", "h3")
+        alpn_list = [x.strip() for x in alpn_raw.split(",") if x.strip()] or ["h3"]
+        fm = {}
+        if q("fm"):
+            try:
+                fm = json.loads(urllib.parse.unquote(q("fm")))
+            except Exception:
+                fm = {}
+        # 本地回环测速移除 udpHop，直接连服务端主监听端口
+        if isinstance(fm.get("quicParams"), dict):
+            fm["quicParams"].pop("udpHop", None)
+        if q("obfs") == "salamander" and q("obfs-password"):
+            udp_masks = fm.setdefault("udp", [])
+            if not any(m.get("type") == "salamander" for m in udp_masks):
+                udp_masks.append({"type": "salamander", "settings": {"password": q("obfs-password")}})
         ob = {
-            "type": "hysteria2",
             "tag": "proxy-out",
-            "server": "127.0.0.1",
-            "server_port": parsed.port or 443,
-            "password": urllib.parse.unquote(parsed.username or ""),
-            "tls": {"enabled": True, "server_name": q("sni", ""), "alpn": ["h3"]},
-            "up_mbps": 1000,
-            "down_mbps": 1000
+            "protocol": "hysteria",
+            "settings": {
+                "version": 2,
+                "address": "127.0.0.1",
+                "port": parsed.port or 443
+            },
+            "streamSettings": {
+                "network": "hysteria",
+                "security": "tls",
+                "tlsSettings": {"serverName": sni, "alpn": alpn_list},
+                "hysteriaSettings": {"version": 2, "auth": urllib.parse.unquote(parsed.username or "")}
+            }
         }
-        if q("obfs") == "salamander":
-            ob["obfs"] = {"type": "salamander", "password": q("obfs-password", "")}
+        if fm:
+            ob["streamSettings"]["finalmask"] = fm
         cfg = {
-            "log": {"level": "error"},
-            "inbounds": [{"type": "socks", "tag": "socks-in", "listen": "127.0.0.1", "listen_port": port}],
-            "outbounds": [ob, {"type": "direct", "tag": "direct"}],
-            "route": {"rules": [{"inbound": ["socks-in"], "outbound": "proxy-out"}]}
+            "log": {"logLevel": "error"},
+            "policy": {"levels": {"0": {"bufferSize": 4096, "handshake": 10, "connIdle": 1800}}},
+            "inbounds": [{"tag": "socks-in", "listen": "127.0.0.1", "port": port, "protocol": "socks", "settings": {"udp": True}}],
+            "outbounds": [ob],
+            "routing": {"rules": [{"type": "field", "inboundTag": ["socks-in"], "outboundTag": "proxy-out"}]}
         }
-        cfg_file = f"{TMP_DIR}/sb_{idx}.json"
+        cfg_file = f"{TMP_DIR}/xray_hy2_{idx}.json"
         with open(cfg_file, 'w') as f: json.dump(cfg, f)
-        sb_bin = "/root/sbbox/sing-box" if os.path.isfile("/root/sbbox/sing-box") else "sing-box"
-        proc = subprocess.Popen([sb_bin, "run", "-c", cfg_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(["xray", "run", "-c", cfg_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
         # VLESS 节点解析
         qs = urllib.parse.parse_qs(parsed.query)
         q = lambda k, d=None: qs.get(k, [d])[0]
         sec = q("security", "none")
         net = q("type", "tcp")
-        alpn = qs.get("alpn", ["h2"])
+        alpn_raw = q("alpn", "")
+        alpn = [x.strip() for x in alpn_raw.split(",") if x.strip()] if alpn_raw else []
         sni = q("sni", "")
         uid = parsed.username or ""
-        tgt_addr = "127.0.0.1" if sec != "tls" or "cdn" not in name.lower() else (q("host", "") or "127.0.0.1")
+        tgt_addr = "127.0.0.1" if sec != "tls" or "cdn" not in name.lower() else (parsed.hostname or q("host", "") or "127.0.0.1")
 
         ob = {
             "tag": "proxy-out",
@@ -843,11 +865,15 @@ for idx, (name, raw_line, parsed) in enumerate(nodes, 1):
                 "spiderX": q("spx", "")
             }
         elif sec == "tls":
-            ob["streamSettings"]["tlsSettings"] = {
+            tls_s = {
                 "serverName": sni,
-                "fingerprint": q("fp", "chrome"),
-                "alpn": alpn
+                "fingerprint": q("fp", "chrome")
             }
+            if alpn:
+                tls_s["alpn"] = alpn
+            if q("ech"):
+                tls_s["echConfigList"] = q("ech")
+            ob["streamSettings"]["tlsSettings"] = tls_s
         if net == "xhttp":
             xh = {"path": q("path", "/"), "mode": q("mode", "auto")}
             if q("host"): xh["host"] = q("host")
@@ -855,6 +881,11 @@ for idx, (name, raw_line, parsed) in enumerate(nodes, 1):
                 try: xh["extra"] = json.loads(q("extra"))
                 except: pass
             ob["streamSettings"]["xhttpSettings"] = xh
+        if q("fm"):
+            try:
+                ob["streamSettings"]["finalmask"] = json.loads(urllib.parse.unquote(q("fm")))
+            except Exception:
+                pass
 
         ob["streamSettings"]["sockopt"] = {"tcpNoDelay": True}
         cfg = {

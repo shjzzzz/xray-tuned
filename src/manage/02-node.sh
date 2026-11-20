@@ -1537,7 +1537,17 @@ if act == 'off':
 else:
     if has:
         sys.exit(3)
-    if re.search(pat, strip_comments(s)):
+    # h2direct (TCP) 与 h3direct (UDP) 允许共用同端口号（如 8443），避免被对方的 xh 标记块误判为重复入站
+    s_check = strip_comments(s)
+    if key in ('h2direct', 'h3direct'):
+        other = 'h3direct' if key == 'h2direct' else 'h2direct'
+        ob = '        // >>xh:' + other
+        oe = '        // <<xh:' + other
+        if ob in s and oe in s:
+            oa = s.index('\n' + ob)
+            oe_end = s.index(oe, oa) + len(oe)
+            s_check = strip_comments(s[:oa] + s[oe_end:])
+    if re.search(pat, s_check):
         sys.stderr.write('配置里已经有 %s 的入站（不是由 xh 开关写入），不重复添加。\n' % port)
         sys.exit(4)
     text = open(store, encoding='utf-8').read().rstrip('\n')
@@ -1629,8 +1639,18 @@ backup_port_busy() {   # $1 = tcp|udp，$2 = 端口，$3 = key (可选，如 h2d
 cmd_backup_server_node() {
   local key="$1" action="${2:-show}" flag name label proto port cur rc
   case "$key" in
-    h3direct) flag=FEATURE_H3_DIRECT; name="VLESS-XHTTP-Direct-H3"; label="XHTTP-Direct-H3（UDP QUIC/HTTP3 直连）";               proto=udp; port="${H3_PORT:-8443}" ;;
-    h2direct) flag=FEATURE_H2_DIRECT; name="VLESS-XHTTP-Direct-H2"; label="XHTTP-Direct-H2（TCP 直连，h3-direct 的孪生体）"; proto=tcp; port="${H2_PORT:-8445}" ;;
+    h3direct)
+      flag=FEATURE_H3_DIRECT; name="VLESS-XHTTP-Direct-H3"; label="XHTTP-Direct-H3（UDP QUIC/HTTP3 直连）"; proto=udp; port="${H3_PORT:-8443}"
+      if [[ -f "${ALL_STORE_DIR}/client-config.txt" ]] && ! grep -q "#VLESS-XHTTP-Direct-H3" "${ALL_STORE_DIR}/client-config.txt" && grep -qE "#VLESS-XHTTP-Direct($|-)" "${ALL_STORE_DIR}/client-config.txt"; then
+        name="VLESS-XHTTP-Direct"
+      fi
+      ;;
+    h2direct)
+      flag=FEATURE_H2_DIRECT; name="VLESS-XHTTP-Direct-H2"; label="XHTTP-Direct-H2（TCP 直连，h3-direct 的孪生体）"; proto=tcp; port="${H2_PORT:-8445}"
+      if [[ -f "${ALL_STORE_DIR}/client-config.txt" ]] && ! grep -q "#VLESS-XHTTP-Direct-H2" "${ALL_STORE_DIR}/client-config.txt" && grep -qE "#VLESS-XHTTP-Direct($|-)" "${ALL_STORE_DIR}/client-config.txt"; then
+        name="VLESS-XHTTP-Direct"
+      fi
+      ;;
     hy2obfs)  flag=FEATURE_HY2_OBFS;  name="Hysteria2-TLS-BBR-Salamander"; label="Hysteria2-TLS-BBR-Salamander（salamander 混淆）";       proto=udp; port="${HY2_PORT}" ;;
     masque)   flag=FEATURE_MASQUE;    name="MASQUE-CONNECT-IP";     label="MASQUE 标准 L3 隧道 (RFC 9484 CONNECT-IP)";        proto=udp; port="${MASQUE_PORT:-8447}" ;;
   esac
@@ -1690,7 +1710,18 @@ cmd_backup_server_node() {
       [[ -s /etc/ssl/private/fullchain.cer ]] || fail "未找到证书 /etc/ssl/private/fullchain.cer，无法开启直连类节点"
       if [[ "$key" == hy2obfs ]]; then
         [[ "${FEATURE_HY2:-false}" == true ]] || fail "Hysteria2 总开关未开启，不能开混淆节点。先执行：${MANAGE_CMD} hy2 on"
-        [[ "${FEATURE_PORT_HOPPING:-false}" != true ]] || fail "本机开着端口跳跃（FEATURE_PORT_HOPPING），该开关暂不处理跳跃规则"
+        if [[ "${FEATURE_PORT_HOPPING:-false}" == true && -n "${PORT_HOP_RANGE:-}" && -n "${HY2_PORT:-}" ]]; then
+          local _ipt _rnum _hop="${PORT_HOP_RANGE//-/:}"
+          for _ipt in iptables ip6tables; do
+            command -v "$_ipt" >/dev/null 2>&1 || continue
+            while true; do
+              _rnum=$("$_ipt" -t nat -L PREROUTING --line-numbers -n 2>/dev/null | awk -v p="${HY2_PORT}" '$0 ~ ("redir ports " p "$"){print $1; exit}')
+              [[ -n "$_rnum" ]] || break
+              "$_ipt" -t nat -D PREROUTING "$_rnum" 2>/dev/null || break
+            done
+            "$_ipt" -t nat -A PREROUTING -p udp --dport "$_hop" -j REDIRECT --to-ports "${HY2_PORT}" 2>/dev/null || true
+          done
+        fi
       fi
       local occupier="" flag_chk="-ltnpH"; [[ "$proto" == udp ]] && flag_chk="-lunpH"
       occupier=$(ss $flag_chk "sport = :$port" 2>/dev/null | grep -o 'users:(([^)]*' | head -1)
@@ -1722,7 +1753,18 @@ cmd_backup_server_node() {
         info "${label} 本来就是关闭状态"
         return 0
       fi
-      [[ "$key" != hy2obfs || "${FEATURE_PORT_HOPPING:-false}" != true ]] || fail "本机开着端口跳跃，关闭混淆节点会留下跳跃规则，请先手动处理 FEATURE_PORT_HOPPING"
+      if [[ "$key" == hy2obfs && "${FEATURE_PORT_HOPPING:-false}" == true && -n "${HY2_PORT:-}" ]]; then
+        local _ipt _rnum
+        for _ipt in iptables ip6tables; do
+          command -v "$_ipt" >/dev/null 2>&1 || continue
+          while true; do
+            _rnum=$("$_ipt" -t nat -L PREROUTING --line-numbers -n 2>/dev/null | awk -v p="${HY2_PORT}" '$0 ~ ("redir ports " p "$"){print $1; exit}')
+            [[ -n "$_rnum" ]] || break
+            "$_ipt" -t nat -D PREROUTING "$_rnum" 2>/dev/null || break
+          done
+        done
+        info "已自动清理指向 UDP ${HY2_PORT} 的端口跳跃 NAT 规则"
+      fi
       backup_store_check
       info "正在关闭 ${label} ..."
       backup_inbound_edit "$key" off "$port"; rc=$?
