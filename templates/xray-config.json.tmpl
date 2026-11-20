@@ -157,10 +157,10 @@ ${XRAY_XDNS_INBOUND}
             "protocol": "freedom",
             "tag": "direct",
             "settings": {
-                // finalRules 在「域名解析成 IP 之后」再判一次，拦住解析到
+                // firewall（原 finalRules）在「域名解析成 IP 之后」再判一次，拦住解析到
                 // 内网/云元数据地址的域名。routing 里的 ip 规则在
                 // domainStrategy=AsIs 时拿不到解析结果，两者互补，缺一不可。
-                "finalRules": [
+                "firewall": [
                     { "action": "block", "ip": ["geoip:private"], "delay": "30-90", "logLevel": "warning" }${XRAY_BLOCK_CN_RULE}
                 ]
             },
@@ -172,12 +172,17 @@ ${XRAY_XDNS_INBOUND}
             }
         },
         {
-            "protocol": "blackhole",
+            "protocol": "freedom",
             "tag": "block",
             "settings": {
-                "response": {
-                    "type": "http"
-                }
+                "firewall": [
+                    {
+                        "action": "block",
+                        "reply": {
+                            "type": "http"
+                        }
+                    }
+                ]
             }
         }
     ]

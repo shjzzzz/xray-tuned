@@ -148,7 +148,7 @@ for osname, tun in TUN.items():
         }],
         "outbounds": outbounds + [
             {"tag": "direct", "protocol": "freedom"},
-            {"tag": "block", "protocol": "blackhole"},
+            {"tag": "block", "protocol": "freedom", "settings": {"firewall": [{"action": "block"}]}},
             {"tag": "dns-out", "protocol": "dns"},
         ],
         "observatory": {

@@ -89,7 +89,7 @@ cmd_log() {
 }
 
 # 出站分流开关：屏蔽回国 IP / 广告域名（默认关闭）。参考 zxcvos/Xray-script 的 cn-ip / ad-domain 规则。
-#   cn  → freedom 出站的 finalRules（域名解析成 IP 之后再判），geoip:cn 直接 block
+#   cn  → freedom 出站的 firewall（原 finalRules，域名解析成 IP 之后再判），geoip:cn 直接 block
 #   ads → routing 规则 domain geosite:category-ads-all → block
 # 每条规则占单独一行并带 xh-block-* 标记，开关只增删该行；先 xray -test 校验，失败自动回滚。
 cmd_restart() {
