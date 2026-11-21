@@ -114,9 +114,9 @@ XHTTP_SC_MIN_POSTS_MS=${XHTTP_SC_MIN_POSTS_MS:-30}
 HY2_UP_MBPS=${HY2_UP_MBPS:-}
 HY2_DOWN_MBPS=${HY2_DOWN_MBPS:-}
 if [[ -n "${HY2_UP_MBPS}" && -n "${HY2_DOWN_MBPS}" ]]; then
-  MIHOMO_HY2_BW_BLOCK=$(printf '\n    up: "%s Mbps"\n    down: "%s Mbps"\n    recv-window-conn: 134217728\n    recv-window: 67108864' "${HY2_UP_MBPS}" "${HY2_DOWN_MBPS}")
+  MIHOMO_HY2_BW_BLOCK=$(printf '\n    up: "%s Mbps"\n    down: "%s Mbps"\n    recv-window-conn: 268435456\n    recv-window: 134217728' "${HY2_UP_MBPS}" "${HY2_DOWN_MBPS}")
 else
-  MIHOMO_HY2_BW_BLOCK=$(printf '\n    recv-window-conn: 134217728\n    recv-window: 67108864')
+  MIHOMO_HY2_BW_BLOCK=$(printf '\n    recv-window-conn: 268435456\n    recv-window: 134217728')
 fi
 
 # Reality XHTTP 直连与上行腿：对齐 Xray 官方与 Nginx (keepalive_requests 100000 / keepalive_time 1h /connIdle 1800s)：
@@ -129,8 +129,8 @@ XMUX_ENC="%22xmux%22%3A%7B%22maxConcurrency%22%3A%2216-32%22%2C%22cMaxReuseTimes
 # 经 CDN 的腿用 maxConnections=16（严禁与 maxConcurrency 混用），拉满并发突破 Cloudflare 边缘单流限速，复用周期与直连完全对齐。
 XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22600-900%22%2C%22hMaxReusableSecs%22%3A%221800-3000%22%2C%22hKeepAlivePeriod%22%3A15%7D"
 # XHTTP/3（Direct-H3、CDN-H3）下载方向吃的是**客户端**的 QUIC 接收窗口：长 RTT + 丢包时，默认窗口会把吞吐卡住。
-# 用链接的 fm（finalmask）参数把窗口拉满放大：流 初始 8MB / 上限 64MB，连接 初始 16MB / 上限 128MB（兼顾极限吞吐与移动端 50MB 内存安全上限）。
-XH3_FM_PARAM="&fm=$(rawurlencode '{"quicParams":{"keepAlivePeriod":10,"initStreamReceiveWindow":8388608,"maxStreamReceiveWindow":67108864,"initConnectionReceiveWindow":16777216,"maxConnectionReceiveWindow":134217728}}')"
+# 用链接的 fm（finalmask）参数把窗口拉满放大：流 初始 16MB / 上限 128MB，连接 初始 32MB / 上限 256MB（窗口是上限不是预分配；iOS 扩展约 50MB 内存，仅在长肥管道下才可能逼近）。
+XH3_FM_PARAM="&fm=$(rawurlencode '{"quicParams":{"keepAlivePeriod":10,"initStreamReceiveWindow":16777216,"maxStreamReceiveWindow":134217728,"initConnectionReceiveWindow":33554432,"maxConnectionReceiveWindow":268435456}}')"
 
 if [[ "$FEATURE_XPADDING" == true ]]; then
   XPAD_FIELDS_ENC="%22xPaddingBytes%22%3A%22100-1000%22%2C%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22${XHTTP_PADDING_METHOD}%22%2C%22xPaddingPlacement%22%3A%22${XHTTP_PADDING_PLACEMENT}%22%2C%22xPaddingHeader%22%3A%22${XHTTP_PADDING_HEADER}%22%2C%22xPaddingKey%22%3A%22${XHTTP_PADDING_KEY}%22"
@@ -379,7 +379,7 @@ hy2_client_fm_param() {
     qp='"congestion":"bbr"'
   fi
   [[ -n "$mport" ]] && qp+=",\"udpHop\":{\"ports\":\"${mport//:/-}\",\"interval\":\"30\"}"
-  qp+=',"keepAlivePeriod":10,"initStreamReceiveWindow":8388608,"maxStreamReceiveWindow":67108864,"initConnectionReceiveWindow":16777216,"maxConnectionReceiveWindow":134217728'
+  qp+=',"keepAlivePeriod":10,"initStreamReceiveWindow":16777216,"maxStreamReceiveWindow":134217728,"initConnectionReceiveWindow":33554432,"maxConnectionReceiveWindow":268435456'
   local noise_item=""
   # 链接里的 noise 项只在 FEATURE_NOISE_LINKS=true 时写：noise 的 exp 类型是 Xray 26.9.30 才有的，
   # 26.3.27 / 26.7.28 / 26.9.9 的客户端内核解析到它会「failed to build outbound config」，v2rayN 报「运行内核失败」。

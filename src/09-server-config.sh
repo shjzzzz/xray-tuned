@@ -77,14 +77,14 @@ EOF
 # 在 4 KB（默认）/ 32 / 512 / 4096 KB 四档下测 Reality-Vision、Reality-XHTTP、XHTTP-H3、Hysteria2，
 # 不限速 RTT 0 与 160ms RTT + 1% 丢包两组，上下行中位全部落在彼此范围内，xray RSS 58~70MB 也无差别。
 # 保留现值只是因为改动同样拿不出收益，不代表它提速。
-# 超时调优：handshake 10s（防跨境抖动重试断开）、connIdle 1800s（30分钟长连接保活）、
-# uplinkOnly 15s / downlinkOnly 30s（防非对称关闭提前截断数据，提升持续下载与大文件稳定性）。
+# 超时：只覆盖 connIdle 1800s（须大于 nginx keepalive 900s）。handshake / uplinkOnly / downlinkOnly 用内核默认
+# （Xray main：60s / 1s / 1s；handshake 60s 与 nginx client_header_timeout 对齐，避免超时时长暴露服务端身份）。
 MEM_MB=$(awk '/^MemTotal:/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)
 if   [[ "$MEM_MB" -ge 16384 ]]; then XRAY_BUFFER_KB=4096
 elif [[ "$MEM_MB" -ge 4096  ]]; then XRAY_BUFFER_KB=2048
 else XRAY_BUFFER_KB=512
 fi
-XRAY_POLICY_JSON="\"policy\":{\"levels\":{\"0\":{\"handshake\":10,\"connIdle\":1800,\"uplinkOnly\":15,\"downlinkOnly\":30,\"bufferSize\":${XRAY_BUFFER_KB}}}},"
+XRAY_POLICY_JSON="\"policy\":{\"levels\":{\"0\":{\"connIdle\":1800,\"bufferSize\":${XRAY_BUFFER_KB}}}},"
 [[ "${XRAY_NO_TUNE:-false}" == true ]] && XRAY_POLICY_JSON=""   # 仅在显式禁用调优时回退官方默认 policy
 
 
@@ -275,10 +275,10 @@ xray_h3_direct_inbound() {
                 "finalmask": {
                     "quicParams": {
                         "keepAlivePeriod": 10,
-                        "initStreamReceiveWindow": 8388608,
-                        "maxStreamReceiveWindow": 67108864,
-                        "initConnectionReceiveWindow": 16777216,
-                        "maxConnectionReceiveWindow": 134217728
+                        "initStreamReceiveWindow": 16777216,
+                        "maxStreamReceiveWindow": 134217728,
+                        "initConnectionReceiveWindow": 33554432,
+                        "maxConnectionReceiveWindow": 268435456
                     }
                 },
                 "xhttpSettings": {
@@ -419,10 +419,10 @@ ${HY2_UDP_IDLE_JSON}                    "masquerade": {
                     "quicParams": {
                         $(hy2_cc_json)
                         "keepAlivePeriod": 10,
-                        "initStreamReceiveWindow": 8388608,
-                        "maxStreamReceiveWindow": 67108864,
-                        "initConnectionReceiveWindow": 16777216,
-                        "maxConnectionReceiveWindow": 134217728
+                        "initStreamReceiveWindow": 16777216,
+                        "maxStreamReceiveWindow": 134217728,
+                        "initConnectionReceiveWindow": 33554432,
+                        "maxConnectionReceiveWindow": 268435456
                     },
                     "udp": [
 $(if [[ "${FEATURE_NOISE_EXP:-false}" == true ]]; then cat <<NEOF
@@ -524,10 +524,10 @@ ${HY2_UDP_IDLE_JSON}                    "masquerade": {
                     "quicParams": {
                         $(hy2_cc_json)
                         "keepAlivePeriod": 10,
-                        "initStreamReceiveWindow": 8388608,
-                        "maxStreamReceiveWindow": 67108864,
-                        "initConnectionReceiveWindow": 16777216,
-                        "maxConnectionReceiveWindow": 134217728
+                        "initStreamReceiveWindow": 16777216,
+                        "maxStreamReceiveWindow": 134217728,
+                        "initConnectionReceiveWindow": 33554432,
+                        "maxConnectionReceiveWindow": 268435456
                     }$(if [[ "${FEATURE_NOISE_EXP:-false}" == true ]]; then cat <<NEOF
 ,
                     "udp": [

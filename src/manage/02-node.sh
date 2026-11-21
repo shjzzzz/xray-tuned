@@ -2717,10 +2717,10 @@ render_hy2_obfs_inbound() {
                     "quicParams": {
                         $(hy2_cc_json)
                         "keepAlivePeriod": 10,
-                        "initStreamReceiveWindow": 8388608,
-                        "maxStreamReceiveWindow": 67108864,
-                        "initConnectionReceiveWindow": 16777216,
-                        "maxConnectionReceiveWindow": 134217728
+                        "initStreamReceiveWindow": 16777216,
+                        "maxStreamReceiveWindow": 134217728,
+                        "initConnectionReceiveWindow": 33554432,
+                        "maxConnectionReceiveWindow": 268435456
                     },
                     "udp": [
 $(if [[ "${FEATURE_NOISE_EXP:-false}" == true ]]; then cat <<NEOF
@@ -2804,10 +2804,10 @@ render_hy2_h3_inbound() {
                     "quicParams": {
                         $(hy2_cc_json)
                         "keepAlivePeriod": 10,
-                        "initStreamReceiveWindow": 8388608,
-                        "maxStreamReceiveWindow": 67108864,
-                        "initConnectionReceiveWindow": 16777216,
-                        "maxConnectionReceiveWindow": 134217728
+                        "initStreamReceiveWindow": 16777216,
+                        "maxStreamReceiveWindow": 134217728,
+                        "initConnectionReceiveWindow": 33554432,
+                        "maxConnectionReceiveWindow": 268435456
                     }$(if [[ "${FEATURE_NOISE_EXP:-false}" == true ]]; then cat <<NEOF
 ,
                     "udp": [
