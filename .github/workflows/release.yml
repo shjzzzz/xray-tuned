@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # build-install.sh 从 tag 取 xh 版本号，浅克隆没有 tag
 
       - name: 安装 shellcheck
         run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
@@ -71,6 +73,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # build-install.sh 从 tag 取 xh 版本号，浅克隆没有 tag
 
       - name: Build installers
         run: bash .github/scripts/build-install.sh

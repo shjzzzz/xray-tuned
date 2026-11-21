@@ -108,15 +108,21 @@ mkdir -p "$OUT_DIR"
 # v4.1.0 起两个版本功能开关完全一致，只保留 install.sh 作为唯一产物；
 # install-xpadding.sh 保留同名输出，保证既有文档与用户的链接不失效。
 build_one "$OUT_DIR/install.sh"
+
+# 版本号只来自 git tag，且 install.sh 与 xh 必须一致：
+# - tag 推送用 GITHUB_REF_NAME；main 推送取版本序最大的 v* tag，与 release.yml「Resolve release tag」的发布目标相同。
+# - CI 的 checkout 必须 fetch-depth: 0，否则浅克隆没有 tag（曾因此静默回落到写死的旧版本号）。
+# - 注入到 install.sh 里的 xh 正文，安装期 13-manage-cli.sh 的 PROJECT_VERSION 替换随之变为空操作。
+_xh_ver="${GITHUB_REF_NAME:-}"
+[[ "$_xh_ver" == v* ]] || _xh_ver=$(git -C "$ROOT_DIR" tag --list 'v*' --sort=-v:refname 2>/dev/null | head -n1)
+_xh_ver="${_xh_ver#v}"
+[[ -n "$_xh_ver" ]] || { echo "ERROR: 无法确定 xh 版本号：仓库里没有 v* tag（CI 需 actions/checkout fetch-depth: 0）" >&2; exit 1; }
+sed -i "s|^XH_VERSION=\"@@XH_VERSION@@\"$|XH_VERSION=\"${_xh_ver}\"|" "$OUT_DIR/install.sh"
+grep -q "^XH_VERSION=\"${_xh_ver}\"$" "$OUT_DIR/install.sh" || { echo "ERROR: xh 版本号注入 install.sh 失败" >&2; exit 1; }
 cp "$OUT_DIR/install.sh" "$OUT_DIR/install-xpadding.sh"
 
-# 生成干净的 xh 独立可执行管理脚本
+# 生成干净的 xh 独立可执行管理脚本（版本号已随 install.sh 注入）
 sed -n '/cat > "\$MANAGE_BIN" << .XHMANAGEEOF./,/^XHMANAGEEOF$/p' "$OUT_DIR/install.sh" | sed '1d;$d' > "$OUT_DIR/xh"
-_xh_ver="${GITHUB_REF_NAME:-}"
-[[ "$_xh_ver" == v* ]] || _xh_ver=$(git -C "$ROOT_DIR" describe --tags --abbrev=0 2>/dev/null || true)
-_xh_ver="${_xh_ver#v}"
-_xh_ver="${_xh_ver:-5.6.9}"
-sed -i "s|@@XH_VERSION@@|${_xh_ver}|" "$OUT_DIR/xh"
 chmod +x "$OUT_DIR/xh"
 
 echo "Generated $OUT_DIR/install.sh, $OUT_DIR/install-xpadding.sh, and $OUT_DIR/xh"
