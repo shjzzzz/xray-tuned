@@ -16,6 +16,7 @@ xray-xhttp 全能管理命令 (v${XH_VERSION:-5.2.2})
   xh start | stop | restart  服务启动 / 停止 / 重启
   xh log [xray|nginx] [行数] 查看实时运行日志 (默认 50 行)
   xh update [<ver>] [--auto] 更新 Xray-core 内核版本 (支持 pre 尝鲜版)
+  xh upgrade [show|xray|nginx|acme|geodata|cloudflared|deps|all] [-y]  软件更新中心（查看版本 / 逐项或一键更新）
   xh uninstall          卸载全部组件并清理配置
 
 【链路压测与性能审计 (集成)】
@@ -91,6 +92,7 @@ case "${1:-}" in
   start)      cmd_start ;;
   stop)       cmd_stop ;;
   update)     shift; cmd_update "$@" ;;
+  upgrade)    shift; cmd_upgrade "$@" ;;
   tuning|tune) shift; cmd_tuning "$@" ;;
   brutal)     shift; cmd_brutal "$@" ;;
   guard)      cmd_guard ;;

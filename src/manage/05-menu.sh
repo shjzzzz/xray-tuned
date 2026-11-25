@@ -193,6 +193,7 @@ _menu_define() {
     "查看运行日志 (log)::menu_choose MENU_LOG"
     "重启全部服务 (restart)::cmd_restart"
     "启动 / 停止服务 (start / stop)::menu_choose MENU_STARTSTOP"
+    "软件更新中心：Xray / Nginx / acme.sh / geodata 等 (upgrade)::menu_choose MENU_UPGRADE"
     "更新 Xray-core 内核版本 (update)::menu_choose MENU_UPDATE"
     "Nginx 版本检查与升级编译 (nginx)::menu_choose MENU_NGINX"
     "保活自愈服务管理 (keepalive)::menu_onoff cmd_keepalive"
@@ -206,6 +207,16 @@ _menu_define() {
   MENU_STARTSTOP=("启动 / 停止服务"
     "启动 (start)::cmd_start"
     "停止 (stop)::cmd_stop")
+
+  MENU_UPGRADE=("软件更新中心"
+    "查看全部组件版本与可更新项 (show)::cmd_upgrade show"
+    "更新 Xray-core::cmd_upgrade xray"
+    "更新 Nginx（重新编译）::cmd_upgrade nginx"
+    "更新 acme.sh::cmd_upgrade acme"
+    "更新 Xray geodata (geoip / geosite)::cmd_upgrade geodata"
+    "更新 cloudflared::cmd_upgrade cloudflared"
+    "升级系统依赖 (curl / openssl / ca-certificates)::cmd_upgrade deps"
+    "一键更新以上全部::cmd_upgrade all")
 
   MENU_UPDATE=("更新 Xray-core"
     "最新正式版::cmd_update"

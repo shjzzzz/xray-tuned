@@ -486,6 +486,106 @@ cmd_nginx() {
     *) echo "用法: ${MANAGE_CMD} nginx [show|check|update [-y]]" ;;
   esac
 }
+# ==================================================
+# 软件更新中心：统一查看 / 更新 xh 管理的第三方组件
+# 用法: xh upgrade [show|xray|nginx|acme|geodata|cloudflared|deps|all] [-y]
+# 各组件复用原有更新逻辑（xray: cmd_update，nginx: cmd_nginx update，cloudflared: cmd_argo_update），
+# 失败回滚与二次确认保持不变；all 逐项执行，单项失败不中断，最后汇总。
+# ==================================================
+upgrade_ver_lt() {  # $1 < $2（按版本号排序，相等为否）
+  [[ "$1" != "$2" && "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" == "$1" ]]
+}
+
+upgrade_gh_latest() {  # $1 = owner/repo → 最新正式版 tag（去掉前缀 v）
+  curl -fsSL --max-time 15 "https://api.github.com/repos/$1/releases/latest" 2>/dev/null \
+    | grep -o '"tag_name" *: *"[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/^v//'
+}
+
+upgrade_row() {  # 组件 当前 最新
+  local mark="${GREEN}已是最新${NC}"
+  if [[ -z "$3" ]]; then mark="${YELLOW}最新版本查询失败${NC}"
+  elif [[ -z "$2" ]]; then mark="${YELLOW}未安装${NC}"
+  elif upgrade_ver_lt "$2" "$3"; then mark="${YELLOW}可更新 → $3${NC}"; fi
+  printf '  %-14s %-16s ' "$1" "${2:--}"; echo -e "$mark"
+}
+
+upgrade_show() {
+  local cur acme="${ACME_SH:-/root/.acme.sh/acme.sh}" geo=/usr/local/share/xray/geosite.dat
+  echo -e "${CYAN}=== 软件版本与可更新项 ===${NC}"
+  cur=$("$XRAY_BIN" version 2>/dev/null | head -1 | awk '{print $2}'); cur="${cur#v}"
+  upgrade_row "Xray-core" "$cur" "$(upgrade_gh_latest XTLS/Xray-core)"
+  cur=$(nginx -v 2>&1 | sed -n 's|.*nginx/||p')
+  upgrade_row "Nginx" "$cur" "$(nginx_latest_mainline)"
+  cur=""; [[ -x "$acme" ]] && cur=$("$acme" --version 2>/dev/null | grep -o 'v\?[0-9][0-9.]*' | tail -1 | sed 's/^v//')
+  upgrade_row "acme.sh" "$cur" "$(upgrade_gh_latest acmesh-official/acme.sh)"
+  cur=""; [[ -x "$ARGO_BIN" ]] && cur=$("$ARGO_BIN" --version 2>/dev/null | grep -o '[0-9]\{4\}\.[0-9.]*' | head -1)
+  [[ -n "$cur" ]] && upgrade_row "cloudflared" "$cur" "$(upgrade_gh_latest cloudflare/cloudflared)"
+  printf '  %-14s %s\n' "geodata" "$([[ -f $geo ]] && date -r "$geo" +%F || echo 未安装)（更新：${MANAGE_CMD} upgrade geodata）"
+}
+
+upgrade_geodata() {
+  local d=/usr/local/share/xray f tmp
+  [[ -x "$XRAY_BIN" ]] || { warn "未找到 ${XRAY_BIN}"; return 1; }
+  tmp=$(mktemp -d) || return 1
+  for f in geoip.dat geosite.dat; do [[ -f "$d/$f" ]] && cp -a "$d/$f" "$tmp/$f.bak"; done
+  info "更新 geoip.dat / geosite.dat（Xray 官方安装脚本）..."
+  if bash -c "$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install-geodata \
+     && "$XRAY_BIN" -test -config "$XRAY_CONF" >/dev/null 2>&1 && svc restart xray; then
+    info "geodata 已更新"; rm -rf "$tmp"
+  else
+    warn "geodata 更新或配置自检失败，回滚"
+    for f in geoip.dat geosite.dat; do [[ -f "$tmp/$f.bak" ]] && cp -a "$tmp/$f.bak" "$d/$f"; done
+    svc restart xray || true; rm -rf "$tmp"; return 1
+  fi
+}
+
+upgrade_deps() {  # $1 = 1 表示免确认
+  local pk="curl ca-certificates openssl" a
+  if [[ "$1" != 1 ]]; then
+    read -rp "升级系统软件包 ${pk}（只升级这几个，不做全系统升级）？[y/N] " a
+    [[ "${a,,}" == "y" ]] || { info "已取消"; return 0; }
+  fi
+  case "${OS_ID:-}" in
+    alpine) apk add --upgrade $pk ;;
+    debian|ubuntu) apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade $pk ;;
+    *) warn "当前系统 ${OS_ID:-未知} 暂不支持自动升级系统依赖，请手动处理"; return 1 ;;
+  esac
+}
+
+cmd_upgrade() {
+  local what="show" yes=0 arg
+  for arg in "$@"; do
+    case "$arg" in
+      -y|--yes) yes=1 ;;
+      *) what="$arg" ;;
+    esac
+  done
+  case "$what" in
+    show|status|check) upgrade_show ;;
+    xray)  if [[ $yes == 1 ]]; then cmd_update --auto; else cmd_update; fi ;;
+    nginx) if [[ $yes == 1 ]]; then cmd_nginx update -y; else cmd_nginx update; fi ;;
+    acme)
+      local acme="${ACME_SH:-/root/.acme.sh/acme.sh}"
+      [[ -x "$acme" ]] || { warn "未安装 acme.sh"; return 1; }
+      "$acme" --upgrade ;;
+    geodata) upgrade_geodata ;;
+    cloudflared|argo)
+      [[ -x "$ARGO_BIN" ]] || { info "未安装 cloudflared，跳过"; return 0; }
+      cmd_argo_update ;;
+    deps) upgrade_deps "$yes" ;;
+    all)
+      local c failed=()
+      for c in xray nginx acme geodata cloudflared deps; do
+        echo -e "${CYAN}--- 更新 ${c} ---${NC}"
+        # 子 shell 隔离：组件内部的 fail（exit）只终止该项，不拖垮整批
+        if [[ $yes == 1 ]]; then ( cmd_upgrade "$c" -y ) || failed+=("$c"); else ( cmd_upgrade "$c" ) || failed+=("$c"); fi
+      done
+      if ((${#failed[@]})); then warn "以下组件更新失败或被取消: ${failed[*]}"; return 1; fi
+      info "全部组件处理完成" ;;
+    *) echo "用法: ${MANAGE_CMD} upgrade [show|xray|nginx|acme|geodata|cloudflared|deps|all] [-y]"; return 1 ;;
+  esac
+}
+
 cmd_uninstall() {
   echo -e "${RED}[!] 将删除 Xray / Nginx / ACME / Hysteria2 及本项目的配置、证书、订阅文件${NC}"
   read -rp "确认卸载？输入 yes 继续: " reply
