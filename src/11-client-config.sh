@@ -1,0 +1,596 @@
+# ==================================================
+# 客户端配置生成
+# ==================================================
+
+info "[6/7] 生成客户端配置"
+
+# xh-render-begin
+# 渲染整套客户端配置。包成函数是为了能再用「全部备用节点开启」的参数渲染一遍，
+# 存进 /etc/xhttp-cdn/all/ 作为备用节点库：xh 的 h2direct / hy2obfs / split 开关直接从里面取
+# 节点行与 Mihomo 条目，和全新安装逐字一致，不必在 xh 里再抄一遍拼装逻辑。
+render_client_configs() {
+VISION_FLOW="${VISION_FLOW:-xtls-rprx-vision}"
+XHTTP_PATH_ENC=${XHTTP_PATH//\//%2F}
+
+if [[ -z "${VPS_IP_URI:-}" ]]; then
+  if [[ "$IP_CHOICE" == "2" ]]; then
+    VPS_IP_URI="[${VPS_IP}]"
+  else
+    VPS_IP_URI="${VPS_IP}"
+  fi
+fi
+
+if [[ -z "${XHTTP_ENCRYPTION:-}" ]]; then
+  if [[ "${FEATURE_XHTTP_VLESSENC:-true}" == true && -n "${VLESSENC_ENCRYPTION:-}" ]]; then
+    XHTTP_ENCRYPTION="$VLESSENC_ENCRYPTION"
+  else
+    XHTTP_ENCRYPTION="none"
+  fi
+fi
+
+if ! declare -f rawurlencode >/dev/null 2>&1; then
+  rawurlencode() {
+    local string="$1"
+    local encoded="" i char hex
+    local LC_ALL=C
+
+    for ((i = 0; i < ${#string}; i++)); do
+      char="${string:i:1}"
+      case "$char" in
+        [a-zA-Z0-9.~_-]) encoded+="$char" ;;
+        *) printf -v hex '%%%02X' "'$char"; encoded+="$hex" ;;
+      esac
+    done
+    printf '%s' "$encoded"
+  }
+fi
+
+if [[ -z "${HY2_PASSWORD:-}" && -f "/usr/local/etc/xray/config.json" ]]; then
+  HY2_PASSWORD=$(grep -A 10 '"protocol": "hysteria"' /usr/local/etc/xray/config.json | grep '"auth":' | head -n 1 | sed -E 's/.*"auth":[[:space:]]*"([^"]+)".*/\1/' || true)
+fi
+
+# ==================================================
+# TUN 模式下的节点自身流量豁免（v1.2.3）
+# ==================================================
+# 症状：开启 TUN 后 TCP 节点（1/2）正常，两条 UDP/h3 节点（3/4）全不通。
+# 节点 3 的 server 是 CDN 域名、节点 4 是裸 IP，两者唯一的共同点就是 QUIC。
+#
+# 机制：TUN 用 auto-route 把默认路由指向自己，Mihomo 自己发往节点服务器的包
+# 会被自家 TUN 再次捕获，按 rules 兜到 MATCH,漏网之鱼 → 又送回代理 → 环路。
+# TCP 之所以不受影响，是因为 dialer 绑定物理接口的保护在 TCP 路径上更完整；
+# QUIC 是无连接的 UDP，同样的保护在多数平台上兜不住。
+#
+# 三道防线，越靠前越根本：
+#   ① tun.route-exclude-address：让节点流量**根本不进 TUN**（最根本）
+#   ② rules 首条 DIRECT：万一进了 TUN，也在第一条就放出去
+#   ③ sniffer.skip-dst-address：即使被 TUN 捞到，也不许改写目标地址
+# 字段名均已核对 mihomo 源码（listener/config/tun.go、config/config.go:373-378）。
+if [[ "$IP_CHOICE" == "2" ]]; then
+  VPS_IP_CIDR="${VPS_IP}/128"
+  MIHOMO_NODE_DIRECT_RULE="  - IP-CIDR6,${VPS_IP_CIDR},全局直连,no-resolve"
+else
+  VPS_IP_CIDR="${VPS_IP}/32"
+  MIHOMO_NODE_DIRECT_RULE="  - IP-CIDR,${VPS_IP_CIDR},全局直连,no-resolve"
+fi
+
+# CDN_ADDR 默认优先使用优选域名（若存在），保持 host 与 sni 仍为真实 CDN_DOMAIN
+CDN_CONNECT_ADDR="${CDN_ADDR:-${BESTCF_DOMAIN:-bestcf.${CDN_DOMAIN#*.}}}"
+# 验证优选域名是否能解析，若未配置或解析不到则回退到 CDN_DOMAIN
+if ! getent ahostsv4 "$CDN_CONNECT_ADDR" >/dev/null 2>&1; then
+  CDN_CONNECT_ADDR="${CDN_DOMAIN}"
+fi
+
+rm -f /etc/xhttp-cdn/dual-cdn-domains /etc/xhttp-cdn/dual-ip-domains 2>/dev/null || true
+
+# xmux 参数依据 Xray 官方文档及 #4113 建议：
+#   maxConcurrency: 16-32  → 兼顾多路复用与抗审查
+#   cMaxReuseTimes: 0      → leftUsage = -1，无限复用
+#   hMaxRequestTimes: 600-900 → 避免 Nginx 单连接累计 1000 请求断开
+#   hMaxReusableSecs: 1800-3000 → 定期切换主连接消除特征
+#   hKeepAlivePeriod: 0    → h3 取 quic-go 默认、h2 取 Chrome 默认
+# ---------- XHTTP packet-up 的最小 POST 间隔（v4.9.1） ----------
+# 这里的 scMinPostsIntervalMs 只在 packet-up（mode=auto 在 TLS 下选 packet-up）时起作用；v4.9.70 起经 CDN 的上传腿也
+# 用 stream-up，该参数对它们不生效，保留是为了客户端改回 auto 时仍有合理的 POST 间隔。packet-up 把上行
+# 切成一串 POST，两次 POST 之间有一个最小间隔。这个间隔就是 CDN 节点延迟的**主项**，
+# 不是 Cloudflare 边缘慢。实测（经 CF，socks 打 gstatic/generate_204，各 9 个样本）：
+#
+#   间隔 30ms（旧默认）  中位 21.7ms   p95 45.6ms
+#   间隔 10ms（现默认）  中位 12.2ms   p95 70.0ms
+#   间隔  1ms            中位 10.3ms   p95 38.8ms
+#
+# 20MB 下载吞吐三档无差别（328~546 Mbps，波动来自 CF 边缘本身），
+# 也就是说这一项是纯延迟收益、不用拿吞吐换。
+#
+# 取 10 而不是 1：间隔越小，单位时间内打给 CDN 的请求数越多——收益从 30→10 已经
+# 拿到大头（−9.5ms），10→1 只再省 1.9ms，不值得为此把请求速率再抬一个数量级
+# （请求数是 CDN 侧最容易做特征的维度之一）。
+# 需要时可用环境变量覆盖：XHTTP_SC_MIN_POSTS_MS=30 bash install.sh
+XHTTP_SC_MIN_POSTS_MS=${XHTTP_SC_MIN_POSTS_MS:-10}
+
+# ---------- Hysteria2 客户端带宽与接收窗口声明 ----------
+# 为客户端注入 1000 Mbps 与 128MB 连接流控接收窗口，跑满千兆高吞吐链路
+HY2_UP_MBPS=${HY2_UP_MBPS:-1000}
+HY2_DOWN_MBPS=${HY2_DOWN_MBPS:-1000}
+MIHOMO_HY2_BW_BLOCK=$(printf '\n    up: "%s Mbps"\n    down: "%s Mbps"\n    recv-window-conn: 134217728\n    recv-window: 67108864' "${HY2_UP_MBPS}" "${HY2_DOWN_MBPS}")
+
+# Reality XHTTP 直连与上行腿：maxConcurrency 设为 8-16（替代原先的 32-64），
+# 避免单条 TCP 连接承载 64 路并发流引发严重 TCP 队头阻塞（HoL Blocking）及单连接流量过大触发运营商 QoS 限速；
+# 当并发流超过 8-16 时客户端自动开启多条并行 TCP+REALITY 连接，配合 5-10 分钟（300-600s / 100-200 次请求）平滑轮换五元组。
+XMUX_ENC="%22xmux%22%3A%7B%22maxConcurrency%22%3A%228-16%22%2C%22cMaxReuseTimes%22%3A%2216-32%22%2C%22hMaxRequestTimes%22%3A%22100-200%22%2C%22hMaxReusableSecs%22%3A%22300-600%22%2C%22hKeepAlivePeriod%22%3A15%7D"
+# 经 CDN 的腿用 maxConnections=16（严禁与 maxConcurrency 混用），拉满并发突破 Cloudflare 边缘单流限速。
+XMUX_CDN_ENC="%22xmux%22%3A%7B%22maxConnections%22%3A16%2C%22cMaxReuseTimes%22%3A0%2C%22hMaxRequestTimes%22%3A%22200-400%22%2C%22hMaxReusableSecs%22%3A%22600-1200%22%2C%22hKeepAlivePeriod%22%3A15%7D"
+# XHTTP/3（Direct-H3、CDN-H3）下载方向吃的是**客户端**的 QUIC 接收窗口：长 RTT + 丢包时，默认窗口会把吞吐卡住。
+# 用链接的 fm（finalmask）参数把窗口拉满放大：流 初始 8MB / 上限 64MB，连接 初始 16MB / 上限 128MB（兼顾极限吞吐与移动端 50MB 内存安全上限）。
+XH3_FM_PARAM="&fm=$(rawurlencode '{"quicParams":{"initStreamReceiveWindow":8388608,"maxStreamReceiveWindow":67108864,"initConnectionReceiveWindow":16777216,"maxConnectionReceiveWindow":134217728}}')"
+
+if [[ "$FEATURE_XPADDING" == true ]]; then
+  XPAD_FIELDS_ENC="%22xPaddingBytes%22%3A%22100-1000%22%2C%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22${XHTTP_PADDING_METHOD}%22%2C%22xPaddingPlacement%22%3A%22${XHTTP_PADDING_PLACEMENT}%22%2C%22xPaddingHeader%22%3A%22${XHTTP_PADDING_HEADER}%22%2C%22xPaddingKey%22%3A%22${XHTTP_PADDING_KEY}%22"
+  XPAD_EXTRA_ENC="%7B${XPAD_FIELDS_ENC}%2C${XMUX_ENC}%7D"
+  XPAD_CDN_EXTRA_ENC="%7B${XPAD_FIELDS_ENC}%2C%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D"
+
+  MIHOMO_XPADDING_XHTTP_BLOCK=$(cat <<EOF
+
+      x-padding-bytes: "100-1000"
+      x-padding-obfs-mode: true
+      x-padding-key: "${XHTTP_PADDING_KEY}"
+      x-padding-header: "${XHTTP_PADDING_HEADER}"
+      x-padding-placement: "${XHTTP_PADDING_PLACEMENT}"
+      x-padding-method: "${XHTTP_PADDING_METHOD}"
+EOF
+)
+  # 上下行分离节点的 download-settings 比 xhttp-opts 深一级，缩进各 +2
+  MIHOMO_XPADDING_DOWNLOAD_BLOCK=$(cat <<EOF
+
+          x-padding-bytes: "100-1000"
+          x-padding-obfs-mode: true
+          x-padding-key: "${XHTTP_PADDING_KEY}"
+          x-padding-header: "${XHTTP_PADDING_HEADER}"
+          x-padding-placement: "${XHTTP_PADDING_PLACEMENT}"
+          x-padding-method: "${XHTTP_PADDING_METHOD}"
+EOF
+)
+  MIHOMO_SC_MIN_POSTS_BLOCK=$(cat <<EOF
+
+      sc-min-posts-interval-ms: ${XHTTP_SC_MIN_POSTS_MS}
+EOF
+)
+  MIHOMO_REUSE_KEEPALIVE_XHTTP=$(cat <<EOF
+
+        h-keep-alive-period: 15
+EOF
+)
+  MIHOMO_REUSE_KEEPALIVE_DOWNLOAD=$(cat <<EOF
+
+          h-keep-alive-period: 15
+EOF
+)
+else
+  XPAD_FIELDS_ENC=""
+  XPAD_EXTRA_ENC="%7B${XMUX_ENC}%7D"
+  XPAD_CDN_EXTRA_ENC="%7B%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D"
+  MIHOMO_XPADDING_XHTTP_BLOCK=""
+  MIHOMO_XPADDING_DOWNLOAD_BLOCK=""
+  MIHOMO_SC_MIN_POSTS_BLOCK=""
+  MIHOMO_REUSE_KEEPALIVE_XHTTP=$(cat <<EOF
+
+        h-keep-alive-period: 15
+EOF
+)
+  MIHOMO_REUSE_KEEPALIVE_DOWNLOAD=$(cat <<EOF
+
+          h-keep-alive-period: 15
+EOF
+)
+fi
+
+if [[ "$CDN_ECH_ENABLED" == true ]]; then
+  DOWNLOAD_TLS_ENC="%22tlsSettings%22%3A%7B%22serverName%22%3A%22${CDN_DOMAIN}%22%2C%22allowInsecure%22%3Afalse%2C%22alpn%22%3A%5B%22h2%22%2C%22h3%22%5D%2C%22fingerprint%22%3A%22chrome%22%2C%22ech%22%3A%22${CDN_ECH_QUERY_ENC}%22%7D"
+else
+  DOWNLOAD_TLS_ENC="%22tlsSettings%22%3A%7B%22serverName%22%3A%22${CDN_DOMAIN}%22%2C%22allowInsecure%22%3Afalse%2C%22alpn%22%3A%5B%22h2%22%2C%22h3%22%5D%2C%22fingerprint%22%3A%22chrome%22%7D"
+fi
+if [[ "$FEATURE_XPADDING" == true ]]; then
+  DOWNLOAD_XHTTP_ENC="%22xhttpSettings%22%3A%7B%22host%22%3A%22${CDN_DOMAIN}%22%2C%22path%22%3A%22${XHTTP_PATH_ENC}%22%2C%22mode%22%3A%22auto%22%2C%22extra%22%3A%7B${XPAD_FIELDS_ENC}%2C%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D%7D"
+  DOWNLOAD_SETTINGS_ENC="%22downloadSettings%22%3A%7B%22address%22%3A%22${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}%22%2C%22port%22%3A443%2C%22network%22%3A%22xhttp%22%2C%22security%22%3A%22tls%22%2C${DOWNLOAD_TLS_ENC}%2C${DOWNLOAD_XHTTP_ENC}%7D"
+  XPAD_SPLIT_EXTRA_ENC="%7B${XPAD_FIELDS_ENC}%2C%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_ENC}%2C${DOWNLOAD_SETTINGS_ENC}%7D"
+else
+  DOWNLOAD_XHTTP_ENC="%22xhttpSettings%22%3A%7B%22host%22%3A%22${CDN_DOMAIN}%22%2C%22path%22%3A%22${XHTTP_PATH_ENC}%22%2C%22mode%22%3A%22auto%22%2C%22extra%22%3A%7B%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D%7D"
+  DOWNLOAD_SETTINGS_ENC="%22downloadSettings%22%3A%7B%22address%22%3A%22${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}%22%2C%22port%22%3A443%2C%22network%22%3A%22xhttp%22%2C%22security%22%3A%22tls%22%2C${DOWNLOAD_TLS_ENC}%2C${DOWNLOAD_XHTTP_ENC}%7D"
+  XPAD_SPLIT_EXTRA_ENC="%7B%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_ENC}%2C${DOWNLOAD_SETTINGS_ENC}%7D"
+fi
+
+# Reality spiderX（XTLS/REALITY README：客户端的初始爬取路径，建议各部署不同）。
+# 由 UUID 派生，同一份部署每次重新生成都一致、不同部署互不相同；FEATURE_REALITY_SPX=false 关闭。
+# 只是客户端参数（v2rayN / Xray 系客户端识别 spx，mihomo / sing-box 会忽略），服务端无需配置。
+if [[ "${FEATURE_REALITY_SPX:-true}" == true ]]; then
+  REALITY_SPX="/$(printf '%s' "${UUID1}${UUID2}" | sha256sum | cut -c1-12)"
+  REALITY_SPX_Q="&spx=$(rawurlencode "$REALITY_SPX")"
+else
+  REALITY_SPX_Q=""
+fi
+
+if [[ "${FEATURE_REALITY_UP_CDN_DOWN:-false}" == true || "${FEATURE_UP_CDN_DOWN_MIHOMO:-false}" == true ]]; then
+  REALITY_UP_CDN_DOWN_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:443?encryption=${XHTTP_ENCRYPTION}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=xhttp&path=${XHTTP_PATH}&mode=stream-up${XPAD_SPLIT_EXTRA_ENC:+&extra=${XPAD_SPLIT_EXTRA_ENC}}&packetEncoding=xudp&tfo=1#VLESS-Reality-Up-CDN-Down${NODE_SUFFIX}"
+else
+  REALITY_UP_CDN_DOWN_NODE_LINE=""
+fi
+
+# 上行腿用 h3（v4.9.30）：netns 160ms RTT / 1% 丢包实测，上行 h2 11 Mbps（3 次均为 11）
+# → h3 102 Mbps（73~140），下行持平（93 → 102）。h2 经 Cloudflare 的上行被卡在 packet-up 的逐请求往返上。
+# 反向分离（v4.9.29，FEATURE_CDN_UP_REALITY_DOWN）：上行 XHTTP+TLS 经 CDN，
+# 下行 downloadSettings 直连 VPS 的 Reality 443。两条腿都落到 8001 入站，
+# 因此共用 UUID2 / path / XHTTP_ENCRYPTION。下行腿的 extra 与 Reality-XHTTP 直连节点一致；
+# 上行腿的 extra 与 CDN 节点一致（含 scMinPostsIntervalMs，packet-up 经 CDN 需要）。
+# IPv6 地址在 JSON 里不加方括号，但冒号要编码。
+REALITY_DOWNLOAD_ENC="%22downloadSettings%22%3A%7B%22address%22%3A%22${VPS_IP//:/%3A}%22%2C%22port%22%3A443%2C%22network%22%3A%22xhttp%22%2C%22security%22%3A%22reality%22%2C%22realitySettings%22%3A%7B%22serverName%22%3A%22${REALITY_DOMAIN}%22%2C%22fingerprint%22%3A%22chrome%22%2C%22publicKey%22%3A%22${PUBLIC_KEY}%22%2C%22shortId%22%3A%22${SHORT_ID}%22%2C%22spiderX%22%3A%22%22%7D%2C%22xhttpSettings%22%3A%7B%22path%22%3A%22${XHTTP_PATH_ENC}%22%2C%22mode%22%3A%22stream-up%22%2C%22extra%22%3A${XPAD_EXTRA_ENC}%7D%2C%22sockopt%22%3A%7B%22tcpFastOpen%22%3Atrue%2C%22tcpNoDelay%22%3Atrue%7D%7D"
+XPAD_REV_SPLIT_EXTRA_ENC="${XPAD_CDN_EXTRA_ENC%\%7D}%2C${REALITY_DOWNLOAD_ENC}%7D"
+if [[ "${FEATURE_CDN_UP_REALITY_DOWN:-false}" == true ]]; then
+  CDN_UP_REALITY_DOWN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR:-${CDN_DOMAIN}}:443?encryption=${XHTTP_ENCRYPTION}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=auto&extra=${XPAD_REV_SPLIT_EXTRA_ENC}&packetEncoding=xudp#VLESS-CDN-Up-Reality-Down${NODE_SUFFIX}"
+else
+  CDN_UP_REALITY_DOWN_NODE_LINE=""
+fi
+
+if [[ "$CDN_ECH_ENABLED" == true ]]; then
+  MIHOMO_ECH_PROXY_BLOCK=$(cat <<EOF
+
+    ech-opts:
+      enable: true
+      query-server-name: cloudflare-ech.com
+EOF
+)
+  # v4.9.31：缩进必须与 download-settings 的子项一致（8 格）。此前写成 6 格，
+  # ech-opts 变成与 download-settings 平级，紧随其后的 reality-opts / path / host /
+  # reuse-settings 全被 YAML 归到 ech-opts 名下——download-settings 里没了
+  # 「reality-opts: { public-key: "" }」，mihomo 对 Cloudflare 做 Reality 握手，
+  # 报 REALITY authentication failed（开启 ECH 的机器自 v4.9.20 起均受影响）。
+  MIHOMO_ECH_DOWNLOAD_BLOCK=$(cat <<EOF
+
+        ech-opts:
+          enable: true
+          query-server-name: cloudflare-ech.com
+EOF
+)
+else
+  MIHOMO_ECH_PROXY_BLOCK=""
+  MIHOMO_ECH_DOWNLOAD_BLOCK=""
+fi
+
+# v4.0.0 节点集：3 条 QUIC/h3 + 2 条 TCP 兜底，全部由 Xray 单核心提供。
+# 两条直连 UDP 节点（h3-direct / Hysteria2）依赖 Xray 官方正式版 ≥26.3.27，低版本时
+# FEATURE_H3_DIRECT / FEATURE_HY2 会在 03-xray-install.sh 里被置 false，
+# 此处渲染为空行，随后的 sed 删掉——空行若进了 base64 订阅会变成一条空节点。
+# L19：同一节点的 URI 版与 mihomo 版是两处独立代码，必须同时处理。
+#
+# 两条直连节点用 mode=stream-up 而不是 auto（v4.7.13）：
+# auto 在 security=tls 时保守地选 packet-up，把上行切成一串带最小间隔的 POST，
+# 首字节要多等约 50ms。实测（同机、同目标、各 10 次取中位数）：
+#   h2-direct auto/packet-up 68ms → stream-up 18ms（直连基线也是 18ms）
+#   h3-direct auto/packet-up 69ms → stream-up 18ms
+# 吞吐不受影响（337 / 356 Mbps）。
+#
+# 当前规则（v4.9.70）：上传腿一律 stream-up（直连、Reality、经 Cloudflare 都是）；只有「经 CDN 的下载腿」
+# （Reality-Up-CDN-Down 的 downloadSettings）保持 auto。依据：本机经 Cloudflare 回连自己，各 40 次传输
+# （20MB 下载 / 10MB 上传）都没有卡住，上传 stream-up 约 365–441 Mbps、auto 约 163–261 Mbps（快 1.7–2.7 倍），
+# 下载两者接近（约 490–640 Mbps）。这只代表本机到 Cloudflare 这一段，不代表用户客户端的线路。
+# v4.9.66 曾把 CDN 腿全改成 auto，依据是更早一次实测（stream-up 经 CF 上传 6 次有 2 次没传完）；
+# 该现象在 Cloudflare 开启 gRPC / WebSockets 后的这次测试里没有复现，所以上传腿改回 stream-up，下载腿保持 auto。
+# 服务端 8001 入站保持 mode=auto：它同时接 nginx 回源（CDN 腿）与 Reality 回落，auto 什么上传模式都收。
+# 写成 stream-up 会拒绝 auto / packet-up 的上传（实测这两种客户端全部不通），用户把链接改回 auto 就会断。
+# 直连入站只收 stream-up。
+# 10 大核心节点之三大后量子 (ML-KEM-768) 节点（默认开启）
+if [[ "${FEATURE_TLS_PQ_XHTTP:-false}" == true ]]; then
+  TLS_PQ_XHTTP_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=auto&extra=%7B%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D&packetEncoding=xudp#VLESS-TLS+PQ+XHTTP+CDN"
+else
+  TLS_PQ_XHTTP_NODE_LINE=""
+fi
+
+if [[ "${FEATURE_TLS_PQ_VISION:-false}" == true ]]; then
+  TLS_PQ_VISION_NODE_LINE="vless://${UUID1}@${CDN_CONNECT_ADDR}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=auto&extra=%7B%22scMinPostsIntervalMs%22%3A${XHTTP_SC_MIN_POSTS_MS}%2C${XMUX_CDN_ENC}%7D&packetEncoding=xudp#VLESS-TLS+PQ+Vision+XHTTP+CDN"
+else
+  TLS_PQ_VISION_NODE_LINE=""
+fi
+
+if [[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
+  REALITY_PQ_VISION_NODE_LINE="vless://${UUID1}@${VPS_IP_URI}:443?encryption=none&flow=${VISION_FLOW:-xtls-rprx-vision}&security=reality&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2,http/1.1&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}${REALITY_SPX_Q}&type=raw&headerType=none&packetEncoding=xudp&tfo=1#VLESS-REALITY+PQ+Vision"
+else
+  REALITY_PQ_VISION_NODE_LINE=""
+fi
+
+if [[ "$FEATURE_H3_DIRECT" == true ]]; then
+  H3_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H3_PORT}?encryption=none&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h3&insecure=0&allowInsecure=0&type=xhttp&path=${XHTTP_PATH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}#VLESS-XHTTP-Direct-H3${NODE_SUFFIX}"
+else
+  H3_DIRECT_NODE_LINE=""
+fi
+
+# h2-cdn: 经 CDN 的 TCP(h2) 链路（默认关闭，FEATURE_CDN_H2=true 时启用）
+if [[ "$FEATURE_CDN_H2" == true ]]; then
+  H2_CDN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-CDN-H2${NODE_SUFFIX}"
+else
+  H2_CDN_NODE_LINE=""
+fi
+
+# h3-cdn（v4.7.4）：节点 1 的 QUIC 版，只差 alpn（h2 → h3）与节点名。
+# 不需要任何服务端改动：ALPN 是客户端与 Cloudflare 边缘之间的协商，回源侧恒为 h2/TCP。
+# 之所以必须另开一条而不能给节点 1 加个 h3：mihomo 仅在 alpn **恰好等于** h3 时才走
+# HTTP/3（transport/xhttp/client.go:159），列表里多一个值就退回 TCP。
+# 默认关闭（v4.9.64；FEATURE_CDN_H3=true 或 xh cdnh3 on 开启）。
+if [[ "${FEATURE_CDN_H3:-false}" == true ]]; then
+  H3_CDN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3&insecure=0&allowInsecure=0${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}#VLESS-XHTTP-CDN-H3${NODE_SUFFIX}"
+else
+  H3_CDN_NODE_LINE=""
+fi
+
+# h2-direct（v4.7.0）：h3-direct 的 TCP 版，只差 port 与 alpn (h2)。
+if [[ "$FEATURE_H2_DIRECT" == true ]]; then
+  H2_DIRECT_NODE_LINE="vless://${UUID2}@${VPS_IP_URI}:${H2_PORT}?encryption=none&security=tls&sni=${REALITY_DOMAIN}&fp=chrome&alpn=h2&insecure=0&allowInsecure=0&type=xhttp&path=${XHTTP_PATH}&mode=stream-up${XPAD_EXTRA_ENC:+&extra=${XPAD_EXTRA_ENC}}#VLESS-XHTTP-Direct-H2${NODE_SUFFIX}"
+else
+  H2_DIRECT_NODE_LINE=""
+fi
+
+# v4.9.49 / v4.9.50：Hysteria2 链接附带 fm（v2rayN / v2rayNG 的 finalmask JSON 参数）打开 QUIC 保活。
+# Xray-core 作 Hysteria2 客户端时 keepAlivePeriod 默认 0（v26.3.27 客户端 dialer.go 里 10s 的默认值被注释掉），
+# 服务端 hub.go 的 quic.Config 也不传 KeepAlivePeriod，闲置 30s 即断，下一次请求重握手多 2 个 RTT。
+# v2rayN（7.24.9）/ v2rayNG（2.2.6）见到 fm 会**整体替换**自己生成的 finalmask，所以这里逐项复刻它们原本的产物：
+#   quicParams.congestion：声明了 upmbps / downmbps → brutal + brutalUp/Down，否则 bbr
+#   quicParams.udpHop    ：链接带 mport 时 { ports: mport（: 换成 -）, interval: "30" }（两者未设置时的默认间隔）
+#   udp[]                ：带混淆时 [{ type: salamander, settings: { password } }]
+# 再加 keepAlivePeriod: 10（Hysteria 官方客户端与 Xray 被注释掉的默认值）。
+# sing-box / mihomo / 官方客户端忽略该参数；小火箭订阅在 12-subscription 里剔除。
+# 用法：hy2_client_fm_param <salamander 密码|空> <mport|空>，输出 "&fm=<编码后 JSON>"。
+# 密码含 " 或 \ 时无法安全拼进 JSON，宁可不带 fm（退回旧行为），也不生成会让节点失效的配置。
+hy2_client_fm_param() {
+  local obfs="$1" mport="$2" qp udp=""
+  case "$obfs$mport" in *[\"\\]*) return 0 ;; esac
+  if [[ -n "${HY2_UP_MBPS}${HY2_DOWN_MBPS}" ]]; then
+    qp="\"congestion\":\"brutal\"${HY2_UP_MBPS:+,\"brutalUp\":\"${HY2_UP_MBPS}mbps\"}${HY2_DOWN_MBPS:+,\"brutalDown\":\"${HY2_DOWN_MBPS}mbps\"}"
+  else
+    qp='"congestion":"bbr"'
+  fi
+  [[ -n "$mport" ]] && qp+=",\"udpHop\":{\"ports\":\"${mport//:/-}\",\"interval\":\"30\"}"
+  qp+=',"keepAlivePeriod":10,"initStreamReceiveWindow":8388608,"maxStreamReceiveWindow":67108864,"initConnectionReceiveWindow":16777216,"maxConnectionReceiveWindow":134217728'
+  local noise_item=""
+  # 链接里的 noise 项只在 FEATURE_NOISE_LINKS=true 时写：noise 的 exp 类型是 Xray 26.9.30 才有的，
+  # 26.3.27 / 26.7.28 / 26.9.9 的客户端内核解析到它会「failed to build outbound config」，v2rayN 报「运行内核失败」。
+  if [[ "${FEATURE_NOISE_EXP:-false}" == true && "${FEATURE_NOISE_LINKS:-false}" == true ]]; then
+    noise_item="{\"type\":\"noise\",\"settings\":{\"noise\":[{\"type\":\"exp\",\"packet\":\"${NOISE_EXP_PACKET:-<b 16030100><r 32><t><c><rd 8>}\",\"delay\":\"${NOISE_EXP_DELAY:-10-50}\"}]}}"
+  fi
+  if [[ -n "$obfs" ]]; then
+    if [[ -n "$noise_item" ]]; then
+      udp=",\"udp\":[${noise_item},{\"type\":\"salamander\",\"settings\":{\"password\":\"${obfs}\"}}]"
+    else
+      udp=",\"udp\":[{\"type\":\"salamander\",\"settings\":{\"password\":\"${obfs}\"}}]"
+    fi
+  elif [[ -n "$noise_item" ]]; then
+    udp=",\"udp\":[${noise_item}]"
+  fi
+  printf '&fm=%s' "$(rawurlencode "{\"quicParams\":{${qp}}${udp}}")"
+}
+
+if [[ "$FEATURE_HY2" == true && "${FEATURE_HY2_OBFS:-false}" == true ]]; then
+  if [[ "${FEATURE_PORT_HOPPING:-false}" == true ]]; then
+    HY2_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_PORT}/?sni=${REALITY_DOMAIN}&mport=${HY2_PORT},${PORT_HOP_RANGE:-40000-50000}&alpn=h3&insecure=0&obfs=salamander&obfs-password=$(rawurlencode "$OBFS_PASSWORD")${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "$OBFS_PASSWORD" "${HY2_PORT},${PORT_HOP_RANGE:-40000-50000}")#Hysteria2-TLS-BBR-Salamander"
+    MIHOMO_HY2_PORTS_LINE=$(printf '\n    ports: %s,%s' "${HY2_PORT}" "${PORT_HOP_RANGE:-40000-50000}")
+  else
+    HY2_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_PORT}/?sni=${REALITY_DOMAIN}&alpn=h3&insecure=0&obfs=salamander&obfs-password=$(rawurlencode "$OBFS_PASSWORD")${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "$OBFS_PASSWORD" "")#Hysteria2-TLS-BBR-Salamander"
+    MIHOMO_HY2_PORTS_LINE=""
+  fi
+else
+  HY2_NODE_LINE=""
+  MIHOMO_HY2_PORTS_LINE=""
+fi
+
+# Hysteria2-H3（v4.9.26）：UDP 443、无混淆，其余与 Hysteria2-Obfs-Direct 相同。
+if [[ "${FEATURE_HY2_H3:-false}" == true ]]; then
+  HY2_H3_NODE_LINE="hysteria2://$(rawurlencode "$HY2_PASSWORD")@${REALITY_DOMAIN}:${HY2_H3_PORT:-443}/?sni=${REALITY_DOMAIN}&alpn=h3&insecure=0${HY2_UP_MBPS:+&upmbps=${HY2_UP_MBPS}}${HY2_DOWN_MBPS:+&downmbps=${HY2_DOWN_MBPS}}$(hy2_client_fm_param "" "")#Hysteria2-H3-Direct${NODE_SUFFIX}"
+else
+  HY2_H3_NODE_LINE=""
+fi
+
+if [[ "${FEATURE_MASQUE:-false}" == true ]]; then
+  MASQUE_NODE_LINE="masque://user%40${CDN_DOMAIN}:${MASQUE_PASSWORD}@${REALITY_DOMAIN}:${MASQUE_PORT:-8447}/.well-known/masque/ip/*/*/?sni=${REALITY_DOMAIN}&alpn=h3#MASQUE-CONNECT-IP${NODE_SUFFIX}"
+else
+  MASQUE_NODE_LINE=""
+fi
+
+info "节点集: cdn-h2(${FEATURE_CDN_H2:-false}) cdn-h3(${FEATURE_CDN_H3:-false}) + h3-direct(${FEATURE_H3_DIRECT}) + Hysteria2-H3(${FEATURE_HY2_H3:-false}) + Hysteria2-Obfs(${FEATURE_HY2_OBFS:-false}) + Reality-up-CDN-down(${FEATURE_REALITY_UP_CDN_DOWN:-false}) + Reality x2 [备用默认关闭: CDN-up-Reality-down(${FEATURE_CDN_UP_REALITY_DOWN:-false}) MASQUE(${FEATURE_MASQUE:-false})]"
+
+cat > "$USER_HOME/client-config.txt" << CLIENTEOF
+@@include templates/client-config.txt.tmpl
+CLIENTEOF
+# 删掉 CDN 节点关闭后留下的空行，保证 client-config.txt 每行都是一条可用节点
+sed -i '/^[[:space:]]*$/d' "$USER_HOME/client-config.txt"
+# Reality 两个直连节点的行写在模板里（不是变量），关闭时按节点名删行
+[[ "${FEATURE_REALITY_VISION:-false}" == true ]] || sed -i '/#VLESS-Reality-Vision-Direct/d' "$USER_HOME/client-config.txt"
+[[ "${FEATURE_REALITY_XHTTP:-true}" == true ]] || sed -i '/#VLESS-Reality-XHTTP-Direct/d' "$USER_HOME/client-config.txt"
+
+# v2rayN TUN 绕行清单。**不能并进 client-config.txt**——那份文件会被整体
+# base64 成 v2rayN 订阅（12-subscription.sh:18），混入非节点行会污染订阅。
+V2RAYN_TUN_FILE="$USER_HOME/client-config-v2rayn-tun.txt"
+cat > "$V2RAYN_TUN_FILE" << V2RAYNTUNEOF
+@@include templates/v2rayn-tun.txt.tmpl
+V2RAYNTUNEOF
+
+MIHOMO_FULL_FILE="$USER_HOME/client-config-mihomo-full.yaml"
+MIHOMO_NODES_FILE="$USER_HOME/client-config-mihomo-nodes.yaml"
+
+# 完整分流配置：保留用户选择的 ECH 配置
+cat > "$MIHOMO_FULL_FILE" << MIHOMOEOF
+@@include templates/mihomo-full.yaml.tmpl
+MIHOMOEOF
+
+cat > "$MIHOMO_NODES_FILE" << MIHOMOEOF
+@@include templates/mihomo-nodes.yaml.tmpl
+MIHOMOEOF
+
+# 按 FEATURE_* 裁剪 mihomo 配置里的可选节点（v4.7.8）。
+# URI 侧靠 ${..._NODE_LINE} 置空 + 删空行处理，mihomo 侧原先没有对应机制，
+# 于是 h3-direct / h2-direct / Hysteria2 被关掉时，yaml 里仍留着这些节点——
+# 客户端拿到的是指向不存在入站的死节点，「直连择优」组还会一直去测它们。
+#
+# 做法是在模板里用 YAML 注释打成对标记：
+#   #<<FEATURE_H2_DIRECT ... #>>FEATURE_H2_DIRECT
+# 开则只删标记行，关则连同标记之间的内容一起删。
+# 用注释而不是变量占位有两个好处：模板本身仍是合法 YAML（可直接 lint），
+# 且万一裁剪没跑，产物退化成「多了几行注释」而不是「YAML 语法错」。
+#
+# L19：同一节点在 mihomo-proxies（节点定义）与 mihomo-full（「直连择优」组的
+# 成员列表）里各出现一次，两处都打了标记，靠同一次裁剪一起处理。
+prune_mihomo_features() {
+  local file="$1" feat
+  [[ -f "$file" ]] || return 0
+  for feat in FEATURE_TLS_PQ_XHTTP FEATURE_REALITY_PQ_VISION FEATURE_REALITY_VISION FEATURE_REALITY_XHTTP FEATURE_CDN_H2 FEATURE_CDN_H3 FEATURE_H3_DIRECT FEATURE_H2_DIRECT FEATURE_HY2 FEATURE_HY2_H3 FEATURE_HY2_OBFS FEATURE_UP_CDN_DOWN_MIHOMO FEATURE_CDN_UP_REALITY_DOWN; do
+    local on="${!feat}"
+    # Reality-XHTTP 与最新版 Mihomo(Clash) / Shadowrocket 不兼容：不写进任何 Mihomo 产物（Shadowrocket 订阅本来就不含它）。
+    [[ "$feat" == FEATURE_REALITY_XHTTP ]] && on=false
+    if [[ "$on" == true ]]; then
+      sed -i "/^[[:space:]]*#<<${feat}\$/d; /^[[:space:]]*#>>${feat}\$/d" "$file"
+    else
+      sed -i "/^[[:space:]]*#<<${feat}\$/,/^[[:space:]]*#>>${feat}\$/d" "$file"
+    fi
+  done
+}
+
+prune_mihomo_features "$MIHOMO_FULL_FILE"
+prune_mihomo_features "$MIHOMO_NODES_FILE"
+
+# 自定义节点名（v4.7.9）。NODE_TAG 只能换后缀，机场式的名字（🇺🇸 US-CDN-H3）
+# 换的是整个名字，没法靠模板变量拼出来，所以放在这里做一次改名。
+#
+# 放在产物生成之后而不是模板里，是因为节点名在三种产物里出现的形式不同：
+#   client-config.txt  —— URI 的 fragment，emoji 与空格必须百分号编码，
+#                          否则 Shadowrocket 等客户端会在空格处截断节点名
+#   mihomo-*.yaml      —— proxies 的 name 与 proxy-groups 的成员引用，用原文，
+#                          且两处必须一起改，改漏一处 mihomo 会拒绝加载整份配置
+# 统一在产物上做替换，只需维护一张表，扩展脚本追加的节点也一并覆盖。
+#
+# 表的格式是每行 `旧名=新名`，来自 NODE_NAME_MAP 环境变量，或 NODE_NAME_FILE
+# 指向的文件；旧名就是默认生成的完整节点名（含 ${HOSTNAME_TAG} 后缀）。
+apply_node_names() {
+  local map="${NODE_NAME_MAP:-}"
+  [[ -n "${NODE_NAME_FILE:-}" && -f "${NODE_NAME_FILE}" ]] && map=$(cat "${NODE_NAME_FILE}")
+  [[ -n "$map" ]] || return 0
+
+  local line old new enc f
+  while IFS= read -r line; do
+    # 跳过空行与注释；新名里可以有 =，所以只按第一个 = 切
+    [[ -z "${line// }" || "${line#\#}" != "$line" ]] && continue
+    old="${line%%=*}"; new="${line#*=}"
+    [[ -n "$old" && -n "$new" ]] || continue
+    enc=$(rawurlencode "$new")
+
+    # perl 不加 -CSD：替换串本身就是 UTF-8 字节，按字节替换才不会把 emoji
+    # 变成乱码（-CSD 会把它当 latin-1 解一遍再编回去）。
+    perl -pi -e "s/\Q${old}\E/${enc}/g" "$USER_HOME/client-config.txt"
+    for f in "$MIHOMO_FULL_FILE" "$MIHOMO_NODES_FILE"; do
+      OLD_VAL="$old" NEW_VAL="$new" perl -pi -e 'my $o = $ENV{OLD_VAL}; my $n = $ENV{NEW_VAL}; s/\Q$o\E/$n/g;' "$f"
+    done
+  done <<< "$map"
+}
+
+apply_node_names
+
+# 节点按名称升序排序，使全平台订阅与客户端拉取顺序严格一致
+sort_client_configs() {
+  if [[ -f "$USER_HOME/client-config.txt" ]] && command -v python3 >/dev/null 2>&1; then
+    python3 -c "
+import sys
+fpath = sys.argv[1]
+with open(fpath, 'r', encoding='utf-8') as f:
+    lines = [line.strip() for line in f if line.strip()]
+def get_name(line):
+    return line.split('#', 1)[1] if '#' in line else line
+sorted_lines = sorted(lines, key=get_name)
+with open(fpath, 'w', encoding='utf-8') as f:
+    for line in sorted_lines:
+        f.write(line + '\n')
+" "$USER_HOME/client-config.txt" 2>/dev/null || true
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c "
+import sys, re
+
+def sort_proxies_in_file(fpath):
+    try:
+        with open(fpath, 'r', encoding='utf-8') as f:
+            text = f.read()
+        match = re.search(r'(proxies:\n)(.*?)(?=\n[a-z\-]+:|\Z)', text, re.DOTALL)
+        if not match:
+            return
+        header = match.group(1)
+        body = match.group(2)
+        proxy_chunks = re.split(r'\n(?=\s*- name:)', '\n' + body)
+        proxy_chunks = [c.rstrip() for c in proxy_chunks if c.strip()]
+        def fix_chunk(c):
+            ls = c.split('\n')
+            body_ls = [l for l in ls[1:] if l.strip() and not l.lstrip().startswith('#')]
+            if body_ls:
+                want = len(body_ls[0]) - len(body_ls[0].lstrip()) - 2
+                if want >= 0:
+                    ls[0] = ' ' * want + ls[0].lstrip()
+            return '\n'.join(ls)
+        proxy_chunks = [fix_chunk(c) for c in proxy_chunks]
+        def get_proxy_name(chunk):
+            m = re.search(r'^\s*- name:\s*([^\n]+)', chunk)
+            return m.group(1).strip() if m else ''
+        sorted_chunks = sorted(proxy_chunks, key=get_proxy_name)
+        sorted_body = '\n'.join(sorted_chunks) + '\n'
+        new_text = text[:match.start()] + header + sorted_body + text[match.end():]
+        with open(fpath, 'w', encoding='utf-8') as f:
+            f.write(new_text)
+    except Exception:
+        pass
+
+for p in sys.argv[1:]:
+    sort_proxies_in_file(p)
+" "$MIHOMO_NODES_FILE" "$MIHOMO_FULL_FILE" 2>/dev/null || true
+  fi
+}
+
+sort_client_configs
+
+chown "$(stat -c '%u:%g' "$USER_HOME")" \
+  "$USER_HOME/client-config.txt" \
+  "$V2RAYN_TUN_FILE" \
+  "$MIHOMO_FULL_FILE" \
+  "$MIHOMO_NODES_FILE" 2>/dev/null || true
+
+chmod 600 \
+  "$USER_HOME/client-config.txt" \
+  "$V2RAYN_TUN_FILE" \
+  "$MIHOMO_FULL_FILE" \
+  "$MIHOMO_NODES_FILE" 2>/dev/null || true
+}
+# xh-render-end
+
+render_client_configs
+
+# 备用节点库：所有 FEATURE 都开时的完整产物。
+# 先渲染到 all.new，检查 6 条备用节点都在，再整体换到 all/；失败时保留旧库，错误写进日志，不吞掉。
+rm -rf /etc/xhttp-cdn/all.new
+mkdir -p /etc/xhttp-cdn/all.new
+if (
+  set -e
+  USER_HOME=/etc/xhttp-cdn/all.new
+  FEATURE_TLS_PQ_XHTTP=true FEATURE_TLS_PQ_VISION=true FEATURE_REALITY_PQ_VISION=true
+  FEATURE_H3_DIRECT=true FEATURE_H2_DIRECT=true FEATURE_HY2=true FEATURE_HY2_H3=true FEATURE_HY2_OBFS=true
+  FEATURE_CDN_H2=true FEATURE_CDN_H3=true FEATURE_PORT_HOPPING=false
+  FEATURE_REALITY_UP_CDN_DOWN=true FEATURE_UP_CDN_DOWN_MIHOMO=true FEATURE_CDN_UP_REALITY_DOWN=true FEATURE_REALITY_VISION=true FEATURE_REALITY_XHTTP=true
+  FEATURE_MASQUE=true
+  info() { :; }; warn() { :; }
+  render_client_configs
+) >"${STATE_DIR}/all-render.log" 2>&1 \
+  && for _n in VLESS-TLS+PQ+XHTTP+CDN VLESS-REALITY+PQ+Vision VLESS-XHTTP-CDN-H2 VLESS-XHTTP-CDN-H3 VLESS-XHTTP-Direct-H2 Hysteria2-H3-Direct Hysteria2-TLS-BBR-Salamander VLESS-Reality-Vision-Direct VLESS-Reality-XHTTP-Direct VLESS-Reality-Up-CDN-Down VLESS-CDN-Up-Reality-Down MASQUE-CONNECT-IP; do
+       grep -q "${_n}" /etc/xhttp-cdn/all.new/client-config.txt || { echo "备用节点库缺少 ${_n}" >> "${STATE_DIR}/all-render.log"; false; }
+     done; then
+  # 保留旧库里的服务端入站文本（由 09 写入），换入新渲染的客户端文件
+  cp -a /etc/xhttp-cdn/all/inbound-*.json /etc/xhttp-cdn/all.new/ 2>/dev/null || true
+  rm -rf /etc/xhttp-cdn/all.old
+  [[ -d /etc/xhttp-cdn/all ]] && mv /etc/xhttp-cdn/all /etc/xhttp-cdn/all.old
+  mv /etc/xhttp-cdn/all.new /etc/xhttp-cdn/all
+  rm -rf /etc/xhttp-cdn/all.old
+  chmod 700 /etc/xhttp-cdn/all
+  chmod 600 /etc/xhttp-cdn/all/* 2>/dev/null || true
+else
+  rm -rf /etc/xhttp-cdn/all.new
+  warn "备用节点库生成失败（不影响当前节点；xh 的备用节点开关可能不可用）。原因见 ${STATE_DIR}/all-render.log"
+fi

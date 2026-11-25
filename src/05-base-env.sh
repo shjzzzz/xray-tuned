@@ -1,0 +1,433 @@
+# ==================================================
+# 基础环境安装
+# ==================================================
+
+info "[1/7] 安装基础环境"
+
+pkg_update
+
+if [[ "$OS_ID" == "alpine" ]]; then
+  pkg_install bash ca-certificates
+  update-ca-certificates >/dev/null 2>&1 || true
+fi
+
+command -v curl    >/dev/null 2>&1 || pkg_install curl
+command -v sudo    >/dev/null 2>&1 || pkg_install sudo
+command -v socat   >/dev/null 2>&1 || pkg_install socat
+command -v wget    >/dev/null 2>&1 || pkg_install wget
+command -v tar     >/dev/null 2>&1 || pkg_install tar
+command -v curl    >/dev/null 2>&1 || pkg_install curl
+command -v openssl >/dev/null 2>&1 || pkg_install openssl
+command -v python3 >/dev/null 2>&1 || pkg_install python3 || warn "python3 安装失败，部分 xh 管理命令将不可用"
+python3 -c "import yaml" >/dev/null 2>&1 || pkg_install python3-yaml || pkg_install python3-pyyaml || true
+command -v file    >/dev/null 2>&1 || pkg_install file
+command -v iptables >/dev/null 2>&1 || pkg_install iptables || true
+command -v ip6tables >/dev/null 2>&1 || pkg_install iptables || true
+command -v ss >/dev/null 2>&1 || pkg_install iproute2 || true
+# Debian/Ubuntu 默认无 iptables 持久化，重启后 QDoS 规则会丢
+if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" ]] && ! command -v netfilter-persistent >/dev/null 2>&1; then
+  echo "iptables-persistent iptables-persistent/autosave_v4 boolean false" | debconf-set-selections 2>/dev/null || true
+  echo "iptables-persistent iptables-persistent/autosave_v6 boolean false" | debconf-set-selections 2>/dev/null || true
+  pkg_install iptables-persistent || mkdir -p /etc/iptables
+fi
+
+# ---------- 平台识别（v4.9.56）：ARM / AMD(x86_64) 与云厂商、内存档位自动选默认 ----------
+# 云厂商：读 DMI（无需联网、无需凭据）；识别不了就是 other。
+platform_cloud() {
+  local asset sysv prod
+  asset=$(cat /sys/class/dmi/id/chassis_asset_tag 2>/dev/null || true)
+  sysv=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || true)
+  prod=$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)
+  case "$asset $sysv $prod" in
+    *OracleCloud*|*"Oracle Cloud"*) echo oracle ;;
+    *Amazon*)                       echo aws ;;
+    *Google*)                       echo gcp ;;
+    *Microsoft*)                    echo azure ;;
+    *Alibaba*)                      echo aliyun ;;
+    *DigitalOcean*)                 echo digitalocean ;;
+    *Vultr*)                        echo vultr ;;
+    *) echo other ;;
+  esac
+}
+
+platform_profile() {
+  local arch model cores mem virt cloud lowmem=0
+  arch=$(uname -m)
+  model=$(awk -F': *' '/^(model name|Model name|Hardware|Processor)/{print $2; exit}' /proc/cpuinfo 2>/dev/null)
+  [[ -n "$model" ]] || model=$(lscpu 2>/dev/null | awk -F': *' '/Model name/{print $2; exit}')
+  [[ -n "$model" ]] || model="未知"
+  cores=$(nproc 2>/dev/null || echo 1)
+  mem=$(awk '/^MemTotal:/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)
+  virt=$(systemd-detect-virt 2>/dev/null || echo 未知)
+  cloud=$(platform_cloud)
+  PLATFORM_CLOUD="$cloud"
+  [[ "$mem" -gt 0 && "$mem" -lt 1536 ]] && lowmem=1
+  PLATFORM_LOWMEM="$lowmem"
+  info "平台识别：${arch} (${model})，${cores} 核 / ${mem} MB 内存，内核 $(uname -r)，虚拟化 ${virt}，云厂商 ${cloud}"
+  # 小内存机（< 1.5GB，如 Oracle 免费 AMD 1GB）：TCP Brutal 要现场编译内核模块，既占内存又拖慢安装，默认不装；
+  # 用户显式传 FEATURE_BRUTAL=true 仍然尊重。
+  if [[ "$lowmem" == 1 && -z "${FEATURE_BRUTAL_EXPLICIT:-}" ]]; then
+    FEATURE_BRUTAL=false
+    info "内存 ${mem} MB < 1536 MB：默认不安装 TCP Brutal（需要时 FEATURE_BRUTAL=true，或之后 xh brutal on）"
+  fi
+  if [[ "$lowmem" == 1 ]] && ! swapon --show --noheadings 2>/dev/null | grep -q .; then
+    warn "内存只有 ${mem} MB 且没有 swap：xray + nginx 同时运行可能被 OOM 杀进程，建议加 1GB swap（fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile）"
+  fi
+}
+
+# 必需命令自检：缺了 python3 会让 xh minversion / ech / block / timediff 等管理命令静默失效。
+check_required_cmds() {
+  local c miss=""
+  for c in curl openssl python3 iptables; do command -v "$c" >/dev/null 2>&1 || miss="$miss $c"; done
+  [[ -z "$miss" ]] || warn "缺少必需命令：${miss} —— 部分 xh 管理命令会失效，请手动安装（apt install -y${miss}）"
+  return 0
+}
+
+platform_profile
+check_required_cmds
+if ! command -v qrencode >/dev/null 2>&1; then
+  info "安装二维码工具 qrencode..."
+  if [[ "$OS_ID" == "alpine" ]]; then
+    pkg_install libqrencode-tools || warn "qrencode 安装失败，将跳过二维码输出"
+  else
+    pkg_install qrencode || warn "qrencode 安装失败，将跳过二维码输出"
+  fi
+fi
+
+if ! command -v crontab >/dev/null 2>&1; then
+  case "$OS_ID" in
+    debian|ubuntu|opensuse*|sles)
+      pkg_install cron
+      ;;
+    centos|rhel|almalinux|rocky|ol|amzn|fedora|alpine)
+      pkg_install cronie
+      if [[ "$SERVICE_TYPE" == "openrc" ]]; then
+        rc-update add crond default >/dev/null 2>&1 || true
+        rc-service crond start >/dev/null 2>&1 || true
+      else
+        systemctl enable --now crond 2>/dev/null || true
+      fi
+      ;;
+  esac
+fi
+
+info "安装 Xray..."
+install_xray
+export PATH="/usr/local/bin:$PATH"
+
+ensure_firewall_ports() {
+  local port
+  local default_ports=(80 443 8443 8445 8446 8447 10489 18793 23106 27295 28443)
+  [[ -n "${H3_PORT:-}" ]] && default_ports+=("$H3_PORT")
+  [[ -n "${H2_PORT:-}" ]] && default_ports+=("$H2_PORT")
+  [[ -n "${HY2_H3_PORT:-}" ]] && default_ports+=("$HY2_H3_PORT")
+  [[ -n "${HY2_PORT:-}" ]] && default_ports+=("$HY2_PORT")
+  [[ -n "${MASQUE_PORT:-}" ]] && default_ports+=("$MASQUE_PORT")
+
+  if command -v iptables >/dev/null 2>&1; then
+    for port in "${default_ports[@]}"; do
+      iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
+      iptables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p udp --dport "$port" -j ACCEPT 2>/dev/null || true
+    done
+    for port in 10800:10809 11801:11806; do
+      iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
+      iptables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p udp --dport "$port" -j ACCEPT 2>/dev/null || true
+    done
+    # QDoS (QUIC Denial of Service / UDP Flooding) 防护: 针对 Hysteria2 端口 (动态端口及备用端口)
+    for port in 8446 "${HY2_PORT:-}" "${HY2_H3_PORT:-}"; do
+      [[ -n "$port" ]] || continue
+      iptables -C INPUT -p udp --dport "$port" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+        iptables -I INPUT 1 -p udp --dport "$port" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+      iptables -C INPUT -p udp --dport "$port" -m conntrack --ctstate INVALID -j DROP 2>/dev/null || \
+        iptables -I INPUT 2 -p udp --dport "$port" -m conntrack --ctstate INVALID -j DROP 2>/dev/null || true
+      iptables -C INPUT -p udp --dport "$port" -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name "hy_qdos_${port}" -j DROP 2>/dev/null || \
+        iptables -I INPUT 3 -p udp --dport "$port" -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name "hy_qdos_${port}" -j DROP 2>/dev/null || true
+    done
+    # Hysteria2-H3（UDP 443）不加 salamander，未认证者可以完成 QUIC 握手，同样套上握手限速
+    if [[ "${FEATURE_HY2_H3:-false}" == true ]]; then
+      iptables -C INPUT -p udp --dport 443 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+        iptables -I INPUT 1 -p udp --dport 443 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+      iptables -C INPUT -p udp --dport 443 -m conntrack --ctstate INVALID -j DROP 2>/dev/null || \
+        iptables -I INPUT 2 -p udp --dport 443 -m conntrack --ctstate INVALID -j DROP 2>/dev/null || true
+      iptables -C INPUT -p udp --dport 443 -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name hy_qdos_443 -j DROP 2>/dev/null || \
+        iptables -I INPUT 3 -p udp --dport 443 -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name hy_qdos_443 -j DROP 2>/dev/null || true
+    fi
+  fi
+  if command -v ip6tables >/dev/null 2>&1; then
+    for port in "${default_ports[@]}"; do
+      ip6tables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || ip6tables -I INPUT 1 -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
+      ip6tables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || ip6tables -I INPUT 1 -p udp --dport "$port" -j ACCEPT 2>/dev/null || true
+    done
+    for port in 10800:10809 11801:11806; do
+      ip6tables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || ip6tables -I INPUT 1 -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
+      ip6tables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || ip6tables -I INPUT 1 -p udp --dport "$port" -j ACCEPT 2>/dev/null || true
+    done
+    for port in 8446 "${HY2_PORT:-}" "${HY2_H3_PORT:-}"; do
+      [[ -n "$port" ]] || continue
+      ip6tables -C INPUT -p udp --dport "$port" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+        ip6tables -I INPUT 1 -p udp --dport "$port" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+      ip6tables -C INPUT -p udp --dport "$port" -m conntrack --ctstate INVALID -j DROP 2>/dev/null || \
+        ip6tables -I INPUT 2 -p udp --dport "$port" -m conntrack --ctstate INVALID -j DROP 2>/dev/null || true
+      ip6tables -C INPUT -p udp --dport "$port" -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name "hy6_qdos_${port}" -j DROP 2>/dev/null || \
+        ip6tables -I INPUT 3 -p udp --dport "$port" -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name "hy6_qdos_${port}" -j DROP 2>/dev/null || true
+    done
+    if [[ "${FEATURE_HY2_H3:-false}" == true ]]; then
+      ip6tables -C INPUT -p udp --dport 443 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+        ip6tables -I INPUT 1 -p udp --dport 443 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+      ip6tables -C INPUT -p udp --dport 443 -m conntrack --ctstate INVALID -j DROP 2>/dev/null || \
+        ip6tables -I INPUT 2 -p udp --dport 443 -m conntrack --ctstate INVALID -j DROP 2>/dev/null || true
+      ip6tables -C INPUT -p udp --dport 443 -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name hy6_qdos_443 -j DROP 2>/dev/null || \
+        ip6tables -I INPUT 3 -p udp --dport 443 -m conntrack --ctstate NEW -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name hy6_qdos_443 -j DROP 2>/dev/null || true
+    fi
+  fi
+  if command -v ufw >/dev/null 2>&1 && LC_ALL=C ufw status 2>/dev/null | grep -q "^Status: active"; then
+    for port in "${default_ports[@]}"; do
+      ufw allow "$port/tcp" >/dev/null 2>&1 || true
+      ufw allow "$port/udp" >/dev/null 2>&1 || true
+    done
+    for port in "10800:10809" "11801:11806"; do
+      ufw allow "$port/tcp" >/dev/null 2>&1 || true
+      ufw allow "$port/udp" >/dev/null 2>&1 || true
+    done
+  fi
+  if command -v netfilter-persistent >/dev/null 2>&1; then
+    netfilter-persistent save >/dev/null 2>&1 || true
+  elif [[ -x "$(command -v iptables-save 2>/dev/null)" ]] && [[ -d /etc/iptables ]]; then
+    iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+    ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true
+  fi
+}
+ensure_firewall_ports
+
+info "生成参数..."
+# 节点 1 的 flow：默认用兼容性最好的 xtls-rprx-vision。
+# 只有明确设置 VISION_UDP443=1 才写 -udp443（不拦截 UDP 443/QUIC）。
+# 原因：部分客户端不认识 -udp443，会把 flow 置空；而服务端 account 是 XRV 时，
+# 客户端空 flow 会被直接拒绝（Xray inbound.go: "client flow is empty"），
+# 节点不是变慢而是完全连不上，同时也失去 Splice。
+if [[ "${VISION_UDP443:-0}" == "1" ]]; then
+  VISION_FLOW="xtls-rprx-vision-udp443"
+else
+  VISION_FLOW="xtls-rprx-vision"
+fi
+# 节点名后缀控制：若用户显式传入 NODE_TAG（如 hk-oracle、oracle-vps），自动追加 -${NODE_TAG}；
+# 默认未传入或为 vps/localhost 时保持规范纯净节点命名（如 VLESS-Reality-Vision-Direct）
+HOSTNAME_TAG=$(printf '%s' "${NODE_TAG:-$(hostname -s 2>/dev/null)}" | tr -cd 'A-Za-z0-9-' | cut -c1-20)
+[[ -z "$HOSTNAME_TAG" || "$HOSTNAME_TAG" == "localhost" ]] && HOSTNAME_TAG="vps"
+if [[ -n "${NODE_TAG:-}" && "${NODE_TAG}" != "vps" && "${NODE_TAG}" != "localhost" ]]; then
+  NODE_SUFFIX="-$(printf '%s' "${NODE_TAG}" | tr -cd 'A-Za-z0-9-' | cut -c1-20)"
+else
+  NODE_SUFFIX=""
+fi
+UUID1=$(xray uuid)
+UUID2=$(xray uuid)
+KEY_OUTPUT=$(xray x25519 2>&1)
+PRIVATE_KEY=$(echo "$KEY_OUTPUT" | awk 'tolower($0) ~ /private/ { print $NF; exit }')
+PUBLIC_KEY=$(echo "$KEY_OUTPUT"  | awk 'tolower($0) ~ /public/  { print $NF; exit }')
+[[ -z "$PRIVATE_KEY" ]] && error "未能提取 Private Key，xray x25519 输出: $KEY_OUTPUT"
+[[ -z "$PUBLIC_KEY" ]] && error "未能提取 Public Key，xray x25519 输出: $KEY_OUTPUT"
+SHORT_ID="${SHORT_ID:-$(openssl rand -hex 4 2>/dev/null || echo "$UUID1" | tr -d '-' | cut -c1-8)}"
+XHTTP_PATH="${XHTTP_PATH:-/$(openssl rand -hex 4 2>/dev/null || echo "$UUID2" | tr -d '-' | cut -c1-8)}"
+
+XHTTP_PADDING_PLACEMENT="queryInHeader"
+XHTTP_PADDING_METHOD="tokenish"
+
+# ==================================================
+# 直连 UDP 节点参数（v4.0.0）
+# ==================================================
+# 与 extensions/common-nodes/00-env-utils.sh:48 的实现保持一致。主安装脚本原先
+# 没有这个函数（只在扩展里有），节点 URI 里拼未转义的密码会产生非法 URI。
+rawurlencode() {
+  local string="$1"
+  local encoded="" i char hex
+  local LC_ALL=C
+
+  for ((i = 0; i < ${#string}; i++)); do
+    char="${string:i:1}"
+    case "$char" in
+      [a-zA-Z0-9.~_-]) encoded+="$char" ;;
+      *) printf -v hex '%%%02X' "'$char"; encoded+="$hex" ;;
+    esac
+  done
+  printf '%s' "$encoded"
+}
+
+# 密码用 hex (32 字节 / 64 字符 SHA256 等效高熵值)：URL 安全，且避开 YAML 里需要引号的字符。
+# 允许用环境变量覆盖，便于重装时保持客户端配置不变。
+HY2_PASSWORD="${HY2_PASSWORD:-$(openssl rand -hex 32)}"
+OBFS_PASSWORD="${OBFS_PASSWORD:-$(openssl rand -hex 32)}"
+MASQUE_PASSWORD="${MASQUE_PASSWORD:-$(openssl rand -hex 16)}"
+
+# H3_PORT **不能用 443**（v4.0.3 修复）：
+# v4.0.0 曾按「一个 UDP 一个 TCP，协议不同不冲突」把它设成 443，那是**未经验证的假设**。
+# 实际上 Xray 的 XHTTP inbound 在 alpn=h3 下可能被静默忽略而退回 TCP
+# （XTLS/Xray-core#4391，closed as not planned；#5849 同类），一旦退回，
+# 它就与 Reality 的 TCP 443 抢同一个端口，后 bind 的那个失败 —— 表现为「Reality 不通」。
+# 用独立端口后，即使 h3 退回 TCP 也只影响它自己，不会波及主力节点。
+# 随机端口生成函数：在 10000-65000 间选取未被占用的端口
+get_random_port() {
+  local proto="${1:-udp}" port
+  while true; do
+    port=$(shuf -i 10000-65000 -n 1 2>/dev/null || awk 'BEGIN{srand(); print int(rand()*(65000-10000)+10000)}')
+    [[ "$port" != "8443" && "$port" != "8445" && "$port" != "8446" && "$port" != "8447" && "$port" != "443" && "$port" != "80" ]] || continue
+    [[ "$port" != "${H3_PORT:-}" && "$port" != "${H2_PORT:-}" && "$port" != "${HY2_H3_PORT:-}" && "$port" != "${HY2_PORT:-}" && "$port" != "${MASQUE_PORT:-}" ]] || continue
+    if [[ "$proto" == "tcp" ]]; then
+      ss -Hltn "sport = :$port" 2>/dev/null | grep -q . && continue
+    else
+      ss -Hlun "sport = :$port" 2>/dev/null | grep -q . && continue
+    fi
+    echo "$port"
+    return 0
+  done
+}
+
+H3_PORT="${H3_PORT:-8443}"
+# H2_PORT（v4.7.0）：h3-direct 的 TCP 孪生体，见 01-env.sh 的 FEATURE_H2_DIRECT。
+# 它是**真 TCP**，和 Reality 的 TCP 443 属于同一协议族，必须独立端口。
+H2_PORT="${H2_PORT:-8445}"
+# v4.9.73: Hysteria2 直连与混淆节点默认随机分配高端口，支持环境变量自定义覆盖
+HY2_H3_PORT="${HY2_H3_PORT:-$(get_random_port udp)}"
+HY2_PORT="${HY2_PORT:-$(get_random_port udp)}"
+if [[ "$HY2_H3_PORT" == "$HY2_PORT" ]]; then
+  HY2_PORT="$(get_random_port udp)"
+fi
+# v4.9.75: MASQUE 隧道节点默认动态随机分配高端口
+MASQUE_PORT="${MASQUE_PORT:-$(get_random_port udp)}"
+export MASQUE_PORT MASQUE_PASSWORD
+
+# 兜底：无论用户怎么设，都不允许与 Reality 的 TCP 443 同端口。
+if [[ "$H3_PORT" == "443" ]]; then
+  warn "H3_PORT=443 会与 Reality 抢占 TCP 443（见 Xray#4391），已改用 8443"
+  H3_PORT=8443
+fi
+if [[ "$H2_PORT" == "443" ]]; then
+  warn "H2_PORT=443 会与 Reality 抢占 TCP 443，已改用 8445"
+  H2_PORT=8445
+fi
+# H2 是 TCP、H3/HY2 是 UDP，端口号相同在内核层面不冲突，但会让排障和安全组
+# 规则变得难以分辨，因此仍然要求三者互不相同。
+if [[ "$H2_PORT" == "$H3_PORT" || "$H2_PORT" == "$HY2_PORT" || "$H2_PORT" == "$HY2_H3_PORT" ]]; then
+  warn "H2_PORT=${H2_PORT} 与 UDP 端口重复，已改用 8445"
+  H2_PORT=8445
+fi
+
+# 顺序不能调换，三者依次收窄「哪些新节点真的可用」：
+#   1. 版本闸门   —— 内核 <26.3.27 时关掉两个新节点
+#   2. 旧组件迁移 —— 停用独立 hysteria / nginx quic 段，把 UDP 端口腾出来
+#   3. 端口复查   —— 迁移后仍被占用的，对应节点自动关闭（不中止安装）
+require_xray_version_for_udp
+migrate_legacy_udp_components
+check_udp_port_conflict
+ensure_firewall_ports
+
+if [[ "$XRAY_DEFAULTS" == true ]]; then
+  # 即使在默认模式下，也必须显式声明 scStreamUpServerSecs=300-600 与缓冲上限，
+  # 否则 Xray 内核默认 20-80 秒强制切断 stream-up 上行流，导致 Reality-XHTTP 周期性断流卡顿。
+  XRAY_XHTTP_PADDING_JSON=$(cat <<EOF
+,
+                    "scStreamUpServerSecs": "300-600",
+                    "scMaxEachPostBytes": 100000000,
+                    "scMaxBufferedPosts": 100,
+                    "extra": {
+                        "scMaxBufferedPosts": 100,
+                        "scMaxEachPostBytes": 100000000,
+                        "scStreamUpServerSecs": "300-600"
+                    }
+EOF
+)
+elif [[ "$FEATURE_XPADDING" == true ]]; then
+  XRAY_XHTTP_PADDING_JSON=$(cat <<EOF
+,
+                    "xPaddingBytes": "100-1000",
+                    "xPaddingObfsMode": true,
+                    "xPaddingKey": "${XHTTP_PADDING_KEY}",
+                    "xPaddingHeader": "${XHTTP_PADDING_HEADER}",
+                    "xPaddingPlacement": "${XHTTP_PADDING_PLACEMENT}",
+                    "xPaddingMethod": "${XHTTP_PADDING_METHOD}",
+                    "scStreamUpServerSecs": "300-600",
+                    "scMaxEachPostBytes": 100000000,
+                    "scMaxBufferedPosts": 100
+EOF
+)
+else
+  XRAY_XHTTP_PADDING_JSON=$(cat <<EOF
+,
+                    "xPaddingBytes": "100-1000",
+                    "scStreamUpServerSecs": "300-600",
+                    "scMaxEachPostBytes": 100000000,
+                    "scMaxBufferedPosts": 100
+EOF
+)
+fi
+
+if [[ "$CDN_ECH_ENABLED" == true ]]; then
+  CDN_ECH_QUERY_ENC=$(echo "$CDN_ECH_QUERY" | sed -e 's/%/%25/g' -e 's/+/%2B/g' -e 's/:/%3A/g' -e 's/\//%2F/g')
+fi
+
+if [[ "${FEATURE_XHTTP_VLESSENC:-false}" == true ]]; then
+  info "生成 VLESS Encryption 密钥 (X25519 认证，临时密钥交换保持后量子 ML-KEM-768)..."
+  if VLESSENC_OUTPUT=$(xray vlessenc 2>&1) && grep -qi "encryption" <<< "$VLESSENC_OUTPUT"; then
+    VLESSENC_ENCRYPTION=$(echo "$VLESSENC_OUTPUT" | awk -F'"' '/Authentication: X25519/{found=1} found && /"encryption"/{print $4; exit}')
+    VLESSENC_DECRYPTION=$(echo "$VLESSENC_OUTPUT" | awk -F'"' '/Authentication: X25519/{found=1} found && /"decryption"/{print $4; exit}')
+  fi
+  XHTTP_ENCRYPTION="${VLESSENC_ENCRYPTION:-none}"
+  XHTTP_DECRYPTION="${VLESSENC_DECRYPTION:-none}"
+else
+  info "配置 VLESS Encryption (设为 none，保证客户端全平台防 -1 兼容)..."
+  VLESSENC_ENCRYPTION="none"
+  VLESSENC_DECRYPTION="none"
+  XHTTP_ENCRYPTION="none"
+  XHTTP_DECRYPTION="none"
+fi
+SR_DECRYPTION="${SR_DECRYPTION:-none}"
+[[ "${FEATURE_XHTTP_VLESSENC_STRICT:-false}" == true ]] && SR_DECRYPTION="$XHTTP_DECRYPTION"
+if [[ "$IP_CHOICE" == "2" ]]; then
+  VPS_IP=""
+  for _u in ip.sb api6.ipify.org icanhazip.com; do
+    VPS_IP=$(curl -6 -fsS --max-time 5 "$_u" 2>/dev/null | tr -d '[:space:]') || VPS_IP=""
+    [[ "$VPS_IP" =~ ^[0-9a-fA-F:]+$ ]] && break
+    VPS_IP=""
+  done
+  [[ -z "$VPS_IP" ]] && error "无法获取 IPv6 地址"
+  [[ "$VPS_IP" =~ ^[0-9a-fA-F:]+$ ]] || error "获取到的 IPv6 地址格式无效"
+  VPS_IP_URI="[${VPS_IP}]"
+else
+  VPS_IP=""
+  for _u in ip.sb api.ipify.org ifconfig.me icanhazip.com; do
+    VPS_IP=$(curl -4 -fsS --max-time 5 "$_u" 2>/dev/null | tr -d '[:space:]') || VPS_IP=""
+    [[ "$VPS_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && break
+    VPS_IP=""
+  done
+  [[ -z "$VPS_IP" ]] && error "无法获取 IPv4 地址"
+  [[ "$VPS_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || error "获取到的 IPv4 地址格式无效"
+  VPS_IP_URI="${VPS_IP}"
+fi
+
+check_domain_resolutions() {
+  local reality_resolved cdn_resolved
+  if [[ "$IP_CHOICE" == "2" ]]; then
+    reality_resolved=$(getent ahostsv6 "$REALITY_DOMAIN" 2>/dev/null | awk '{print $1; exit}' || true)
+    cdn_resolved=$(getent ahostsv6 "$CDN_DOMAIN" 2>/dev/null | awk '{print $1; exit}' || true)
+  else
+    reality_resolved=$(getent ahostsv4 "$REALITY_DOMAIN" 2>/dev/null | awk '{print $1; exit}' || true)
+    cdn_resolved=$(getent ahostsv4 "$CDN_DOMAIN" 2>/dev/null | awk '{print $1; exit}' || true)
+  fi
+
+  if [[ -n "$reality_resolved" && -n "$cdn_resolved" && -n "$VPS_IP" ]]; then
+    if [[ "$reality_resolved" != "$VPS_IP" && "$cdn_resolved" == "$VPS_IP" ]]; then
+      warn "检测到 REALITY_DOMAIN (${REALITY_DOMAIN}) 解析到 ${reality_resolved} (非本机 IP)，而 CDN_DOMAIN (${CDN_DOMAIN}) 直连本机 IP (${VPS_IP})！"
+      warn "这通常表明 REALITY_DOMAIN 与 CDN_DOMAIN 参数填写颠倒，请确认是否需要对调。"
+    fi
+  fi
+}
+check_domain_resolutions
+
+info "UUID1 (Vision): $UUID1"
+info "UUID2 (XHTTP):  $UUID2"
+info "Private Key:    $PRIVATE_KEY"
+info "Public Key:     $PUBLIC_KEY"
+info "Short ID:       $SHORT_ID"
+info "Path:           $XHTTP_PATH"
+info "VPS IP:         $VPS_IP"
+info "VLESS Enc:      已启用 (防 CDN 中间人)"
+echo ""

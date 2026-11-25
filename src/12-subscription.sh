@@ -1,0 +1,215 @@
+# ==================================================
+# 订阅文件与二维码输出
+# ==================================================
+
+SUB_TOKEN_FILE="/etc/xhttp-cdn/sub_token"
+install -d -m 700 /etc/xhttp-cdn
+if [[ -f "$SUB_TOKEN_FILE" ]]; then
+  SUB_TOKEN=$(tr -d '\r\n' < "$SUB_TOKEN_FILE")
+else
+  SUB_TOKEN=$(openssl rand -hex 16)
+  echo "$SUB_TOKEN" > "$SUB_TOKEN_FILE"
+  chmod 600 "$SUB_TOKEN_FILE"
+fi
+
+SUB_DIR="/usr/local/nginx/html/sub/${SUB_TOKEN}"
+install -d -m 755 "$SUB_DIR"
+cp "$USER_HOME/client-config.txt" "$SUB_DIR/v2rayn-raw.txt"
+base64 "$USER_HOME/client-config.txt" | tr -d '\n' > "$SUB_DIR/v2rayn.txt"
+# 按客户端平台生成 TUN 自适应的 Mihomo 完整分流配置（mihomo-full-<平台>.yaml）。
+# 基础文件的 tun 段 strict-route: false、stack: mixed；各平台只改确有区别的字段：
+#   windows：strict-route 开（防止 DNS 经物理网卡泄漏，Wintun 支持）
+#   linux  ：strict-route + auto-redirect 开（nftables 重定向，TCP 不再进用户态协议栈，更省 CPU）
+#   macos / android：保持基础值（macOS 不支持 strict-route，Android 由 VpnService 接管路由）
+# 用法：mihomo_tun_variants <基础 yaml> <输出目录>
+mihomo_tun_variants() {
+  local src="$1" outdir="$2" p
+  [[ -s "$src" ]] || return 0
+  for p in windows linux macos android; do
+    case "$p" in
+      windows) sed 's/^  strict-route: false$/  strict-route: true/' "$src" > "${outdir}/mihomo-full-${p}.yaml" ;;
+      linux)   sed -e 's/^  strict-route: false$/  strict-route: true\n  auto-redirect: true/' "$src" > "${outdir}/mihomo-full-${p}.yaml" ;;
+      *)       cp "$src" "${outdir}/mihomo-full-${p}.yaml" ;;
+    esac
+  done
+}
+
+# 由 client-config.txt 生成 Xray 原生 TUN 客户端配置（Xray-core >= 26.9.30）：xray-tun-{windows,linux,macos}.json
+# 用法：xray_tun_variants <client-config.txt> <输出目录>
+xray_tun_variants() {
+  local src="$1" outdir="$2"
+  [[ -s "$src" ]] || return 0
+  python3 - "$src" "$outdir" "${REALITY_DOMAIN:-}" "${CDN_DOMAIN:-}" "${VPS_IP:-}" "${BESTCF_DOMAIN:-}" <<'XTUNPY' || warn "Xray TUN 配置生成失败（不影响其它订阅）"
+@@include templates/xray-tun-gen.py.tmpl
+XTUNPY
+}
+
+cp "$USER_HOME/client-config-mihomo-full.yaml" "$SUB_DIR/mihomo-full.yaml"
+mihomo_tun_variants "$USER_HOME/client-config-mihomo-full.yaml" "$SUB_DIR"
+xray_tun_variants "$USER_HOME/client-config.txt" "$SUB_DIR"
+cp "$USER_HOME/client-config-mihomo-nodes.yaml" "$SUB_DIR/mihomo-nodes.yaml"
+
+# Shadowrocket 专属订阅（包含小火箭完全兼容的 REALITY、Hy2、XHTTP 与 CDN 节点）
+python3 - "$USER_HOME/client-config.txt" "$SUB_DIR/shadowrocket-raw.txt" <<'SRPY'
+import sys, urllib.parse
+
+src, dst = sys.argv[1], sys.argv[2]
+try:
+    with open(src, "r", encoding="utf-8") as f:
+        lines = [l.strip() for l in f if l.strip()]
+except Exception:
+    sys.exit(0)
+
+sr_lines = []
+for line in lines:
+    p = urllib.parse.urlparse(line)
+    tag = urllib.parse.unquote(p.fragment or "")
+    qs = urllib.parse.parse_qs(p.query)
+    q = lambda k, d="": qs.get(k, [d])[0]
+
+    if p.scheme == "hysteria2":
+        clean_qs = {k: v[0] for k, v in qs.items() if k not in ("fm", "udp")}
+        new_q = urllib.parse.urlencode(clean_qs)
+        sr_lines.append(f"{p.scheme}://{p.netloc}{p.path}?{new_q}#{tag}")
+    elif p.scheme == "vless":
+        sec = q("security", "none")
+        net = q("type", "tcp")
+        if net == "raw": net = "tcp"
+        uid = p.username or ""
+        host = p.hostname or ""
+        port = p.port or 443
+        sni = q("sni")
+        fp = q("fp", "chrome")
+        path = q("path")
+        pbk = q("pbk")
+        sid = q("sid")
+        host_hdr = q("host")
+
+        if "downloadSettings" in line:
+            if "Reality-Up" in tag:
+                sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=reality&sni={sni}&fp={fp}&alpn=h2&pbk={pbk}&sid={sid}&type=xhttp&path={path}&mode=stream-up&tfo=1#{tag}-Direct")
+            elif "CDN-Up" in tag:
+                sr_lines.append(f"vless://{uid}@{host}:{port}?encryption=none&security=tls&sni={sni}&fp={fp}&alpn=h2&type=xhttp&host={host_hdr}&path={path}&mode=auto#{tag}-CDN")
+        else:
+            clean_qs = {
+                "encryption": q("encryption", "none"),
+                "security": sec,
+                "sni": sni,
+                "fp": fp,
+                "type": net
+            }
+            if q("flow"): clean_qs["flow"] = q("flow")
+            if q("alpn"): clean_qs["alpn"] = q("alpn")
+            if pbk: clean_qs["pbk"] = pbk
+            if sid: clean_qs["sid"] = sid
+            if host_hdr: clean_qs["host"] = host_hdr
+            if path: clean_qs["path"] = path
+            is_cdn = ("CDN" in tag or "-CDN-" in tag or "PQ+XHTTP+CDN" in tag or "XHTTP-CDN" in tag) and "Reality-Up" not in tag
+            if net == "xhttp":
+                clean_qs["mode"] = "auto" if is_cdn else q("mode", "stream-up")
+            if "h3" in clean_qs.get("alpn", ""):
+                if port == 443 or is_cdn:
+                    clean_qs["alpn"] = "h2"
+            elif not is_cdn:
+                clean_qs["tfo"] = "1"
+            new_q = urllib.parse.urlencode(clean_qs)
+            sr_lines.append(f"vless://{uid}@{host}:{port}?{new_q}#{tag}")
+
+with open(dst, "w", encoding="utf-8") as f:
+    for s in sr_lines:
+        f.write(s + "\n")
+SRPY
+if [[ -s "$SUB_DIR/shadowrocket-raw.txt" ]]; then
+  base64 "$SUB_DIR/shadowrocket-raw.txt" | tr -d '\n' > "$SUB_DIR/shadowrocket.txt"
+fi
+
+# v2rayN TUN 订阅：v4.9.76 起包含全部节点，不再排除 CDN 节点。
+# 旧规则（排除名字带 -CDN- 的节点）是为旧版 TUN 的 UDP 53 DNS 丢包写的；Xray 26.9.x 的 autoOutboundsInterface
+# 已把 Xray 自己发出的流量绑到物理网卡，不再回环。TUN 下仍需把 CDN 域名与服务器 IP 设为直连，见 client-config-v2rayn-tun.txt。
+# 没在 v2rayN 上实测：若 TUN 下 CDN 节点出现 DNS 超时，把 CDN 域名加进 v2rayN 的直连规则即可。
+cp "$USER_HOME/client-config.txt" "$SUB_DIR/v2rayn-tun-raw.txt" || true
+if [[ -s "$SUB_DIR/v2rayn-tun-raw.txt" ]]; then
+  base64 "$SUB_DIR/v2rayn-tun-raw.txt" | tr -d '\n' > "$SUB_DIR/v2rayn-tun.txt"
+fi
+
+V2RAYN_SUB_URL="https://${REALITY_DOMAIN}/sub/${SUB_TOKEN}/v2rayn.txt"
+V2RAYN_RAW_SUB_URL="https://${REALITY_DOMAIN}/sub/${SUB_TOKEN}/v2rayn-raw.txt"
+V2RAYN_TUN_SUB_URL="https://${REALITY_DOMAIN}/sub/${SUB_TOKEN}/v2rayn-tun.txt"
+SHADOWROCKET_SUB_URL="https://${REALITY_DOMAIN}/sub/${SUB_TOKEN}/shadowrocket.txt"
+MIHOMO_FULL_SUB_URL="https://${REALITY_DOMAIN}/sub/${SUB_TOKEN}/mihomo-full.yaml"
+MIHOMO_NODES_SUB_URL="https://${REALITY_DOMAIN}/sub/${SUB_TOKEN}/mihomo-nodes.yaml"
+
+V2RAYN_QR_FILE="${USER_HOME}/subscription-v2rayn.png"
+V2RAYN_TUN_QR_FILE="${USER_HOME}/subscription-v2rayn-tun.png"
+SHADOWROCKET_QR_FILE="${USER_HOME}/subscription-shadowrocket.png"
+MIHOMO_FULL_QR_FILE="${USER_HOME}/subscription-mihomo-full.png"
+MIHOMO_NODES_QR_FILE="${USER_HOME}/subscription-mihomo-nodes.png"
+SUB_LINKS_FILE="${USER_HOME}/subscription-links.txt"
+
+output_subscription_qr() {
+  local label="$1" url="$2" file="$3"
+  qrencode -o "$file" -s 8 -m 2 "$url"
+  chown "$(stat -c '%u:%g' "$USER_HOME")" "$file"
+  echo -e "${YELLOW}[+] ${label}${NC}"
+  qrencode -t ANSIUTF8 -m 1 "$url"
+}
+
+check_subscription() {
+  cmp -s "$2" <(curl -kfsS --resolve "${REALITY_DOMAIN}:443:127.0.0.1" \
+    "https://${REALITY_DOMAIN}$1") ||
+    error "订阅自检失败: $1"
+}
+
+info "验证订阅链接..."
+check_subscription "/sub/${SUB_TOKEN}/v2rayn.txt" "$SUB_DIR/v2rayn.txt"
+check_subscription "/sub/${SUB_TOKEN}/v2rayn-raw.txt" "$SUB_DIR/v2rayn-raw.txt"
+[[ -f "$SUB_DIR/shadowrocket.txt" ]] && check_subscription "/sub/${SUB_TOKEN}/shadowrocket.txt" "$SUB_DIR/shadowrocket.txt"
+[[ -f "$SUB_DIR/v2rayn-tun.txt" ]] && check_subscription "/sub/${SUB_TOKEN}/v2rayn-tun.txt" "$SUB_DIR/v2rayn-tun.txt"
+check_subscription "/sub/${SUB_TOKEN}/mihomo-full.yaml" "$SUB_DIR/mihomo-full.yaml"
+check_subscription "/sub/${SUB_TOKEN}/mihomo-nodes.yaml" "$SUB_DIR/mihomo-nodes.yaml"
+info "订阅链接自检通过"
+
+# 上面的自检用 -k 跳过证书校验（只为验证内容一致），而真实客户端会严格校验。
+# 这里额外做一次**带证书校验**的公网路径检查：iOS 客户端（Shadowrocket /
+# onexray）对证书链比 curl -k 严格得多，链不完整时表现就是"订阅拉不到节点"。
+# best-effort：失败只告警，不中断安装（可能只是本机出网受限）。
+if curl -fsS -o /dev/null --max-time 15 "${V2RAYN_SUB_URL}" 2>/dev/null; then
+  info "订阅链接证书校验通过（公网路径）"
+else
+  warn "订阅链接在**严格证书校验**下拉取失败：${V2RAYN_SUB_URL}"
+  warn "若 iOS 客户端提示订阅为空，多半就是这里——请在该设备浏览器里打开该链接确认"
+fi
+
+cat > "$SUB_LINKS_FILE" << SUBLINKEOF
+V2RayN 订阅 (base64):
+$V2RAYN_SUB_URL
+
+V2RayN TUN 模式订阅 (全部节点，含 CDN 节点):
+$V2RAYN_TUN_SUB_URL
+
+Xray 原生 TUN 配置 (Xray-core >= 26.9.30，按系统选一个文件，root / 管理员运行 xray run -c 文件)：
+${V2RAYN_TUN_SUB_URL%/v2rayn-tun.txt}/xray-tun-windows.json
+${V2RAYN_TUN_SUB_URL%/v2rayn-tun.txt}/xray-tun-linux.json
+${V2RAYN_TUN_SUB_URL%/v2rayn-tun.txt}/xray-tun-macos.json
+
+Shadowrocket 专属订阅 (仅保留完全兼容节点):
+$SHADOWROCKET_SUB_URL
+
+明文节点订阅（Shadowrocket / onexray 等对 base64 挑剔时改用这个）:
+${V2RAYN_RAW_SUB_URL}
+
+Mihomo 完整分流订阅:
+$MIHOMO_FULL_SUB_URL
+（TUN 按平台自适应：把文件名换成 mihomo-full-windows.yaml / -linux.yaml / -macos.yaml / -android.yaml）
+
+Mihomo 纯节点订阅:
+$MIHOMO_NODES_SUB_URL
+
+二维码 PNG 文件:
+V2RayN 全量: $V2RAYN_QR_FILE
+V2RayN TUN 优化: $V2RAYN_TUN_QR_FILE
+Shadowrocket 专属: $SHADOWROCKET_QR_FILE
+Mihomo 完整分流: $MIHOMO_FULL_QR_FILE
+Mihomo 纯节点: $MIHOMO_NODES_QR_FILE
+SUBLINKEOF
+chown "$(stat -c '%u:%g' "$USER_HOME")" "$SUB_LINKS_FILE"

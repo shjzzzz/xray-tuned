@@ -1,0 +1,323 @@
+user root;
+worker_processes auto;
+# 自动绑定 Nginx 工作进程到物理 CPU 核心，适配 AMD64 与 ARM64 任意核心数，避免跨核缓存抖动
+worker_cpu_affinity auto;
+# 与下面的 worker_connections 成对：只提高 worker_connections 而不抬句柄上限，
+# nginx 会报 "worker_connections exceed open file resource limit"，实际上限
+# 仍是 systemd unit 的默认值。安装期不写 systemd drop-in（那是 xh tuning on
+# 的事），所以这一行必须在配置里自己声明。
+# 取 worker_connections 的 2 倍：本项目所有连接都是代理（grpc_pass / proxy_pass），
+# 每条连接同时占用「客户端 + 上游」两个描述符，1:1 会在半数连接处触顶。
+worker_rlimit_nofile 1048576;
+
+error_log /usr/local/nginx/logs/error.log error;
+pid /run/nginx.pid;
+
+events {
+    # XHTTP 是持久长连接，每条客户端连接在 worker 里长期占位；1024 是 nginx 默认
+    # 值，并发稍高就触顶，表现为客户端 502。这是可指名的故障现象，属正确性修复
+    # 而非吞吐旋钮。
+    # 代价：连接槽按此值预分配，约 15~20 MB/worker，worker_processes auto 下
+    # 乘以核心数。小内存 VPS（< 1 GB）若觉得占用偏高，可自行调小到 8192。
+    worker_connections 65535;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    # 信任 Cloudflare IPv4 & IPv6 CIDR 列表（防止伪造 IP 头，精准还原访客真实 IP）
+    set_real_ip_from 173.245.48.0/20;
+    set_real_ip_from 103.21.244.0/22;
+    set_real_ip_from 103.22.200.0/22;
+    set_real_ip_from 103.31.4.0/22;
+    set_real_ip_from 141.101.64.0/18;
+    set_real_ip_from 108.162.192.0/18;
+    set_real_ip_from 190.93.240.0/20;
+    set_real_ip_from 188.114.96.0/20;
+    set_real_ip_from 197.234.240.0/22;
+    set_real_ip_from 198.41.128.0/17;
+    set_real_ip_from 162.158.0.0/15;
+    set_real_ip_from 104.16.0.0/13;
+    set_real_ip_from 104.24.0.0/14;
+    set_real_ip_from 172.64.0.0/13;
+    set_real_ip_from 131.0.72.0/22;
+    set_real_ip_from 2400:cb00::/32;
+    set_real_ip_from 2606:4700::/32;
+    set_real_ip_from 2803:f800::/32;
+    set_real_ip_from 2405:b500::/32;
+    set_real_ip_from 2405:8100::/32;
+    set_real_ip_from 2a06:98c0::/29;
+    set_real_ip_from 2c0f:f248::/32;
+    set_real_ip_from 127.0.0.1;
+    set_real_ip_from ::1;
+
+    # 校验 Cloudflare 专有边缘标识，防止直连 443 回落伪造 CF-Connecting-IP 绕过限速与审计
+    map \$http_cf_ray \$is_cf_traffic {
+        default 0;
+        ~.+     1;
+    }
+    map \$is_cf_traffic \$trusted_cf_connecting_ip {
+        1       \$http_cf_connecting_ip;
+        default "";
+    }
+    map \$trusted_cf_connecting_ip \$real_client_ip {
+        "~^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\$" \$trusted_cf_connecting_ip;
+        "~^[0-9a-fA-F:]+\$"                                    \$trusted_cf_connecting_ip;
+        default                                            \$remote_addr;
+    }
+    real_ip_header        CF-Connecting-IP;
+    real_ip_recursive     on;
+
+    sendfile              on;
+    open_file_cache       max=65535 inactive=60s;
+    open_file_cache_valid 120s;
+    open_file_cache_min_uses 2;
+    open_file_cache_errors on;
+    reset_timedout_connection on;
+    types_hash_max_size   4096;
+    server_names_hash_bucket_size 128;
+    server_tokens         off;
+    # 隐私：默认 access_log 会把访客 IP、订阅 token 路径和 UA 写进磁盘；各 location 单独的 off 之外，这里全局关闭
+    access_log            off;
+    tcp_nodelay           on;
+    tcp_nopush            on;
+    client_max_body_size  0;
+    client_body_buffer_size 1024k;
+    client_header_buffer_size 32k;
+    large_client_header_buffers 4 32k;
+    keepalive_timeout     300s 300s;
+    keepalive_requests    100000;
+    http2_max_concurrent_streams 2048;
+    http2_body_preread_size 512k;
+    http2_recv_buffer_size 4096k;
+    # 每个 DATA 帧默认只 8k，大流量下帧数过多；64k 减少帧头与写调用次数（带宽优先）
+    http2_chunk_size 64k;
+    # 向客户端的写缓冲：默认 2x32k，放大后单次 writev 能带走更多数据
+    output_buffers 4 256k;
+    gzip                  off;
+
+    # 基础连接超时防慢速连接攻击 (Anti-Slowloris)
+    client_body_timeout   10s;
+    client_header_timeout 10s;
+    send_timeout          10s;
+
+    # 订阅防刷与爆破频次限制 (基于真实客户端 IP)
+    limit_req_zone \$real_client_ip zone=sub_limit:10m rate=5r/s;
+
+    # 全局安全响应头注入 (Security Headers & HSTS 强制 HTTPS)
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
+    ssl_session_cache          shared:SSL:64m;
+    ssl_session_timeout        1d;
+    ssl_buffer_size            8k;
+    # TLS1.1 / 1.2 只为兼容老客户端：1.1 需要 ssl_ciphers 里的 CBC-SHA 套件与 @SECLEVEL=0 才能协商（否则服务端回
+    # protocol version 告警），@SECLEVEL=0 对整个 nginx TLS 生效。
+    # v4.9.69：session tickets 重新打开。tickets 让客户端重连时恢复会话、少传证书，并且是下面 ssl_early_data
+    # （0-RTT）与 Early-Data 头生效的前提。代价：ticket 密钥在 nginx 进程内，重启后旧 ticket 失效，前向保密弱于
+    # 关 tickets 时的完整握手。**未测速**，只是去掉重连时多余的完整握手。
+    ssl_session_tickets        on;
+    ssl_protocols              TLSv1.3 TLSv1.2 TLSv1.1;
+    ssl_ciphers                TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES256-SHA:ECDHE-RSA-AES128-SHA:@SECLEVEL=0;
+    ssl_prefer_server_ciphers  on;
+    ssl_early_data             on;
+    # TLS1.3 套件走 ssl_conf_command Ciphersuites（ssl_ciphers 只管 1.2 及以下）。
+    ssl_conf_command           Ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256;
+    # Let's Encrypt 自 2025 年起不再提供 OCSP，本项目签发的证书里没有 OCSP
+    # responder URL（openssl x509 -noout -ocsp_uri 输出为空），开着 stapling
+    # 只会让 nginx 每次启动/重载打两条 [warn]，装订不出任何东西。
+    # 写成显式 off 是表态：不是忘了开，是签发方已经没有 OCSP 了。
+    ssl_stapling               off;
+    resolver                   169.254.169.254 1.1.1.1 8.8.8.8 valid=300s ${NGINX_RESOLVER_IPV6};
+    resolver_timeout           5s;
+
+    map \$real_client_ip \$proxy_forwarded_elem {
+        ~^[0-9.]+\$        "for=\$real_client_ip";
+        ~^[0-9A-Fa-f:.]+\$ "for=\"[\$real_client_ip]\"";
+        default           "for=unknown";
+    }
+    map \$http_forwarded \$proxy_add_forwarded {
+        default "\$proxy_forwarded_elem";
+    }
+    # XHTTP 回源上游：不走 upstream 块时，nginx 为每个 POST/GET 流新建一条到
+    # 8001 的 TCP+HTTP/2 连接。packet-up 模式下上行是大量小 POST，这笔握手开销
+    # 直接落在每个包上。keepalive 让回源连接复用。
+    upstream xray_xhttp {
+        server 127.0.0.1:8001;
+        keepalive          256;
+        keepalive_requests 1000000;
+        keepalive_timeout  3600s;
+        keepalive_time     1h;
+    }
+
+    upstream xray_xhttp_sr {
+        server 127.0.0.1:8002;
+        keepalive          256;
+        keepalive_requests 1000000;
+        keepalive_timeout  3600s;
+        keepalive_time     1h;
+    }
+
+    # 默认 SSL 丢弃服务：未匹配 SNI / 直接 IP 探测在 TLS 握手阶段直接断开，防止证书/域名泄露
+    server {
+        listen       127.0.0.1:8003 ssl default_server reuseport fastopen=256 backlog=65535;
+        server_name  _;
+        ssl_reject_handshake on;
+    }
+
+    server {
+        listen       127.0.0.1:8003 ssl;
+        http2        on;
+        # >>xh-h2only
+        # 只接受 HTTP/2：HTTP/1.x 请求直接断开（nginx 无法在 ALPN 层去掉 http/1.1，只能在请求层拒绝）。
+        # /sub/ 订阅页与 /.well-known/ 例外：部分订阅客户端只会 HTTP/1.1。xh nginx h2only off 可关闭。
+        set \$h2only 1;
+        if (\$server_protocol = "HTTP/2.0") { set \$h2only 0; }
+        if (\$uri ~ "^/(sub|\.well-known)/") { set \$h2only 0; }
+        if (\$h2only) { return 444; }
+        # <<xh-h2only
+        server_name  ${REALITY_DOMAIN};
+
+        ssl_certificate /etc/ssl/private/fullchain.cer;
+        ssl_certificate_key /etc/ssl/private/private.key;
+
+        # 广播 HTTP/3 (QUIC) 支持声明，提升伪装度并引导支持 h3 的客户端
+        add_header Alt-Svc 'h3=":443"; ma=86400' always;
+
+        # 禁止访问隐藏文件及敏感配置文件
+        location ~ /\.(?!well-known) {
+            deny all;
+            access_log off;
+            log_not_found off;
+        }
+
+        location ~* \.(bak|conf|config|sql|fla|psd|ini|log|sh|env|git|svn)$ {
+            deny all;
+            access_log off;
+            log_not_found off;
+        }
+
+        location ^~ /sub/ {
+            root /usr/local/nginx/html;
+            try_files \$uri =404;
+            autoindex off;
+            limit_req zone=sub_limit burst=10 nodelay;
+            types {
+                text/plain txt ps1 sh;
+                application/yaml yaml yml;
+            }
+            default_type text/plain;
+            add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
+            add_header Profile-Update-Interval "24" always;
+            add_header Alt-Svc 'h3=":443"; ma=86400' always;
+        }
+
+        location / {
+$(nginx_fallback_config "$REALITY_DOMAIN" "$REALITY_FALLBACK_ORIGIN" "$REALITY_FALLBACK_HOST")
+        }
+    }
+
+    server {
+        listen       127.0.0.1:8003 ssl;
+        http2        on;
+        # >>xh-h2only
+        # 只接受 HTTP/2：HTTP/1.x 请求直接断开（nginx 无法在 ALPN 层去掉 http/1.1，只能在请求层拒绝）。
+        # /sub/ 订阅页与 /.well-known/ 例外：部分订阅客户端只会 HTTP/1.1。xh nginx h2only off 可关闭。
+        set \$h2only 1;
+        if (\$server_protocol = "HTTP/2.0") { set \$h2only 0; }
+        if (\$uri ~ "^/(sub|\.well-known)/") { set \$h2only 0; }
+        if (\$h2only) { return 444; }
+        # <<xh-h2only
+        server_name  ${CDN_DOMAIN};
+
+        ssl_certificate /etc/ssl/private/fullchain.cer;
+        ssl_certificate_key /etc/ssl/private/private.key;
+
+        # 禁止访问隐藏文件及敏感配置文件
+        location ~ /\.(?!well-known) {
+            deny all;
+            access_log off;
+            log_not_found off;
+        }
+
+        location ~* \.(bak|conf|config|sql|fla|psd|ini|log|sh|env|git|svn)$ {
+            deny all;
+            access_log off;
+            log_not_found off;
+        }
+
+        location ^~ /sub/ {
+            root /usr/local/nginx/html;
+            try_files \$uri =404;
+            autoindex off;
+            limit_req zone=sub_limit burst=10 nodelay;
+            types {
+                text/plain txt ps1 sh;
+                application/yaml yaml yml;
+            }
+            default_type text/plain;
+            add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
+            add_header Profile-Update-Interval "24" always;
+            add_header Alt-Svc 'h3=":443"; ma=86400' always;
+        }
+
+        location / {
+$(nginx_fallback_config "$CDN_DOMAIN" "$CDN_FALLBACK_ORIGIN" "$CDN_FALLBACK_HOST")
+        }
+
+        location ${XHTTP_PATH} {
+            grpc_pass grpc://xray_xhttp;
+            add_header Alt-Svc 'clear' always;
+            # 下行吞吐：grpc_buffer_size 调大至 1m（默认仅 4k/8k），减少 HTTP/2 切片与系统调用开销
+            grpc_buffer_size 1m;
+            # grpc_pass 不受 proxy_buffering / proxy_request_buffering 影响，无需显式关缓冲
+            # XHTTP 是长连接：Nginx 默认 60s 读写超时会直接切断上下行，必须放大；客户端超时同样放宽至 300s 避免突发慢流被掐断
+            client_body_timeout   300s;
+            send_timeout          300s;
+            grpc_socket_keepalive on;
+            grpc_read_timeout     1h;
+            grpc_send_timeout     1h;
+            grpc_connect_timeout  15s;
+            grpc_set_header Early-Data            \$ssl_early_data;
+            grpc_set_header Host                  \$host;
+            grpc_set_header X-Real-IP             \$real_client_ip;
+            grpc_set_header Forwarded             \$proxy_add_forwarded;
+            # 只传一个值：\$proxy_add_x_forwarded_for 会把本跳的 \$remote_addr
+            # （回落进来时恒为 127.0.0.1）追加到链尾，Xray 判定整条链不可信而丢弃，
+            # 每个请求打一条 [Error] ignored potentially forged "X-Forwarded-For"。
+            grpc_set_header X-Forwarded-For       \$real_client_ip;
+            grpc_set_header X-Forwarded-Proto     \$scheme;
+        }
+
+        location /sr${XHTTP_PATH#/} {
+            grpc_pass grpc://xray_xhttp_sr;
+            add_header Alt-Svc 'clear' always;
+            grpc_buffer_size 1m;
+            client_body_timeout   300s;
+            send_timeout          300s;
+            grpc_socket_keepalive on;
+            grpc_read_timeout     1h;
+            grpc_send_timeout     1h;
+            grpc_connect_timeout  15s;
+            grpc_set_header Early-Data            \$ssl_early_data;
+            grpc_set_header Host                  \$host;
+            grpc_set_header X-Real-IP             \$real_client_ip;
+            grpc_set_header Forwarded             \$proxy_add_forwarded;
+            grpc_set_header X-Forwarded-For       \$real_client_ip;
+            grpc_set_header X-Forwarded-Proto     \$scheme;
+        }
+    }
+
+    server {
+        listen  80 default_server reuseport backlog=65535;
+        server_name _;
+        return 301 https://\$host\$request_uri;
+    }
+}

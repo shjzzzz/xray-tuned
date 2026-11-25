@@ -1,0 +1,602 @@
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: info
+ipv6: true
+unified-delay: true
+tcp-concurrent: true
+
+profile:
+  store-selected: true
+  store-fake-ip: true
+
+
+# TUN 模式下节点自身流量的豁免（v1.2.3）：route-exclude-address 让发往 VPS 的
+# 包根本不进 TUN，是解决"开 TUN 后两条 UDP/h3 节点不通"最根本的一道。
+# 客户端 GUI 若自带 TUN 开关，以 GUI 的设置为准时请手动补上 route-exclude-address。
+tun:
+  enable: false
+  stack: mixed
+  auto-route: true
+  auto-detect-interface: true
+  dns-hijack:
+    - any:53
+    - tcp://any:53
+  strict-route: false
+  route-exclude-address:
+    - ${VPS_IP_CIDR}
+  udp-timeout: 300
+  mtu: 1500
+
+sniffer:
+  enable: true
+  force-dns-mapping: true
+  parse-pure-ip: true
+  override-destination: true
+  # 节点自身的 QUIC 流量绝不能被自家 sniffer 改写目标
+  skip-dst-address:
+    - ${VPS_IP_CIDR}
+  sniff:
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: true
+    TLS:
+      ports: [443, 8443]
+    QUIC:
+      ports: [443, 8443]
+
+dns:
+  enable: true
+  listen: 0.0.0.0:1053
+  ipv6: false
+  prefer-h3: false
+  respect-rules: true
+  use-system-hosts: false
+  cache-algorithm: arc
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    # 节点服务器域名必须拿到真实 IP，否则 TUN + fake-ip 下解析成 198.18.x.x 直接连不上
+    - ${REALITY_DOMAIN}
+    - ${CDN_DOMAIN}
+    - +.lan
+    - +.local
+    - +.msftconnecttest.com
+    - +.msftncsi.com
+    - localhost.ptlogin2.qq.com
+    - localhost.sec.qq.com
+    - +.in-addr.arpa
+    - +.ip6.arpa
+    - time.*.com
+    - time.*.gov
+    - pool.ntp.org
+    - localhost.work.weixin.qq.com
+  # default-nameserver 只用来解析下面 DoH 服务器的域名。原来写明文 UDP 223.5.5.5 / 1.2.4.8，会把明文 DNS 发给运营商
+  # （Linux netns 抓包确认）。现在全部用 IP 型 DoH 地址（证书对 IP 有效，已用 curl 校验），不再需要引导解析。
+  default-nameserver:
+    - https://223.5.5.5/dns-query
+    - https://1.12.12.12/dns-query
+  nameserver:
+    - https://208.67.222.222/dns-query
+    - https://77.88.8.8/dns-query
+    - https://1.1.1.1/dns-query
+    - https://8.8.4.4/dns-query
+  proxy-server-nameserver:
+    - https://223.5.5.5/dns-query
+    - https://1.12.12.12/dns-query
+  direct-nameserver:
+    - https://223.5.5.5/dns-query
+    - https://1.12.12.12/dns-query
+  nameserver-policy:
+    "geosite:private,cn":
+      - https://223.5.5.5/dns-query
+      - https://1.12.12.12/dns-query
+
+@@include templates/mihomo-proxies.yaml.tmpl
+
+proxy-groups:
+  - name: 前置代理
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    include-all: true
+    filter: ^(?!.*(官网|套餐|流量|异常|剩余)).*$
+    icon: https://fastly.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/1f9ed.svg
+
+  # 自动择优（v4.6.0 新增）：按延迟自动选路，节点变慢或失效时自动切走。
+  # 引入原因：此前所有组都是 select（纯手选），CDN 节点因运营商限速 UDP 443
+  # 而单独变慢时不会被自动规避，只能人工发现——本项目 v4.6.0 的改动正是这么被发现的。
+  # tolerance: 50   延迟差小于 50ms 不切换，避免抖动导致来回横跳。
+  # lazy: true      仅在该组被实际使用时才测速，空闲时不额外打流量。
+  # 注意：QUIC 节点（h3-direct / Hysteria2）冷启动可能超过 timeout 被判失败，
+  # 这是测速的固有特性，tolerance + max-failed-times 已尽量减少误切。
+  # 仍可在「节点选择」里手动指定具体节点，自动只是默认项。
+  - name: 自动选择
+    type: url-test
+    interval: 120
+    timeout: 5000
+    url: https://www.google.com/generate_204
+    expected-status: 204
+    lazy: true
+    tolerance: 50
+    max-failed-times: 3
+    hidden: false
+    include-all: true
+    filter: ^(?!.*(官网|套餐|流量|异常|剩余)).*$
+    icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/speed.svg
+
+  # 直连择优（url-test）：在 4 条直连节点里按实测延迟自动选，只要有更快的就切过去。
+  #
+  # v4.7.0 引入时是 fallback（按列表顺序取第一个「健康」的），v4.7.3 改掉。
+  # 原因：fallback 只判断通不通，不判断快不快。晚高峰 h3-direct 卡到 200ms、
+  # 丢包 10% 时它依然「健康」，于是一直被占用，后面的 TCP 孪生体和 Hysteria2
+  # 永远轮不到——而这恰恰是最需要切走的时刻。url-test 覆盖了这个场景，
+  # 且「UDP 被完全封锁」时它同样会切（那时 h3 直接测速失败），是 fallback 的超集。
+  #
+  # 与「自动选择」的分工：那个组 include-all（含 CDN 节点），这个组只含直连节点，
+  # 用于「我明确要走直连」的场景，两者互不替代。
+  #
+  # tolerance: 50   延迟差小于 50ms 不切，避免抖动导致来回横跳。
+  # interval  60    比其他组的 300 更短，晚高峰劣化能在 1 分钟内被发现。
+  # 逐条列节点而不用 include-all：这个组的成员必须限定为直连节点。
+  #
+  # 已知局限：url-test 测的是 generate_204 的**握手延迟**，不是吞吐也不是丢包率。
+  # Hysteria2 的优势在高丢包下的吞吐（Brutal 无视丢包硬发），这一项测不出来，
+  # 所以它在本组里通常不会被选中——真到重丢包时段仍需手动切过去。
+  - name: 直连择优
+    type: url-test
+    interval: 60
+    timeout: 5000
+    url: https://www.google.com/generate_204
+    expected-status: 204
+    lazy: true
+    tolerance: 50
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      #<<FEATURE_REALITY_PQ_VISION
+      - VLESS-REALITY+PQ+Vision${NODE_SUFFIX}
+      #>>FEATURE_REALITY_PQ_VISION
+      #<<FEATURE_H3_DIRECT
+      - VLESS-XHTTP-Direct-H3${NODE_SUFFIX}
+      #>>FEATURE_H3_DIRECT
+      #<<FEATURE_H2_DIRECT
+      - VLESS-XHTTP-Direct-H2${NODE_SUFFIX}
+      #>>FEATURE_H2_DIRECT
+      #<<FEATURE_HY2_H3
+      - Hysteria2-H3-Direct${NODE_SUFFIX}
+      #>>FEATURE_HY2_H3
+      #<<FEATURE_HY2_OBFS
+      - Hysteria2-Obfs-Direct${NODE_SUFFIX}
+      #>>FEATURE_HY2_OBFS
+      #<<FEATURE_REALITY_VISION
+      - VLESS-Reality-Vision-Direct${NODE_SUFFIX}
+      #>>FEATURE_REALITY_VISION
+    icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/speed.svg
+
+  - name: 节点选择
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - 自动选择
+      - 直连择优
+    include-all: true
+    filter: ^(?!.*(官网|套餐|流量|异常|剩余)).*$
+    icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/adjust.svg
+
+  - name: 谷歌服务
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - 节点选择
+      - 全局直连
+    include-all: true
+    icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/google.svg
+
+  - name: YouTube
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - 节点选择
+      - 全局直连
+    include-all: true
+    icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/youtube.svg
+
+  - name: Netflix
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - 节点选择
+      - 全局直连
+    include-all: true
+    icon: https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/icon/netflix.svg
+
+  - name: 电报消息
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - 节点选择
+      - 全局直连
+    include-all: true
+    icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/telegram.svg
+
+  - name: AI
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - 节点选择
+    include-all: true
+    icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/chatgpt.svg
+
+  - name: TikTok
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - 节点选择
+    include-all: true
+    icon: https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/icon/tiktok.svg
+
+  - name: 微软服务
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - 全局直连
+      - 节点选择
+    include-all: true
+    icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/microsoft.svg
+
+  - name: iCloud服务
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - 全局直连
+      - 节点选择
+    include-all: true
+    icon: https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/icon/iCloud.svg
+
+  - name: 苹果服务
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - 节点选择
+      - 全局直连
+    include-all: true
+    icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/apple.svg
+
+  - name: 动画疯
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - 节点选择
+    include-all: true
+    filter: (?i)台|tw|TW
+    icon: https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/icon/Bahamut.svg
+
+  - name: 哔哩哔哩港澳台
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - 全局直连
+      - 节点选择
+    include-all: true
+    filter: ^(?!.*(官网|套餐|流量|异常|剩余)).*$
+    icon: https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/icon/bilibili.svg
+
+  - name: Spotify
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - 节点选择
+      - 全局直连
+    include-all: true
+    icon: https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/icon/spotify.svg
+
+  - name: 广告过滤
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - REJECT
+      - DIRECT
+    icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/bug.svg
+
+  - name: 全局直连
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - DIRECT
+      - 节点选择
+    include-all: true
+    icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/link.svg
+
+  - name: 全局拦截
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - REJECT
+      - DIRECT
+    icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/block.svg
+
+  - name: 漏网之鱼
+    type: select
+    interval: 300
+    timeout: 3000
+    url: https://www.google.com/generate_204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      - 节点选择
+      - 全局直连
+    include-all: true
+    filter: ^(?!.*(官网|套餐|流量|异常|剩余)).*$
+    icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/fish.svg
+
+rule-providers:
+  reject:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt
+    path: ./ruleset/loyalsoldier/reject.yaml
+  microsoft:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/microsoft.txt
+    path: ./ruleset/loyalsoldier/microsoft.yaml
+  icloud:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/icloud.txt
+    path: ./ruleset/loyalsoldier/icloud.yaml
+  apple:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/apple.txt
+    path: ./ruleset/loyalsoldier/apple.yaml
+  google:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/google.txt
+    path: ./ruleset/loyalsoldier/google.yaml
+  proxy:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/proxy.txt
+    path: ./ruleset/loyalsoldier/proxy.yaml
+  direct:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt
+    path: ./ruleset/loyalsoldier/direct.yaml
+  private:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/private.txt
+    path: ./ruleset/loyalsoldier/private.yaml
+  gfw:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/gfw.txt
+    path: ./ruleset/loyalsoldier/gfw.yaml
+  tld-not-cn:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/tld-not-cn.txt
+    path: ./ruleset/loyalsoldier/tld-not-cn.yaml
+  telegramcidr:
+    type: http
+    behavior: ipcidr
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/telegramcidr.txt
+    path: ./ruleset/loyalsoldier/telegramcidr.yaml
+  cncidr:
+    type: http
+    behavior: ipcidr
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt
+    path: ./ruleset/loyalsoldier/cncidr.yaml
+  lancidr:
+    type: http
+    behavior: ipcidr
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt
+    path: ./ruleset/loyalsoldier/lancidr.yaml
+  applications:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/applications.txt
+    path: ./ruleset/loyalsoldier/applications.yaml
+  bahamut:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/rule/Bahamut.txt
+    path: ./ruleset/xiaolin-007/bahamut.yaml
+  YouTube:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/rule/YouTube.txt
+    path: ./ruleset/xiaolin-007/YouTube.yaml
+  Netflix:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/rule/Netflix.txt
+    path: ./ruleset/xiaolin-007/Netflix.yaml
+  Spotify:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/rule/Spotify.txt
+    path: ./ruleset/xiaolin-007/Spotify.yaml
+  BilibiliHMT:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/rule/BilibiliHMT.txt
+    path: ./ruleset/xiaolin-007/BilibiliHMT.yaml
+  AI:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/rule/AI.txt
+    path: ./ruleset/xiaolin-007/AI.yaml
+  TikTok:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/rule/TikTok.txt
+    path: ./ruleset/xiaolin-007/TikTok.yaml
+
+rules:
+  # 第一条：发往本节点服务器的流量永远直连，杜绝 TUN 下的自环
+${MIHOMO_NODE_DIRECT_RULE}
+  - DOMAIN-SUFFIX,${REALITY_DOMAIN},全局直连
+  - DOMAIN-SUFFIX,${CDN_DOMAIN},全局直连
+  - DOMAIN-SUFFIX,google.com,谷歌服务
+  - DOMAIN-SUFFIX,googleapis.cn,谷歌服务
+  - DOMAIN-SUFFIX,gstatic.com,谷歌服务
+  - DOMAIN-SUFFIX,xn--ngstr-lra8j.com,谷歌服务
+  - DOMAIN-SUFFIX,github.io,节点选择
+  - DOMAIN,v2rayse.com,节点选择
+  - RULE-SET,applications,全局直连
+  - RULE-SET,private,全局直连
+  - RULE-SET,reject,广告过滤
+  - RULE-SET,microsoft,微软服务
+  - RULE-SET,icloud,iCloud服务
+  - RULE-SET,apple,苹果服务
+  - RULE-SET,YouTube,YouTube
+  - RULE-SET,Netflix,Netflix
+  - RULE-SET,bahamut,动画疯
+  - RULE-SET,Spotify,Spotify
+  - RULE-SET,BilibiliHMT,哔哩哔哩港澳台
+  - RULE-SET,AI,AI
+  - RULE-SET,TikTok,TikTok
+  - RULE-SET,google,谷歌服务
+  - RULE-SET,proxy,节点选择
+  - RULE-SET,gfw,节点选择
+  - RULE-SET,tld-not-cn,节点选择
+  - RULE-SET,direct,全局直连
+  - RULE-SET,lancidr,全局直连,no-resolve
+  - RULE-SET,cncidr,全局直连,no-resolve
+  - RULE-SET,telegramcidr,电报消息,no-resolve
+  - GEOSITE,CN,全局直连
+  - GEOIP,LAN,全局直连,no-resolve
+  - GEOIP,CN,全局直连,no-resolve
+  - MATCH,漏网之鱼

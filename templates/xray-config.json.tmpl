@@ -1,0 +1,216 @@
+{
+    "log": {
+        "access": "none",
+        "loglevel": "error"
+    },
+    "dns": {
+        // 服务器顺序即优先级。freedom 出站的 sockopt.domainStrategy=UseIPv4 会让每个
+        // 新域名都走一次这里，所以第一位是谁直接决定每条新连接的额外延迟。
+        // 本机实测（dig +tries=1，随机不存在的子域以避开各级缓存）：
+        // 1.1.1.1 约 4ms、8.8.8.8 约 14ms、9.9.9.9 约 14ms。
+        // v4.9.48：解析耗时只在每个域名首次查询时付一次，返回的 CDN 边缘远近却决定之后每条连接的延迟。
+        // 2026-09-30 本机 32 个常用域名 × 各 3 次：比最优边缘慢 3ms 以上的，8.8.8.8 有 10 个、1.1.1.1 有 5 个、
+        // 9.9.9.10 只有 1 个（Apple / iCloud / Microsoft 等 Akamai 系差 10~50ms；8.8.8.8 带 ECS 反而选得远）；
+        // 9.9.9.10 未缓存解析 2~9ms，与 1.1.1.1 相当。9.9.9.10 是 Quad9 不做恶意域名拦截的版本。
+        // 2026-10-11：三个服务器从明文 UDP 53 改为 DoH（https+local：由 Xray 自己直连发出，不经路由）。
+        // 原来服务器上的每条域名查询都以明文发给机房网络，能被云厂商/上游看到。IP 型 DoH 地址的证书对 IP 有效（curl 已校验）。
+        // 本机实测（随机不存在子域，各 6 次中位数）：9.9.9.10 UDP 4.2ms → DoH 复用连接 6.6ms（新建连接约 14ms，只付一次）；
+        // 1.1.1.1 4.3 → 7.1ms；8.8.8.8 13.7 → 14.9ms。顺序不变。抓包确认：服务器侧不再有发往 53 端口的明文包。
+        // 2026-11-03 优化：移除高延迟 8.8.8.8 DoH（实测偶发 1s 抖动及 empty response），
+        // 首选低延迟 1.1.1.1 与 9.9.9.10 DoH，并以本机 VPC 内网 DNS 169.254.169.254 (<1ms) 与 1.1.1.1/9.9.9.10 兜底，
+        // 彻底消除 features/dns: empty response 导致的出站断流。
+        "servers": [
+            "https+local://1.1.1.1/dns-query",
+            "https+local://9.9.9.10/dns-query",
+            "169.254.169.254",
+            "1.1.1.1",
+            "9.9.9.10"
+        ],
+        "queryStrategy": "UseIPv4"
+    },
+    ${XRAY_POLICY_JSON}
+    "routing": {
+        "domainStrategy": "AsIs",
+        "rules": [
+            {
+                "type": "field",
+                "ip": [
+                    "geoip:private"
+                ],
+                "outboundTag": "block"
+            },
+            {
+                "type": "field",
+                "protocol": [
+                    "bittorrent"
+                ],
+                "outboundTag": "block"
+            },
+            {
+                "type": "field",
+                "domain": [
+                    "geosite:category-pt"
+                ],
+                "outboundTag": "block"
+            }${XRAY_BLOCK_ADS_RULE}
+        ]
+    },
+    "inbounds": [
+        {
+            "listen": "${XRAY_LISTEN}",
+            "port": 443,
+            "protocol": "vless",
+            "settings": {
+                "clients": [${REALITY_VISION_CLIENT_JSON}
+                ],
+                "decryption": "none",
+                "fallbacks": [${REALITY_XHTTP_FALLBACK_JSON}
+                ]
+            },
+            "streamSettings": {
+                "network": "raw",
+                "security": "reality",
+                "realitySettings": {
+                    "show": false,
+                    "target": "127.0.0.1:8003",
+                    "xver": 0,
+                    "serverNames": [
+                        "${REALITY_DOMAIN}",
+                        "${CDN_DOMAIN}"
+                    ],
+                    "privateKey": "${PRIVATE_KEY}",
+                    "shortIds": [
+                        "${SHORT_ID}"
+                    ]${REALITY_MAX_TIME_DIFF_JSON}${REALITY_MIN_CLIENT_VER_JSON}
+                    // minClientVer：客户端最低版本控制（默认不写，用最新 Xray 内核默认值；兼容老客户端用 xh minversion 1.8.0）。
+                    // 可通过环境变量 REALITY_MIN_CLIENT_VER 或 xh minversion 管理。
+                    // 若设为 none 或 default 则不包含该行，使用 Xray-core 内核默认版本（严格模式）。
+                }${REALITY_SOCKOPT_JSON}
+            },
+            "sniffing": {
+                "enabled": true,
+                "destOverride": ["http", "tls", "quic"],
+                "metadataOnly": false,
+                "routeOnly": false
+            }
+        },
+        {
+            "listen": "127.0.0.1",
+            "port": 8002,
+            "protocol": "vless",
+            "settings": {
+                "clients": [
+                    {
+                        "id": "${UUID2}",
+                        "level": 0
+                    }
+                ],
+                "decryption": "${SR_DECRYPTION:-none}"
+            },
+            "streamSettings": {
+                "network": "xhttp",
+                "sockopt": {
+                    "trustedXForwardedFor": ["X-Real-IP"]${XRAY_SOCKOPT_TUNE}
+                },
+                "xhttpSettings": {
+                    "host": "",
+                    "path": "/sr${XHTTP_PATH#/}",
+                    "mode": "auto"${XRAY_XHTTP_PADDING_JSON}
+                }
+            },
+            "sniffing": {
+                "enabled": true,
+                "destOverride": ["http", "tls", "quic"],
+                "metadataOnly": false,
+                "routeOnly": false
+            }
+        },
+        {
+            "listen": "127.0.0.1",
+            "port": 8001,
+            "protocol": "vless",
+            "settings": {
+                "clients": [
+                    {
+                        "id": "${UUID2}",
+                        "level": 0
+                    },
+                    {
+                        "id": "${UUID1}",
+                        "level": 0,
+                        "flow": "${VISION_FLOW:-xtls-rprx-vision}"
+                    }
+                ],
+                "decryption": "${XHTTP_DECRYPTION}"
+            },
+            "streamSettings": {
+                "network": "xhttp",
+                // 本入站只接受来自 127.0.0.1 的 Nginx 反代，nginx.conf 已通过
+                // grpc_set_header 传入 X-Real-IP / X-Forwarded-For（经 CDN 时由
+                // $http_cf_connecting_ip 取得真实客户端 IP）。不声明本项时 Xray
+                // 不信任该头，会退回使用 socket 对端地址——即 127.0.0.1，导致：
+                //   1) 所有经 CDN 的流量在日志里都记成 127.0.0.1，真实客户端 IP 丢失，
+                //      只有直连 Reality 的流量能看到真实 IP；
+                //   2) 每个请求打一条 Warning，实测占 xray 日志总量的约 50%。
+                // 注意语义：本项填的是「头名」而非 IP —— Xray 只有在请求里存在
+                // 列表中任一头名时才采信 X-Forwarded-For，并取其最左一段作为客户端 IP
+                // （见 common/protocol/http.ApplyTrustedXForwardedFor）。填 IP 永远不匹配，
+                // 结果是每个请求打一条 [Error] ignored potentially forged。
+                // 取 X-Real-IP：nginx 用 grpc_set_header 无条件覆盖该头，客户端伪造不进来；
+                // 本入站又仅监听回环，只可能由 nginx 回源到达。
+                "sockopt": {
+                    "trustedXForwardedFor": ["X-Real-IP"]${XRAY_SOCKOPT_TUNE}
+                },
+                "xhttpSettings": {
+                    "host": "",
+                    "path": "${XHTTP_PATH}",
+                    // 8001 同时服务 nginx 回源（CDN 腿）与 Reality 回落。auto 什么上传模式都收；
+                    // 写成 stream-up 会拒绝 auto / packet-up 客户端的上传 POST（实测全部不通），所以这里保持 auto。
+                    "mode": "auto"${XRAY_XHTTP_PADDING_JSON}
+                }
+            },
+            "sniffing": {
+                "enabled": true,
+                "destOverride": ["http", "tls", "quic"],
+                "metadataOnly": false,
+                "routeOnly": false
+            }
+        }${XRAY_REALITY_PQ_VISION_INBOUND}
+${XRAY_H3_DIRECT_INBOUND}
+${XRAY_H2_DIRECT_INBOUND}
+${XRAY_HY2_INBOUND}
+${XRAY_HY2_H3_INBOUND}
+${XRAY_MASQUE_INBOUND}
+${XRAY_XDRIVE_INBOUND}
+    ],
+    "outbounds": [
+        {
+            "protocol": "freedom",
+            "tag": "direct",
+            "settings": {
+                // finalRules 在「域名解析成 IP 之后」再判一次，拦住解析到
+                // 内网/云元数据地址的域名。routing 里的 ip 规则在
+                // domainStrategy=AsIs 时拿不到解析结果，两者互补，缺一不可。
+                "finalRules": [
+                    { "action": "block", "ip": ["geoip:private"] }${XRAY_BLOCK_CN_RULE}
+                ],
+                "blockDelay": "30-90"
+            },
+            "streamSettings": {
+                "sockopt": {
+                    // Xray 26.9+ 弃用 freedom.settings.domainStrategy / targetStrategy，迁移至 sockopt.domainStrategy
+                    "domainStrategy": "UseIPv4"${XRAY_FREEDOM_SOCKOPT_TUNE}
+                }
+            }
+        },
+        {
+            "protocol": "blackhole",
+            "tag": "block",
+            "settings": {
+                "response": {
+                    "type": "http"
+                }
+            }
+        }
+    ]
+}

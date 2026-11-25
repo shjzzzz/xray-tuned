@@ -1,0 +1,107 @@
+# ==================================================
+# 最终结果输出
+# ==================================================
+
+echo -e "\n${CYAN}[+] 部署完成${NC}\n"
+echo -e "${YELLOW}[+] 服务端参数${NC}"
+echo "Reality 域名:   $REALITY_DOMAIN"
+echo "CDN 域名:       $CDN_DOMAIN"
+if [[ "$FALLBACK_MODE" == "static" ]]; then
+  echo "回落方式:       本地静态页面"
+  echo "Reality 页面:   ${STATIC_SITE_DIR}/${REALITY_DOMAIN}"
+  echo "CDN 页面:       ${STATIC_SITE_DIR}/${CDN_DOMAIN}"
+else
+  echo "回落方式:       Nginx 反向代理"
+  echo "Reality 回落网站: $REALITY_FALLBACK_ORIGIN"
+  echo "CDN 回落网站:    $CDN_FALLBACK_ORIGIN"
+fi
+echo "VPS IP:         $VPS_IP"
+echo "UUID1 (Vision): $UUID1"
+echo "UUID2 (XHTTP):  $UUID2"
+echo "Public Key:     $PUBLIC_KEY"
+echo "Private Key:    $PRIVATE_KEY"
+echo "Short ID:       $SHORT_ID"
+echo "Path:           $XHTTP_PATH"
+echo "VLESS Enc(客户端): $VLESSENC_ENCRYPTION"
+echo "VLESS Dec(服务端): $VLESSENC_DECRYPTION"
+echo ""
+echo -e "${YELLOW}[+] 直连 UDP 节点${NC}"
+if [[ "$FEATURE_H3_DIRECT" == true ]]; then
+  echo "h3-direct:      UDP ${H3_PORT}（Xray 自己监听，不经 nginx）"
+else
+  echo "h3-direct:      未启用"
+fi
+if [[ "$FEATURE_H2_DIRECT" == true ]]; then
+  echo "h2-direct:      TCP ${H2_PORT}（h3-direct 的 TCP 孪生体，UDP 被封时的兜底）"
+else
+  echo "h2-direct:      未启用"
+fi
+if [[ "$FEATURE_HY2" == true ]]; then
+  if [[ "${FEATURE_HY2_H3:-false}" == true ]]; then
+    echo "Hysteria2-H3:   UDP ${HY2_H3_PORT}（无混淆，随机端口）"
+    echo "  认证密码:     ${HY2_PASSWORD}"
+  fi
+  if [[ "${FEATURE_HY2_OBFS:-false}" == true ]]; then
+    echo "Hysteria2-TLS-BBR-Salamander: UDP ${HY2_PORT}（同一认证密码）"
+    echo "  混淆:         salamander（Xray finalmask）"
+    echo "  混淆密码:     ${OBFS_PASSWORD}"
+    echo "  ※ 两个密码是独立的值，客户端 password 与 obfs-password 都要填对"
+  fi
+else
+  echo "Hysteria2:      未启用"
+fi
+# 只有开了混淆节点才提示放行混淆端口；不能用 ${VAR:+...}，值为 "false" 时它也会展开
+_HY2_OBFS_PORT_NOTE=""
+[[ "${FEATURE_HY2_OBFS:-false}" == true ]] && _HY2_OBFS_PORT_NOTE="、UDP ${HY2_PORT}"
+_REALITY_PQ_PORT_NOTE=""
+[[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]] && _REALITY_PQ_PORT_NOTE="TCP 8447、"
+if [[ "$FEATURE_H3_DIRECT" == true || "$FEATURE_HY2" == true || "$FEATURE_H2_DIRECT" == true || "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
+  echo -e "${RED}※ 直连节点需要在云厂商安全组放行 ${_REALITY_PQ_PORT_NOTE}UDP ${H3_PORT}、UDP ${HY2_H3_PORT}${_HY2_OBFS_PORT_NOTE} 与 TCP ${H2_PORT}${NC}"
+  echo "  安全组在虚拟机外面，本机 ss 显示监听正常也可能被云平台丢包。"
+fi
+if [[ "$FEATURE_CDN_ECH" == true ]]; then
+  if [[ "$CDN_ECH_ENABLED" == true ]]; then
+    echo "CDN ECH:        已开启 (${CDN_ECH_QUERY})"
+  else
+    echo "CDN ECH:        未开启"
+  fi
+fi
+echo ""
+echo -e "\n${YELLOW}[+] 客户端节点，已保存到 $USER_HOME/client-config.txt${NC}"
+cat "$USER_HOME/client-config.txt"
+echo ""
+echo -e "${YELLOW}[+] Mihomo 完整分流配置，已保存到 $USER_HOME/client-config-mihomo-full.yaml${NC}"
+echo -e "${YELLOW}[+] Mihomo 纯节点配置，已保存到 $USER_HOME/client-config-mihomo-nodes.yaml${NC}"
+echo ""
+echo -e "${YELLOW}[+] 订阅链接（Ctrl Shift + C 复制）${NC}"
+echo "V2RayN 订阅 (base64):  $V2RAYN_SUB_URL"
+echo "明文节点订阅（备选）:  $V2RAYN_RAW_SUB_URL"
+echo "Mihomo 完整分流订阅: $MIHOMO_FULL_SUB_URL"
+echo "Mihomo 纯节点订阅: $MIHOMO_NODES_SUB_URL"
+info "订阅链接已保存到 $SUB_LINKS_FILE"
+echo ""
+
+if command -v qrencode >/dev/null 2>&1; then
+  output_subscription_qr "V2RayN / Shadowrocket" "$V2RAYN_SUB_URL" "$V2RAYN_QR_FILE"
+  output_subscription_qr "V2RayN TUN" "$V2RAYN_TUN_SUB_URL" "$V2RAYN_TUN_QR_FILE"
+  output_subscription_qr "Shadowrocket" "$SHADOWROCKET_SUB_URL" "$SHADOWROCKET_QR_FILE"
+  output_subscription_qr "Mihomo 完整分流" "$MIHOMO_FULL_SUB_URL" "$MIHOMO_FULL_QR_FILE"
+  output_subscription_qr "Mihomo 纯节点" "$MIHOMO_NODES_SUB_URL" "$MIHOMO_NODES_QR_FILE"
+else
+  warn "未检测到 qrencode，已跳过订阅二维码输出"
+fi
+
+echo -e "${YELLOW}[+] Cloudflare 缓存绕过表达式${NC}"
+echo "  (http.host eq \"${CDN_DOMAIN}\") or (http.request.uri.path contains \"${XHTTP_PATH}\")"
+echo ""
+
+echo -e "${YELLOW}[+] 管理命令${NC}"
+echo "  ${MANAGE_CMD}                进入交互菜单"
+echo "  ${MANAGE_CMD} status         服务状态 / 监听端口 / 流控参数"
+echo "  ${MANAGE_CMD} info           节点参数与客户端链接"
+echo "  ${MANAGE_CMD} sub            订阅链接与二维码"
+echo "  ${MANAGE_CMD} update         更新 Xray-core（自检失败自动回滚）"
+echo "  ${MANAGE_CMD} tuning on      开启系统层调优（BBR / 缓冲区 / 句柄，可 tuning off 回滚）"
+echo "  ${MANAGE_CMD} uninstall      卸载全部组件"
+echo ""
+info "已应用 Xray 应用层优化（bufferSize / sockopt）与系统层调优（BBR / 缓冲 / 句柄，${MANAGE_CMD} tuning off 可回滚）"

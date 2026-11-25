@@ -1,0 +1,1435 @@
+# ==================================================
+# 内核网络与句柄流控调优（函数库）
+#
+# v4.2.0：本模块由安装流程自动调用一次（安装完成时执行 `xh tuning on`），
+# 也可随时手动执行 `xh tuning on`，`xh tuning off` 可整体回滚。
+# 本文件被内联进管理命令 xh（src/13-manage-cli.sh 的 heredoc），
+# 全部 best-effort——OpenVZ / LXC 只读 sysctl 逐项跳过并告警，绝不阻断安装（L1）。
+#
+# 设计原则：
+#   1. 全部 best-effort。任何调优写操作失败只 warn，绝不中断（L1）。
+#      OpenVZ / LXC 上 sysctl 常为只读。
+#   2. 只写自己的文件（/etc/sysctl.d/99-xray-xhttp.conf、
+#      /etc/security/limits.d/99-xray-xhttp.conf、systemd drop-in），
+#      不修改用户既有的 /etc/sysctl.conf 与官方 unit 文件。
+#   3. 只把"试写成功"的项落盘，避免重启后 sysctl --system 报错刷屏。
+# ==================================================
+
+sysctl_get() { sysctl -n "$1" 2>/dev/null || true; }
+
+# fs.nr_open 是单进程可打开句柄数的内核硬上限，systemd 的 DefaultLimitNOFILE 无论
+# 写多大都不能越过它。两者一旦倒挂（DefaultLimitNOFILE > fs.nr_open），systemd 在
+# 拉起任何"没有自己声明 LimitNOFILE"的服务时都会在设限那一步失败：
+#
+#   Failed to adjust resource limit RLIMIT_NOFILE: Operation not permitted
+#   Failed at step LIMITS spawning ...: Operation not permitted
+#   Main process exited, code=exited, status=205/LIMITS
+#
+# 这不是本项目独有的坑，而是我们把 fs.nr_open 钉到 1048576 之后，会让别的调优脚本
+# 早先写下的更大的 DefaultLimitNOFILE 变成非法值。实测踩过：某第三方 TCP 调优脚本
+# 写了 DefaultLimitNOFILE=2097152，本项目随后设 fs.nr_open=1048576，结果 logrotate /
+# apt-daily / systemd-timedated / netfilter-persistent 等十个单元全部起不来；xray 与
+# nginx 反而幸免——因为它们的 drop-in 自带 LimitNOFILE=1048576，没走默认值。
+#
+# 所以设完 fs.nr_open 必须把 DefaultLimitNOFILE 拉回来对齐。写 system.conf.d/ 下的
+# drop-in 而不是改 /etc/systemd/system.conf 本体：drop-in 优先级更高，别的脚本以后
+# 再改主文件也覆盖不掉我们，且 xh tuning off 删一个文件即可干净回滚。
+align_default_nofile() {
+  local nr_open cur
+  nr_open=$(sysctl_get fs.nr_open)
+  [[ "$nr_open" =~ ^[0-9]+$ ]] || return 0
+
+  # 1. 清理 /etc/profile 与 /etc/profile.d/ 中第三方脚本遗留的全局 ulimit 语句
+  # 避免非 root 用户登录时报 "-bash: ulimit: open files: cannot modify limit: Operation not permitted"
+  if [[ -f /etc/profile ]]; then
+    if grep -qE "ulimit[[:space:]]+-[A-Za-z]*n[[:space:]]+[0-9]+" /etc/profile 2>/dev/null; then
+      sed -i -E "/ulimit[[:space:]]+-[A-Za-z]*n[[:space:]]+[0-9]+/d" /etc/profile
+      info "已清理 /etc/profile 中遗留的全局 ulimit 语句（修复非 root 登录时的 Operation not permitted 报错）"
+    fi
+  fi
+  local pf
+  for pf in /etc/profile.d/*.sh; do
+    [[ -f "$pf" ]] || continue
+    if grep -qE "ulimit[[:space:]]+-[A-Za-z]*n[[:space:]]+[0-9]+" "$pf" 2>/dev/null; then
+      sed -i -E "/ulimit[[:space:]]+-[A-Za-z]*n[[:space:]]+[0-9]+/d" "$pf"
+      info "已清理 ${pf} 中遗留的全局 ulimit 语句"
+    fi
+  done
+
+  # 2. 修复 /etc/security/limits.conf 中大于 fs.nr_open 的越界配置
+  if [[ -f /etc/security/limits.conf ]]; then
+    sed -i -E "s/nofile[[:space:]]+[0-9]+/nofile ${nr_open}/g" /etc/security/limits.conf 2>/dev/null || true
+  fi
+
+  # 3. 对齐 systemd DefaultLimitNOFILE
+  [[ "$SERVICE_TYPE" == "systemd" ]] || return 0
+
+  cur=$(systemctl show -p DefaultLimitNOFILE --value 2>/dev/null)
+  # infinity 同样越界（systemd 会解析成远大于 nr_open 的值）
+  if [[ "$cur" =~ ^[0-9]+$ ]] && [[ "$cur" -le "$nr_open" ]]; then
+    return 0
+  fi
+
+  install -d -m 755 /etc/systemd/system.conf.d 2>/dev/null || {
+    warn "无法创建 /etc/systemd/system.conf.d，跳过 DefaultLimitNOFILE 对齐"; return 0; }
+  if ! cat > /etc/systemd/system.conf.d/10-xray-xhttp-nofile.conf <<EOF
+# 由 xh tuning on 生成 / xh tuning off 移除。
+# 与 fs.nr_open 对齐——高于它会让 systemd 无法启动未自带 LimitNOFILE 的服务
+# （报 205/LIMITS）。详见 src/06-tuning-lib.sh 中 align_default_nofile 的注释。
+[Manager]
+DefaultLimitNOFILE=${nr_open}
+EOF
+  then
+    warn "写入 DefaultLimitNOFILE drop-in 失败"
+    return 0
+  fi
+  systemctl daemon-reexec >/dev/null 2>&1 || warn "systemctl daemon-reexec 失败"
+  info "已将 DefaultLimitNOFILE 由 ${cur:-未设置} 对齐到 fs.nr_open=${nr_open}（原值越界会导致服务报 205/LIMITS）"
+}
+
+# try_sysctl 定义在 src/manage/00-header.sh（本文件只被 xh 内联，不单独使用）。
+
+# ---------- 网卡运行时参数的开机重设（v4.9.44）----------
+# 与同机 sbbox（v2.7.32 起的 sbbox-nic.service）写法一致：出口网卡 mq 下每个 TX 队列挂 fq，
+# 两边谁后执行结果都相同，不会互相覆盖成另一种队列结构。
+NIC_TUNE_BIN="/usr/local/sbin/xray-xhttp-nic-tune"
+NIC_TUNE_UNIT="xray-xhttp-nic.service"
+NIC_TUNE_OPENRC="/etc/local.d/xray-xhttp-nic.start"
+
+write_nic_tune_script() {
+  install -d -m 755 "$(dirname "$NIC_TUNE_BIN")" 2>/dev/null || true
+  cat > "$NIC_TUNE_BIN" <<'NICTUNEEOF'
+#!/usr/bin/env bash
+# 由 xh tuning on 生成 / xh tuning off 移除，开机由 xray-xhttp-nic.service 执行。
+# 重设 sysctl 管不到、重启即丢的网卡运行时参数；全部 best-effort，可重复执行。
+def_route=$(ip route show default 2>/dev/null | head -1)
+def_dev=$(echo "$def_route" | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')
+
+# 1. 默认路由初始拥塞窗口 initcwnd / initrwnd 32，加速 TLS 握手
+if [[ -n "$def_route" ]]; then
+  clean_route=$(echo "$def_route" | sed 's/ initcwnd [0-9]*//g; s/ initrwnd [0-9]*//g')
+  ip route change $clean_route initcwnd 32 initrwnd 32 2>/dev/null || true
+fi
+
+# 2. 出口网卡发送队列长度；MTU 低于 1500 时抬到 1500、高于 1500 时降到 1500（锁定标准以太网 1500）
+if [[ -n "$def_dev" ]]; then
+  ip link set dev "$def_dev" txqueuelen 10000 2>/dev/null || true
+  cur_mtu=$(cat "/sys/class/net/$def_dev/mtu" 2>/dev/null || echo 1500)
+  if [[ "$cur_mtu" -lt 1500 && "$cur_mtu" -gt 0 ]]; then
+    ip link set dev "$def_dev" mtu 1500 2>/dev/null || true
+  fi
+  # v4.9.51：MTU 高于公网路径的 1500（如部分云厂商默认 9000 巨帧）会发出超大 TCP 段，
+  # 在公网出口被静默丢弃（PMTU 黑洞）：TCP 握手成功，但 TLS 证书链等大包到不了，
+  # Reality / CDN 回源等 TCP 节点超时或 RST，QUIC 节点（单包 <1280）不受影响。
+  # 降到 1500，并补一条 MSS 钳制兜底（已存在则不重复加；只在真的降过 MTU 时才动防火墙）。
+  if [[ "$cur_mtu" -gt 1500 ]]; then
+    if ip link set dev "$def_dev" mtu 1500 2>/dev/null; then
+      echo "网卡 $def_dev MTU $cur_mtu → 1500（避免 PMTU 黑洞）"
+    fi
+  fi
+  # 路由层 MTU：DHCP（OCI 等）会把默认路由 / 直连路由的 mtu 设成 9000，链路 MTU 降到 1500 后路由上的 9000 仍在，
+  # UDP/QUIC（Direct-H3、CDN-H3、Hysteria2）按它估算包大小，超大包在公网被静默丢弃 → 断连。全部钉回 1500，
+  # 并让 dhcpcd 不再接受下发的 MTU，租约续期后再兜底一次。
+  while read -r _r; do
+    ip route change $(sed 's/ mtu [0-9]*//' <<< "$_r") dev "$def_dev" mtu 1500 2>/dev/null || true
+  done < <(ip -4 route show dev "$def_dev" 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="mtu" && $(i+1)>1500){print; break}}')
+  if [[ -f /etc/dhcpcd.conf ]] && grep -q '^option interface_mtu' /etc/dhcpcd.conf; then
+    sed -i 's/^option interface_mtu$/nooption interface_mtu/' /etc/dhcpcd.conf
+  fi
+  if command -v dhcpcd >/dev/null 2>&1 && [[ ! -f /etc/dhcpcd.exit-hook ]]; then
+    cat > /etc/dhcpcd.exit-hook <<'MTUHOOK'
+# 租约更新后把本接口所有路由 MTU 钉回 1500（DHCP 下发 9000 巨帧会产生公网 PMTU 黑洞，影响 UDP/QUIC 节点）
+case "$reason" in BOUND|RENEW|REBIND|REBOOT|STATIC)
+  ip -4 route show dev "$interface" 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="mtu" && $(i+1)>1500){print; break}}' | sed 's/ mtu [0-9]*//' | while read -r r; do
+    ip route change $r dev "$interface" mtu 1500 2>/dev/null
+  done ;;
+esac
+MTUHOOK
+  fi
+  # TCP MSS 钳制兜底（防中国移动 PPPoE 1492 / 蜂窝移动 GTP 1420 导致的 PMTU 黑洞与大包静默丢弃）
+  for ipt in iptables ip6tables; do
+    command -v "$ipt" >/dev/null 2>&1 || continue
+    "$ipt" -t mangle -C POSTROUTING -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || \
+      "$ipt" -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+    "$ipt" -t mangle -C OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || \
+      "$ipt" -t mangle -A OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+  done
+  # 中国移动高端口 UDP QoS 旁路（UDP 443 -> HY2_H3_PORT，UDP 8446 -> HY2_PORT；UDP 8443 归 VLESS-XHTTP-Direct-H3 独立监听）
+  if [[ -f "/etc/xhttp-cdn/node.env" ]] && command -v iptables >/dev/null 2>&1; then
+    _hy2_h3=$(grep -E '^HY2_H3_PORT=' /etc/xhttp-cdn/node.env 2>/dev/null | cut -d= -f2 | tr -d "'\"")
+    _hy2_obfs=$(grep -E '^HY2_PORT=' /etc/xhttp-cdn/node.env 2>/dev/null | cut -d= -f2 | tr -d "'\"")
+    if [[ -n "$_hy2_h3" && "$_hy2_h3" != "443" ]]; then
+      # 清理旧的 UDP 443 重定向规则，防止端口变更后残留旧端口黑洞
+      iptables-save -t nat 2>/dev/null | grep -E '^-[AI] PREROUTING.*--dport 443.*REDIRECT' | while read -r _r; do
+        _ra="${_r#-A PREROUTING }"; _ra="${_ra#-I PREROUTING }"
+        iptables -t nat -D PREROUTING $_ra 2>/dev/null || true
+      done
+      iptables -t nat -A PREROUTING -p udp --dport 443 -j REDIRECT --to-ports "$_hy2_h3" 2>/dev/null || true
+    fi
+    # 彻底清理旧的 UDP 8443 重定向规则，杜绝与 VLESS-XHTTP-Direct-H3 端口冲突
+    iptables-save -t nat 2>/dev/null | grep -E '^-[AI] PREROUTING.*--dport 8443.*REDIRECT' | while read -r _r; do
+      _ra="${_r#-A PREROUTING }"; _ra="${_ra#-I PREROUTING }"
+      iptables -t nat -D PREROUTING $_ra 2>/dev/null || true
+    done
+    if [[ -n "$_hy2_obfs" && "$_hy2_obfs" != "8446" ]]; then
+      # 清理旧的 UDP 8446 重定向规则
+      iptables-save -t nat 2>/dev/null | grep -E '^-[AI] PREROUTING.*--dport 8446.*REDIRECT' | while read -r _r; do
+        _ra="${_r#-A PREROUTING }"; _ra="${_ra#-I PREROUTING }"
+        iptables -t nat -D PREROUTING $_ra 2>/dev/null || true
+      done
+      iptables -t nat -A PREROUTING -p udp --dport 8446 -j REDIRECT --to-ports "$_hy2_obfs" 2>/dev/null || true
+    fi
+  fi
+  command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save >/dev/null 2>&1
+
+  # 3. 收发环形队列拉到硬件上限与通用分片卸载（GRO/GSO/TSO，大幅降低千兆及软中断 CPU 开销）
+  if command -v ethtool >/dev/null 2>&1; then
+    rx_max=$(ethtool -g "$def_dev" 2>/dev/null | awk '/^RX:/{print $2; exit}')
+    tx_max=$(ethtool -g "$def_dev" 2>/dev/null | awk '/^TX:/{print $2; exit}')
+    if [[ -n "$rx_max" && -n "$tx_max" && "$rx_max" =~ ^[0-9]+$ && "$tx_max" =~ ^[0-9]+$ ]]; then
+      ethtool -G "$def_dev" rx "$rx_max" tx "$tx_max" >/dev/null 2>&1 && \
+        echo "网卡 $def_dev 收发队列已拉满：rx=$rx_max tx=$tx_max"
+    fi
+    ok=""
+    ethtool -K "$def_dev" gro on >/dev/null 2>&1 && ok="gro"
+    ethtool -K "$def_dev" gso on >/dev/null 2>&1 && ok="${ok:+$ok }gso"
+    ethtool -K "$def_dev" tso on >/dev/null 2>&1 && ok="${ok:+$ok }tso"
+    [[ -n "$ok" ]] && echo "网卡 $def_dev 已开启分片卸载：$ok"
+  fi
+fi
+
+# 4. RPS/RFS 多核软中断均衡（仅多核）+ fq 队列（仅在 default_qdisc=fq 即 BBR 可用时设置）
+cores=$(nproc 2>/dev/null || echo 1)
+[[ "$cores" -lt 1 ]] && cores=1
+if [[ "$cores" -le 64 ]]; then
+  rps_mask=$(printf '%x' $(( (1 << cores) - 1 )))
+else
+  rps_mask=$(python3 -c "print(hex((1 << $cores) - 1)[2:])" 2>/dev/null || printf '%x' -1)
+fi
+flow_entries=$((8192 * cores))
+want_fq=0
+[[ "$(sysctl -n net.core.default_qdisc 2>/dev/null)" == "fq" ]] && command -v tc >/dev/null 2>&1 && want_fq=1
+fq_opts="limit 20480 flow_limit 4096 quantum 18028 initial_quantum 90140"
+for d in /sys/class/net/*; do
+  [[ -e "$d" ]] || continue
+  dev=$(basename "$d")
+  case "$dev" in
+    lo|docker*|veth*|br-*|virbr*|zt*|tailscale*|wg*|tun*|tap*) continue;;
+  esac
+  [[ -d "/sys/class/net/$dev/queues" ]] || continue
+  num_rx=$(find "/sys/class/net/$dev/queues/" -maxdepth 1 -name 'rx-*' | wc -l)
+  [[ "$num_rx" -le 0 ]] && num_rx=1
+  if [[ "$cores" -gt 1 ]]; then
+    for rxq in /sys/class/net/"$dev"/queues/rx-*/rps_cpus; do
+      [[ -f "$rxq" ]] && echo "$rps_mask" > "$rxq" 2>/dev/null || true
+    done
+    for rxq_dir in /sys/class/net/"$dev"/queues/rx-*/; do
+      [[ -f "${rxq_dir}rps_flow_cnt" ]] && echo "$((flow_entries / num_rx))" > "${rxq_dir}rps_flow_cnt" 2>/dev/null || true
+    done
+  fi
+  if [[ "$want_fq" -eq 1 ]]; then
+    num_tx=$(find "/sys/class/net/$dev/queues/" -maxdepth 1 -name 'tx-*' | wc -l)
+    if [[ "$num_tx" -gt 1 ]]; then
+      tc qdisc replace dev "$dev" root handle 1: mq 2>/dev/null || true
+      for i in $(seq 1 "$num_tx"); do
+        tc qdisc replace dev "$dev" parent 1:$i fq $fq_opts 2>/dev/null || true
+      done
+    else
+      tc qdisc replace dev "$dev" root fq $fq_opts 2>/dev/null || true
+    fi
+  fi
+done
+exit 0
+NICTUNEEOF
+  chmod 755 "$NIC_TUNE_BIN"
+}
+
+# 写脚本 → 立即执行一次 → 挂开机自启（systemd oneshot；OpenRC 用 local.d）
+install_nic_tune() {
+  write_nic_tune_script || { warn "写入 ${NIC_TUNE_BIN} 失败，跳过网卡层调优"; return 0; }
+  "$NIC_TUNE_BIN" || true
+  if [[ "$SERVICE_TYPE" == "systemd" ]]; then
+    cat > "/etc/systemd/system/${NIC_TUNE_UNIT}" <<NICUNITEOF
+# 由 xh tuning on 生成 / xh tuning off 移除：开机重设 fq / initcwnd / txqueuelen / RPS
+[Unit]
+Description=Xray XHTTP NIC runtime tuning (fq qdisc, initcwnd, RPS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=${NIC_TUNE_BIN}
+
+[Install]
+WantedBy=multi-user.target
+NICUNITEOF
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl enable "$NIC_TUNE_UNIT" >/dev/null 2>&1 \
+      && info "网卡层调优已挂开机自启（${NIC_TUNE_UNIT}：fq / initcwnd / txqueuelen / RPS）" \
+      || warn "启用 ${NIC_TUNE_UNIT} 失败，重启后网卡层调优不会自动恢复"
+  elif [[ -d /etc/local.d ]]; then
+    ln -sf "$NIC_TUNE_BIN" "$NIC_TUNE_OPENRC" 2>/dev/null && \
+      info "网卡层调优已挂开机自启（${NIC_TUNE_OPENRC}，需 rc-update add local default）"
+  else
+    warn "未识别到 systemd / OpenRC local.d，网卡层调优重启后不会自动恢复"
+  fi
+  local qd
+  qd=$(tc qdisc show 2>/dev/null | awk '$2=="fq"' | wc -l)
+  info "当前 fq 队列数: ${qd}（核对：tc qdisc show）"
+}
+
+remove_nic_tune() {
+  if [[ -f "/etc/systemd/system/${NIC_TUNE_UNIT}" ]]; then
+    systemctl disable "$NIC_TUNE_UNIT" >/dev/null 2>&1 || true
+    rm -f "/etc/systemd/system/${NIC_TUNE_UNIT}"
+    systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+  rm -f "$NIC_TUNE_BIN" "$NIC_TUNE_OPENRC"
+}
+
+apply_system_tuning() {
+  local SYSCTL_APPLIED=() SYSCTL_SKIPPED=() TUNING_BBR_OK=false
+  local MEM_MB CPU_CORES ARCH PAGE_SIZE MEM_PAGES
+  local TUNE_TIER SOCK_MEM_MAX TCP_MEM_MAX NETDEV_BACKLOG CONNTRACK_MAX
+  local BEFORE_QDISC BEFORE_CC BEFORE_RMEM BEFORE_NOFILE AVAILABLE_CC unit
+
+  install -d -m 700 "$STATE_DIR"
+
+  # ---------- 机型探测：按内存分档，参数随机器规格伸缩 ----------
+  MEM_MB=$(awk '/^MemTotal:/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)
+  CPU_CORES=$(nproc 2>/dev/null || echo 1)
+  ARCH=$(uname -m 2>/dev/null || echo unknown)
+  # tcp_mem 的单位是"页"，页大小不一定是 4K：RHEL 系的 aarch64 内核
+  # （Oracle Linux / UEK）常用 64K 页，写死 /4 会让页数偏大 16 倍（L4）。
+  PAGE_SIZE=$(getconf PAGESIZE 2>/dev/null || echo 4096)
+  MEM_PAGES=$(awk -v ps="$PAGE_SIZE" '/^MemTotal:/{printf "%d", $2*1024/ps}' /proc/meminfo 2>/dev/null || echo 262144)
+
+  local SOCK_MEM_DEF UDP_MEM_MIN OPTMEM_MAX
+  # 网卡链路速率探测（Mb/s）
+  local NIC_SPEED=0 _nic_probe def_route_dev
+  def_route_dev=$(ip route show default 2>/dev/null | awk '/default/{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')
+  if [[ -n "$def_route_dev" && -r "/sys/class/net/$def_route_dev/speed" ]]; then
+    NIC_SPEED=$(cat "/sys/class/net/$def_route_dev/speed" 2>/dev/null)
+    [[ "$NIC_SPEED" =~ ^[0-9]+$ ]] || NIC_SPEED=0
+  fi
+
+  if [[ "$MEM_MB" -ge 16384 ]]; then
+    # 大内存档 (>= 16GB)
+    TUNE_TIER="large";  SOCK_MEM_MAX=134217728; TCP_MEM_MAX=134217728; NETDEV_BACKLOG=65536; CONNTRACK_MAX=1048576; NETDEV_BUDGET=6000; OPTMEM_MAX=131072
+    SOCK_MEM_DEF=8388608; UDP_MEM_MIN=262144
+  elif [[ "$MEM_MB" -ge 4096 ]]; then
+    # 标准档 (4GB - 16GB)
+    TUNE_TIER="medium"; SOCK_MEM_MAX=134217728; TCP_MEM_MAX=134217728; NETDEV_BACKLOG=32768; CONNTRACK_MAX=262144; NETDEV_BUDGET=6000; OPTMEM_MAX=131072
+    SOCK_MEM_DEF=1048576; UDP_MEM_MIN=65536
+  elif [[ "$MEM_MB" -ge 1536 ]]; then
+    # 入门档 (1.5GB - 4GB)
+    TUNE_TIER="entry";  SOCK_MEM_MAX=33554432; TCP_MEM_MAX=16777216;  NETDEV_BACKLOG=16384; CONNTRACK_MAX=65536; NETDEV_BUDGET=""; OPTMEM_MAX=65536
+    SOCK_MEM_DEF=524288; UDP_MEM_MIN=32768
+  else
+    # 极小内存档 (< 1.5GB) - 严防 OOM 熔断模式
+    TUNE_TIER="small";  SOCK_MEM_MAX=8388608;  TCP_MEM_MAX=4194304;  NETDEV_BACKLOG=4096;  CONNTRACK_MAX=0; NETDEV_BUDGET=""; OPTMEM_MAX=65536
+    SOCK_MEM_DEF=262144; UDP_MEM_MIN=16384
+  fi
+  # 千兆以上链路在 16GB+ 内存机型上放宽并发与队列预算
+  if [[ "$NIC_SPEED" -ge 1000 && "$MEM_MB" -ge 16384 ]]; then
+    SOCK_MEM_MAX=134217728; TCP_MEM_MAX=134217728; NETDEV_BACKLOG=131072; NETDEV_BUDGET=8000
+    TUNE_TIER="large+${NIC_SPEED}M"
+  fi
+
+  info "机型: ${CPU_CORES} 核 / ${MEM_MB} MB / ${ARCH} → 调优档位 ${TUNE_TIER}"
+
+  # ---------- 调优前快照 ----------
+  BEFORE_QDISC=$(sysctl_get net.core.default_qdisc)
+  BEFORE_CC=$(sysctl_get net.ipv4.tcp_congestion_control)
+  BEFORE_RMEM=$(sysctl_get net.core.rmem_max)
+  BEFORE_NOFILE=$(ulimit -n 2>/dev/null || echo "unknown")
+  sysctl -a > "${STATE_DIR}/sysctl-before.txt" 2>/dev/null || \
+    warn "无法导出调优前 sysctl 快照（不影响后续步骤）"
+
+  # ---------- BBR 能力探测与队列调度 ----------
+  AVAILABLE_CC=$(sysctl_get net.ipv4.tcp_available_congestion_control)
+  if [[ "$AVAILABLE_CC" != *bbr* ]]; then
+    modprobe tcp_bbr >/dev/null 2>&1 || true
+    AVAILABLE_CC=$(sysctl_get net.ipv4.tcp_available_congestion_control)
+  fi
+  if [[ "$AVAILABLE_CC" == *bbr* ]]; then
+    TUNING_BBR_OK=true
+    try_sysctl net.core.default_qdisc fq
+    try_sysctl net.ipv4.tcp_congestion_control bbr
+  else
+    warn "当前内核不提供 BBR（可用算法: ${AVAILABLE_CC:-未知}），将保持系统默认拥塞算法"
+  fi
+
+  # ---------- 收发缓冲区（大带宽时延积链路 / 过 CDN 的关键项）----------
+  try_sysctl net.core.rmem_max "$SOCK_MEM_MAX"
+  try_sysctl net.core.wmem_max "$SOCK_MEM_MAX"
+  try_sysctl net.core.rmem_default "$SOCK_MEM_DEF"
+  try_sysctl net.core.wmem_default "$SOCK_MEM_DEF"
+  try_sysctl net.ipv4.udp_rmem_min "$UDP_MEM_MIN"
+  try_sysctl net.ipv4.udp_wmem_min "$UDP_MEM_MIN"
+  # 中间值是**初始**默认值，autotuning 会在 min~max 之间增长；调大它影响的是
+  # 连接建立初期与短流，对过 CDN 的高 RTT（100~300ms）链路少几个 RTT 的爬升。
+  try_sysctl net.ipv4.tcp_rmem "4096 87380 ${TCP_MEM_MAX}"
+  try_sysctl net.ipv4.tcp_wmem "4096 65536 ${TCP_MEM_MAX}"
+  try_sysctl net.ipv4.tcp_limit_output_bytes 4194304
+  # 接收缓冲中留给协议开销的比例。设为 1（保留 50% 内存作为通告窗口），让 128MB/64MB/32MB
+  # 缓冲能通告出 64MB/32MB/16MB 的接收窗口，突破跨境高延迟（200ms+）下的单流千兆吞吐瓶颈。
+  try_sysctl net.ipv4.tcp_adv_win_scale 1
+  # 代理转发场景关闭软塞子，首包与小包零等待即时发出，降低 TTFB 与交互延迟
+  try_sysctl net.ipv4.tcp_autocorking 0
+  # 内核 6.x/7.x SACK 压缩，在跨境丢包路径上聚合压缩 SACK ACK，抑制 ACK 风暴
+  try_sysctl net.ipv4.tcp_comp_sack_nr 44
+  try_sysctl net.ipv4.tcp_comp_sack_delay_ns 1000000
+  # 按物理内存的 4% / 6% / 8% 推算（单位是页，已按 PAGESIZE 换算）
+  try_sysctl net.ipv4.tcp_mem "$(( MEM_PAGES * 4 / 100 )) $(( MEM_PAGES * 6 / 100 )) $(( MEM_PAGES * 8 / 100 ))"
+  # QUIC / HTTP3 / TLS 辅助缓冲扩容
+  try_sysctl net.core.optmem_max "${OPTMEM_MAX:-65536}"
+  # 多核 RFS 全局流表表项（需与网卡队列 rps_flow_cnt 联动生效）
+  [[ "$CPU_CORES" -gt 1 ]] && try_sysctl net.core.rps_sock_flow_entries "$((8192 * CPU_CORES))"
+  # udp_mem：全系统 UDP 内存池上限，全档位动态闭环覆盖
+  if [[ "$MEM_MB" -ge 16384 ]]; then
+    try_sysctl net.ipv4.udp_mem "$(( MEM_PAGES * 4 / 100 )) $(( MEM_PAGES * 6 / 100 )) $(( MEM_PAGES * 8 / 100 ))"
+  elif [[ "$MEM_MB" -ge 4096 ]]; then
+    try_sysctl net.ipv4.udp_mem "$(( MEM_PAGES * 2 / 100 )) $(( MEM_PAGES * 4 / 100 )) $(( MEM_PAGES * 6 / 100 ))"
+  elif [[ "$MEM_MB" -ge 1536 ]]; then
+    try_sysctl net.ipv4.udp_mem "$(( MEM_PAGES * 2 / 100 )) $(( MEM_PAGES * 3 / 100 )) $(( MEM_PAGES * 5 / 100 ))"
+  else
+    try_sysctl net.ipv4.udp_mem "$(( MEM_PAGES * 1 / 100 )) $(( MEM_PAGES * 2 / 100 )) $(( MEM_PAGES * 3 / 100 ))"
+  fi
+
+  # ---------- 队列与并发 ----------
+  try_sysctl net.core.netdev_max_backlog "$NETDEV_BACKLOG"
+  # NAPI 每轮 poll 可处理的包数上限。默认 300 在高并发（CDN 回源 + XHTTP 长连接，
+  # 大量小包）下 softirq 来不及收完，/proc/net/softnet_stat 的 time_squeeze 非零即此
+  # 信号。放大到 6000 是"在 2000μs 窗口内多收包"，不延长窗口、不增加软中断时长，
+  # 因而不引入 CPU 占用。小内存档（<4G）不写，保持默认（netdev_budget_usecs 已限时）。
+  if [[ -n "$NETDEV_BUDGET" ]]; then
+    try_sysctl net.core.netdev_budget "$NETDEV_BUDGET"
+    try_sysctl net.core.netdev_budget_usecs 8000
+  fi
+  try_sysctl net.core.somaxconn 65535
+  try_sysctl net.ipv4.tcp_max_syn_backlog "$NETDEV_BACKLOG"
+  try_sysctl net.ipv4.tcp_max_tw_buckets 65536
+  try_sysctl net.ipv4.ip_local_port_range "1024 65535"
+  try_sysctl net.ipv4.ip_local_reserved_ports "8001,8002,8003,8443,8445,8446,8447,10489,10723,10800-10809,11801-11806,13547,16387,17781,18048,18448,18793,19142,23106,25742,27295,27668,27802,28443,29390,29879,38969,62808"
+
+  # conntrack 仅在模块已加载时调整；未加载时写入会失败并留下无用告警。
+  # 开机时 systemd-sysctl 早于 iptables / Docker 加载 nf_conntrack，键还不存在就被静默跳过，
+  # 连接表上限退回内核按内存算的默认值。登记进 modules-load.d（systemd-sysctl 排在它之后）。
+  if [[ "$CONNTRACK_MAX" -gt 0 ]] && modprobe nf_conntrack 2>/dev/null; then
+    echo "nf_conntrack" > /etc/modules-load.d/xray-xhttp-conntrack.conf 2>/dev/null || true
+  fi
+  if [[ "$CONNTRACK_MAX" -gt 0 ]] && [[ -r /proc/sys/net/netfilter/nf_conntrack_max ]]; then
+    try_sysctl net.netfilter.nf_conntrack_max "$CONNTRACK_MAX"
+    try_sysctl net.netfilter.nf_conntrack_tcp_timeout_established 3600
+  fi
+
+  # ---------- 连接建立与保持 ----------
+  try_sysctl net.ipv4.tcp_fastopen 3
+  # MTU 已经通过物理网卡锁定 1500、存量路由钉回 1500 及防火墙 TCPMSS 钳制多重兜底，设为 0 关闭多余探测
+  try_sysctl net.ipv4.tcp_mtu_probing 0
+  try_sysctl net.ipv4.tcp_slow_start_after_idle 0
+  # 套接字未发送数据上限：设为 512KB (524288)，在千兆高带宽 BDP 下保证大吞吐，同时有效控制多路复用队头延迟
+  try_sysctl net.ipv4.tcp_notsent_lowat 524288
+  # 移动网络无线跳频与高抖动优化（RFC 8985 TLP / F-RTO）：
+  # tcp_frto = 2: 开启 Forward RTO 探测，避免移动蜂窝网络偶发无线重传误触发 cwnd 骤降
+  # tcp_early_retrans = 3: 开启 Tail Loss Probe (TLP)，尾包丢失快速重传，避免长 RTO 超时
+  try_sysctl net.ipv4.tcp_frto 2
+  try_sysctl net.ipv4.tcp_early_retrans 3
+  try_sysctl net.ipv4.tcp_syncookies 1
+  try_sysctl net.ipv4.tcp_tw_reuse 1
+  # 关闭 ECN：公网多数跨境中间设备对 ECN 处理不规范常导致黑洞丢包，设为 0 保障全网最佳可达性
+  try_sysctl net.ipv4.tcp_ecn 0
+  try_sysctl net.ipv4.tcp_ecn_fallback 0
+  # fs.suid_dumpable = 0：setuid / 中途切换过身份的进程崩溃时不产生 core dump。
+  # 代理进程内存里有私钥、UUID、解密后的流量，默认值 2（suidsafe）仍会 dump 到 core_pattern 指定处；
+  # 0 则一律不 dump。配合 limits.conf 的 `* hard core 0` 与 core_pattern = core。
+  try_sysctl fs.suid_dumpable 0
+  # core_pattern = core：不交给 apport / systemd-coredump 这类会把 core 另存到系统目录的处理器（此前只在注释里提到、靠手工写入）。
+  try_sysctl kernel.core_pattern core
+  # 不发送 ICMP 重定向（本机不是路由器；装了 Docker 时 ip_forward=1，会对「同口进同口出」的转发包发重定向）。
+  # 发送侧按「all 与网卡任一为 1 即生效」计算，只写 all/default 不够：开机前就已存在的出口网卡
+  # 不受 default 影响，线上 enp0s6 即为 1，实测（netns + 网桥负对照）all=0、网卡=1 时仍发出重定向，网卡=0 后为 0。
+  # 所以出口网卡也写一条；它落进 sysctl.d 后，udev 在网卡出现时会按网卡名重新套用。
+  try_sysctl net.ipv4.conf.all.send_redirects 0
+  try_sysctl net.ipv4.conf.default.send_redirects 0
+  local _rd_if
+  _rd_if=$(ip route show default 2>/dev/null | awk '/default/{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')
+  [ -n "$_rd_if" ] && try_sysctl "net.ipv4.conf.${_rd_if//./\/}.send_redirects" 0
+  # tcp_no_metrics_save = 1（v4.7.2）：不把连接结束时的 cwnd / ssthresh 缓存进路由表。
+  # 默认行为（0）在同质网络里是优化，在代理机上是负担：对端遍布全球，线路质量差异
+  # 极大，一条丢包严重的连接会把偏低的 ssthresh 写进缓存，之后**同网段**的新连接
+  # 全部继承这个坏起点，慢启动被人为压制。关掉后每条连接独立探测。
+  try_sysctl net.ipv4.tcp_no_metrics_save 1
+  # tcp_retries2 = 12：兼顾死连接清理与抗跨境网络抖动（约 3.5 分钟重试窗口）。
+  # 避免因此前 8 次（约 50 秒）过于激进导致高峰期跨境网络微小丢包抖动时直接断连。
+  try_sysctl net.ipv4.tcp_retries2 12
+  # 出站 SYN 最多重试 4 次（约 30s），默认 6 次（约 3 分钟）。连接发给回落站/上游
+  # 时对端若不可达，不必为已死的对端浪费 3 分钟。
+  try_sysctl net.ipv4.tcp_syn_retries 4
+  # TIME_WAIT 暗杀保护（RFC 1337）：默认 0 时，对端在连接 TIME_WAIT 期发来的 RST
+  # 会提前终结连接，破坏 TIME_WAIT 的 2MSL 语义，低概率但会诱发资源错乱；1 为忽略
+  # 该 RST。零成本，语义上是防御性的。
+  try_sysctl net.ipv4.tcp_rfc1337 1
+  try_sysctl net.ipv4.tcp_fin_timeout 15
+  # TCP Keepalive 60s / 10s / 6次：彻底解决空闲长连接被家用路由器 / 运营商 NAT 防火墙超时掐断
+  try_sysctl net.ipv4.tcp_keepalive_time 60
+  try_sysctl net.ipv4.tcp_keepalive_intvl 10
+  try_sysctl net.ipv4.tcp_keepalive_probes 6
+
+  # ---------- 内存行为（v3.0.2 从 ubuntu_vps_optimize.sh 同步）----------
+  # 转发型服务器没有写负载，降低 swap 倾向但不关——OOM 时 swap 比杀进程安全。
+  # dirty_ratio / dirty_background_ratio 作用在脏页回写，转发机器不落盘，故意不调。
+  if [[ "$MEM_MB" -ge 4096 ]]; then try_sysctl vm.swappiness 10; else try_sysctl vm.swappiness 30; fi
+  try_sysctl vm.vfs_cache_pressure 50
+  try_sysctl vm.dirty_background_ratio 5
+  try_sysctl vm.dirty_ratio 10
+  # 高速率收包时 skb 在软中断里做原子分配，不能等回收；给保留页留余量，防突发下 page allocation failure 丢包。
+  case "$TUNE_TIER" in
+    large*) try_sysctl vm.min_free_kbytes 65536 ;;
+    medium) try_sysctl vm.min_free_kbytes 32768 ;;
+  esac
+  # 自动分组按会话均分 CPU，是给桌面交互用的；服务器上关掉，代理进程按线程公平调度。
+  try_sysctl kernel.sched_autogroup_enabled 0
+
+  # ---------- 文件句柄 ----------
+  try_sysctl fs.file-max 1048576
+  try_sysctl fs.nr_open 1048576
+  align_default_nofile
+
+  # ---------- 网卡运行时参数：fq / initcwnd / txqueuelen / RPS（best-effort）----------
+  install_nic_tune
+
+  # 3. TCP MSS Clamp 防护（避免 Jumbo Frame 与公网 MTU 冲突导致的黑洞丢包，防中国移动 PPPoE 1492 / 蜂窝移动 GTP 1420 握手黑洞）
+  if command -v iptables >/dev/null 2>&1; then
+    iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu >/dev/null 2>&1 \
+      || iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+    iptables -t mangle -C POSTROUTING -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu >/dev/null 2>&1 \
+      || iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+    iptables -t mangle -C OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu >/dev/null 2>&1 \
+      || iptables -t mangle -A OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+  fi
+
+  # ---------- 落盘（清理冲突并持久化） ----------
+  local _conflicts=(/etc/sysctl.d/99-joeyblog.conf /etc/sysctl.d/99-sysctl.conf)
+  for _cf in "${_conflicts[@]}"; do
+    if [[ -f "$_cf" ]]; then
+      rm -f "$_cf"
+      info "已清理冲突的第三方配置: $_cf"
+    fi
+  done
+
+  if [[ ${#SYSCTL_APPLIED[@]} -gt 0 ]]; then
+    {
+      echo "# ${PROJECT_NAME} 流控调优，由 ${MANAGE_CMD} tuning on 生成"
+      echo "# 回滚: ${MANAGE_CMD} tuning off"
+      printf '%s\n' "${SYSCTL_APPLIED[@]}"
+    } > "$SYSCTL_CONF" 2>/dev/null || warn "写入 ${SYSCTL_CONF} 失败，本次调优仅在重启前有效"
+    sysctl --system >/dev/null 2>&1 || sysctl -p "$SYSCTL_CONF" >/dev/null 2>&1 || \
+      warn "sysctl 重载失败，参数已在运行时生效但可能无法持久化"
+    info "已应用 ${#SYSCTL_APPLIED[@]} 项内核参数 → ${SYSCTL_CONF}"
+  else
+    warn "当前环境不允许修改任何 sysctl 参数（常见于 OpenVZ / 受限容器），已跳过内核调优"
+  fi
+  if [[ ${#SYSCTL_SKIPPED[@]} -gt 0 ]]; then
+    warn "以下参数当前内核不支持或只读，已跳过: ${SYSCTL_SKIPPED[*]}"
+  fi
+
+  # ---------- 进程句柄上限 ----------
+  if [[ "$OS_ID" != "alpine" ]]; then
+    if [[ -d /etc/security/limits.d ]]; then
+      cat > "$LIMITS_CONF" <<'LIMITSEOF' || warn "写入 limits.d 失败"
+* soft nofile 1048576
+* hard nofile 1048576
+root soft nofile 1048576
+root hard nofile 1048576
+LIMITSEOF
+      info "已写入句柄上限 → ${LIMITS_CONF}"
+    else
+      warn "未找到 /etc/security/limits.d，跳过 nofile 配置"
+    fi
+  fi
+
+  # systemd 用 drop-in，不改官方 Xray-install 维护的 unit，避免更新后被覆盖。
+  #
+  # v4.7.3：文件名从 override.conf 改为 10-xray-xhttp.conf。
+  # 起因：override.conf 是**用户手工加固的约定俗成文件名**（Restart=always、
+  # OOMScoreAdjust、After=network-online.target 之类都习惯写在这里），而本函数是
+  # `cat >` 整体覆写。用户加过料之后再跑一次 `xh tuning off && xh tuning on`，
+  # 那些设置会被静默吃掉——没有报错、没有提示，只有下次机器没自动拉起时才发现。
+  #
+  # systemd 会把 <unit>.service.d/ 下所有 *.conf 按文件名序合并，所以换个专属文件名
+  # 就从根本上解决了：我们只管自己的文件，用户的 override.conf 原样保留；
+  # 数字前缀 10- 保证排在 override.conf 之前，用户想覆盖我们的值也依然有效。
+  if [[ "$SERVICE_TYPE" == "systemd" ]]; then
+    local dropin="10-xray-xhttp.conf" migrated=0 kept=0
+    for unit in xray nginx hysteria-server sing-box; do
+      local dir="/etc/systemd/system/${unit}.service.d"
+      # 若服务未安装或目录不存在，仅在存在/可创建时操作
+      if systemctl list-unit-files "${unit}.service" >/dev/null 2>&1 || [[ -d "$dir" ]]; then
+        install -d -m 755 "$dir" 2>/dev/null || continue
+        # 内存自适应软上限（GOMEMLIMIT）：小内存机设为 60% 避免 OOM，大内存机设为 75% 极大减少 GC 暂停
+        local GOMEM_LINE="" _gm
+        _gm=$(awk '/^MemTotal:/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)
+        if [[ "$_gm" -gt 0 ]]; then
+          if [[ "$_gm" -lt 2048 ]]; then
+            GOMEM_LINE="Environment=\"GOMEMLIMIT=$((_gm * 60 / 100))MiB\""
+          else
+            GOMEM_LINE="Environment=\"GOMEMLIMIT=$((_gm * 75 / 100))MiB\""
+          fi
+        fi
+        cat > "${dir}/${dropin}" <<DROPINEOF || warn "写入 ${unit} drop-in 失败"
+# xray-xhttp 句柄上限，由 xh tuning on 生成 / xh tuning off 移除。
+# 本项目只写这一个文件，同目录下你自己的 override.conf 不会被改动。
+# 自愈：systemd 默认 RestartSec=100ms + 10s 内最多启动 5 次，起不来（如证书权限被改、
+# 端口被占）会在 0.5 秒内撞上限流变成永久 failed，之后即使问题已修复也不会再拉起；
+# nginx 官方 unit 还是 Restart=no，崩溃后不会自动恢复。取消限流并固定 2s 间隔重试。
+[Unit]
+StartLimitIntervalSec=0
+
+[Service]
+Restart=always
+RestartSec=2
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitMEMLOCK=infinity
+Nice=-10
+Environment="GOGC=200"
+Environment="GOMAXPROCS=${CPU_CORES}"
+Environment="GODEBUG=madvdontneed=1"
+${GOMEM_LINE}
+DROPINEOF
+        # 旧版留下的 override.conf：内容与历史生成物逐字一致才删（说明用户没动过），
+        # 否则一律保留——那是用户的加固，宁可留下一份内容重复的文件，也不能删掉它。
+        local legacy="${dir}/override.conf"
+        if [[ -f "$legacy" ]]; then
+          if [[ "$(grep -vE '^\s*(#|$)' "$legacy" | tr -d '[:space:]')" \
+                == "[Service]LimitNOFILE=1048576LimitNPROC=infinity" ]]; then
+            rm -f "$legacy" && migrated=1
+          else
+            kept=1
+          fi
+        fi
+      fi
+    done
+    systemctl daemon-reload >/dev/null 2>&1 || warn "systemctl daemon-reload 失败"
+    info "已为代理与网关服务 (xray/nginx/sing-box/hysteria) 写入 systemd drop-in（LimitNOFILE=1048576 → ${dropin}）"
+    # daemon-reload 只让 systemd 重读单元文件，**不会**把 LimitNOFILE / Environment
+    # 应用到已在运行的进程——那些值只在 fork/exec 时读取一次。不在这里强制重启：
+    # 会无预警掐断在线连接。改为显式提示，由用户挑时机执行。
+    warn "上述 drop-in 对**已运行**的进程不生效，需重启后才应用：systemctl restart xray nginx hysteria-server sing-box"
+    [[ "$migrated" -eq 1 ]] && info "已清理旧版留下的 override.conf（内容与本项目生成物一致）"
+    [[ "$kept" -eq 1 ]] && \
+      warn "检测到你自己修改过的 override.conf，已原样保留；它排在本项目文件之后，同名字段以你的为准"
+  else
+    if [[ -d /etc/conf.d ]]; then
+      grep -q '^rc_ulimit=' /etc/conf.d/xray 2>/dev/null || \
+        echo 'rc_ulimit="-n 1048576"' >> /etc/conf.d/xray 2>/dev/null || \
+        warn "写入 /etc/conf.d/xray 失败"
+      grep -q '^rc_ulimit=' /etc/conf.d/nginx 2>/dev/null || \
+        echo 'rc_ulimit="-n 1048576"' >> /etc/conf.d/nginx 2>/dev/null || \
+        warn "写入 /etc/conf.d/nginx 失败"
+      info "已为 OpenRC 服务写入 rc_ulimit"
+    fi
+  fi
+
+  # ---------- Before / After ----------
+  echo ""
+  local _buf_mb _cap_mb
+  if [[ "$MEM_MB" -ge 4096 ]]; then _buf_mb=64; _cap_mb=64;
+  elif [[ "$MEM_MB" -ge 1536 ]]; then _buf_mb=32; _cap_mb=32;
+  else _buf_mb=16; _cap_mb=16; fi
+
+  echo -e "${YELLOW}[+] 流控调优 Before / After${NC}"
+  echo -e "  推荐缓冲区：             ${GREEN}${_buf_mb}MB${NC}"
+  echo -e "  内存保护上限：           ${GREEN}${_cap_mb}MB${NC}"
+  echo -e "  队列算法：               ${GREEN}$(sysctl_get net.core.default_qdisc)${NC}"
+  echo -e "  拥塞控制：               ${GREEN}$(sysctl_get net.ipv4.tcp_congestion_control) (BBR $(detect_bbr_version))${NC}"
+  echo -e "  tcp_wmem:                 ${GREEN}$(sysctl_get net.ipv4.tcp_wmem)${NC}"
+  echo -e "  tcp_rmem:                 ${GREEN}$(sysctl_get net.ipv4.tcp_rmem)${NC}"
+  echo -e "  tcp_limit_output_bytes:   ${GREEN}$(sysctl_get net.ipv4.tcp_limit_output_bytes)${NC}"
+  echo -e "  tcp_slow_start_after_idle: ${GREEN}$(sysctl_get net.ipv4.tcp_slow_start_after_idle)${NC}"
+  printf '  %-28s %-18s -> %s\n' "net.core.default_qdisc"          "${BEFORE_QDISC:-n/a}" "$(sysctl_get net.core.default_qdisc)"
+  printf '  %-28s %-18s -> %s\n' "net.ipv4.tcp_congestion_control" "${BEFORE_CC:-n/a}"    "$(sysctl_get net.ipv4.tcp_congestion_control)"
+  printf '  %-28s %-18s -> %s\n' "net.core.rmem_max"               "${BEFORE_RMEM:-n/a}"  "$(sysctl_get net.core.rmem_max)"
+  printf '  %-28s %-18s -> %s\n' "net.ipv4.tcp_fastopen"           "-"                    "$(sysctl_get net.ipv4.tcp_fastopen)"
+  printf '  %-28s %-18s -> %s\n' "ulimit -n (当前 shell)"          "${BEFORE_NOFILE}"     "重新登录后生效: 1048576"
+  echo ""
+  info "BBR: ${TUNING_BBR_OK}；回滚请执行 ${MANAGE_CMD} tuning off"
+}
+
+show_win_tuning() {
+  echo -e "${CYAN}======================================================${NC}"
+  echo -e "${CYAN}   Windows 10 / 11 客户端千兆 TCP 栈与网络解限指南     ${NC}"
+  echo -e "${CYAN}======================================================${NC}"
+  echo ""
+  echo -e "${YELLOW}[+] 请以管理员身份打开 PowerShell 执行以下命令:${NC}"
+  cat <<'EOF'
+# 1. 开启 TCP 窗口自动调优（释放 16MB~64MB 接收窗口，跑满千兆 BDP）
+netsh int tcp set global autotuninglevel=normal
+
+# 2. 启用网卡多核接收侧缩放（RSS：防止千兆速率下单 CPU 核心被软中断占满）
+netsh int tcp set global rss=enabled
+
+# 3. 启用硬件接收分段合并（RSC：大幅降低 CPU 占用）
+netsh int tcp set global rsc=enabled
+
+# 4. 启用显式拥塞通知（ECN）与 TCP 快速打开（Fast Open 节省 1 次握手 RTT）
+netsh int tcp set global ecncapability=enabled
+netsh int tcp set global fastopen=enabled
+netsh int tcp set global fastopenfallback=enabled
+
+# 5. 允许 TCP 时间戳（防回绕序号 PAWS 与准确 RTT 采样）
+netsh int tcp set global timestamps=allowed
+
+# 6. 设置拥塞控制算法为 BBR2 / CUBIC（仅 Windows 11 22H2 及以上支持 bbr2；
+#    netsh 失败不会抛异常，try/catch 捕获不到，必须检查 $LASTEXITCODE 才能回退到 CUBIC）
+foreach ($t in 'internet','internetcustom','datacenter','datacentercustom','compat') {
+    netsh int tcp set supplemental template=$t congestionprovider=bbr2 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        netsh int tcp set supplemental template=$t congestionprovider=cubic | Out-Null
+    }
+}
+# 若个别软件在开启 BBR2 后无法联网，改回: netsh int tcp set supplemental template=internet congestionprovider=cubic
+
+# 7. 解除 Windows 系统级多媒体网络节流限制（NetworkThrottlingIndex = 0xffffffff）
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" -Name "NetworkThrottlingIndex" -Type DWord -Value 0xffffffff
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" -Name "SystemResponsiveness" -Type DWord -Value 0
+
+# 8. 禁用 Nagle 算法（降低小包延迟，提升游戏与交互响应）
+Get-ChildItem -Path "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" | ForEach-Object {
+    Set-ItemProperty -Path $_.PSPath -Name "TcpAckFrequency" -Type DWord -Value 1 -ErrorAction SilentlyContinue
+    Set-ItemProperty -Path $_.PSPath -Name "TCPNoDelay" -Type DWord -Value 1 -ErrorAction SilentlyContinue
+}
+EOF
+  echo ""
+  echo -e "${GREEN}[+] 客户端软件建议:${NC}"
+  echo "  - 优先选择支持 Wintun 驱动的客户端（如 Clash Verge Rev / Sing-box / Mihomo Party / v2rayN）"
+  echo "  - TUN 协议栈建议选 Mixed 或 System（避开 gVisor 用户态单核瓶颈）"
+  echo "  - Windows 原生 WFP 防泄露（Xray v26.9.30+ 可在 TUN 开启 autoSystemWfpBlockLeak: [\"dns\", \"misconfigtun\"] 阻断多网卡 DNS 泄露）"
+  echo ""
+}
+
+show_mac_tuning() {
+  echo -e "${CYAN}======================================================${NC}"
+  echo -e "${CYAN}   macOS 客户端千兆 TCP 缓冲区与 TFO 调优指南         ${NC}"
+  echo -e "${CYAN}======================================================${NC}"
+  echo ""
+  echo -e "${GREEN}[1] 终端即时生效命令:${NC}"
+  cat <<'EOF'
+sudo sysctl -w kern.ipc.maxsockbuf=33554432
+sudo sysctl -w net.inet.tcp.recvspace=4194304
+sudo sysctl -w net.inet.tcp.sendspace=4194304
+sudo sysctl -w net.inet.tcp.doautorcvbuf=1
+sudo sysctl -w net.inet.tcp.autorcvbufmax=33554432
+sudo sysctl -w net.inet.tcp.doautosndbuf=1
+sudo sysctl -w net.inet.tcp.autosndbufmax=33554432
+sudo sysctl -w net.inet.tcp.fastopen=3
+sudo sysctl -w net.inet.tcp.rfc1323=1
+sudo sysctl -w net.inet.tcp.win_scale_factor=8
+EOF
+  echo ""
+  echo -e "${GREEN}[2] 开机自动守护 (LaunchDaemon):${NC}"
+  cat <<'EOF'
+sudo tee /Library/LaunchDaemons/com.user.sysctl.plist << 'PLISTEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.sysctl</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/sbin/sysctl</string>
+        <string>-w</string>
+        <string>kern.ipc.maxsockbuf=33554432</string>
+        <string>net.inet.tcp.recvspace=4194304</string>
+        <string>net.inet.tcp.sendspace=4194304</string>
+        <string>net.inet.tcp.doautorcvbuf=1</string>
+        <string>net.inet.tcp.autorcvbufmax=33554432</string>
+        <string>net.inet.tcp.doautosndbuf=1</string>
+        <string>net.inet.tcp.autosndbufmax=33554432</string>
+        <string>net.inet.tcp.fastopen=3</string>
+        <string>net.inet.tcp.rfc1323=1</string>
+        <string>net.inet.tcp.win_scale_factor=8</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+PLISTEOF
+sudo chown root:wheel /Library/LaunchDaemons/com.user.sysctl.plist
+sudo chmod 644 /Library/LaunchDaemons/com.user.sysctl.plist
+sudo launchctl load -w /Library/LaunchDaemons/com.user.sysctl.plist 2>/dev/null || true
+EOF
+  echo ""
+}
+
+show_linux_tuning() {
+  echo -e "${CYAN}======================================================${NC}"
+  echo -e "${CYAN}   Linux 客户端千兆 TCP 缓冲区与 BDP 调优指南         ${NC}"
+  echo -e "${CYAN}======================================================${NC}"
+  cat <<'EOF'
+sudo sysctl -w net.core.rmem_max=67108864
+sudo sysctl -w net.core.wmem_max=67108864
+sudo sysctl -w net.ipv4.tcp_rmem="4096 87380 67108864"
+sudo sysctl -w net.ipv4.tcp_wmem="4096 65536 67108864"
+sudo sysctl -w net.ipv4.tcp_limit_output_bytes=4194304
+sudo sysctl -w net.ipv4.tcp_slow_start_after_idle=0
+sudo sysctl -w net.ipv4.tcp_adv_win_scale=1
+sudo sysctl -w net.ipv4.tcp_fastopen=3
+sudo sysctl -w net.core.default_qdisc=fq
+sudo sysctl -w net.ipv4.tcp_congestion_control=bbr
+EOF
+  echo ""
+}
+
+show_sb_tuning() {
+  echo -e "${CYAN}======================================================${NC}"
+  echo -e "${CYAN}   sing-box 客户端 5 节点核心加速关键配置 (1000M 版)    ${NC}"
+  echo -e "${CYAN}======================================================${NC}"
+  echo "  - FakeIP 零延迟解析:   fakeip.enabled: true, independent_cache: true (IPv6 池: 2001:2::/48 避开 Chrome 141+ PNA 警告)"
+  echo "  - Hysteria2 带宽:      默认不声明（BBR）；确知线路带宽时再设 up_mbps / down_mbps"
+  echo "  - TCP 快速握手 (TFO):  tcp_fast_open: true (VLESS / Naive / SS)"
+  echo "  - Vision 零拷贝流控:   flow: xtls-rprx-vision, packet_encoding: xudp"
+  echo "  - TUN 网卡极速优化:    mtu: 1480, stack: mixed, endpoint_independent_nat: true"
+  echo "  - 智能秒级故障转移:    urltest 测速周期 3m, connect_timeout: 3s"
+  echo ""
+  echo -e "${YELLOW}[+] 完整配置已保存在: /root/sbbox/sbox_client.json${NC}"
+  echo ""
+}
+
+show_client_tuning() {
+  local target="${1:-all}"
+  case "$target" in
+    win|windows)
+      show_win_tuning
+      ;;
+    mac|macos)
+      show_mac_tuning
+      ;;
+    linux)
+      show_linux_tuning
+      ;;
+    sb|singbox)
+      show_sb_tuning
+      ;;
+    *)
+      show_win_tuning
+      show_mac_tuning
+      show_linux_tuning
+      show_sb_tuning
+      ;;
+  esac
+}
+
+# ==================================================
+# TCP Brutal (HyNetworks/tcp-brutal) 极速拥塞控制支持
+# ==================================================
+TCP_BRUTAL_RULES_FILE="/etc/tcp-brutal.rules"
+TCP_BRUTAL_SERVICE_FILE="/etc/systemd/system/tcp-brutal-rules.service"
+TCP_BRUTAL_RESTORE_BIN="/usr/local/bin/tcp-brutal-restore"
+
+get_machine_max_speed_mbps() {
+  local speed=0
+  local dev
+  dev=$(ip route show default 2>/dev/null | awk '/default/ {print $5; exit}')
+
+  # 1. 尝试从 Oracle Cloud (OCI) 元数据获取网络带宽
+  local oci_gbps
+  oci_gbps=$(curl -s -m 2 -H "Authorization: Bearer Oracle" -L http://169.254.169.254/opc/v2/instance/ 2>/dev/null | grep -o '"networkingBandwidthInGbps"[[:space:]]*:[[:space:]]*[0-9.]*' | head -n 1 | awk -F: '{print $2}' | tr -d ' ')
+  if [[ -n "$oci_gbps" ]] && awk "BEGIN {exit !($oci_gbps > 0)}" 2>/dev/null; then
+    speed=$(awk "BEGIN {printf \"%d\", $oci_gbps * 1000}")
+  fi
+
+  # 2. 尝试从网卡 sysfs speed 获取物理/虚拟链路协商速率
+  if [[ "$speed" -le 0 && -n "$dev" && -f "/sys/class/net/$dev/speed" ]]; then
+    local s
+    s=$(cat "/sys/class/net/$dev/speed" 2>/dev/null || echo 0)
+    if [[ "$s" =~ ^[0-9]+$ ]] && [[ "$s" -gt 0 ]]; then
+      speed="$s"
+    fi
+  fi
+
+  # 3. 尝试通过 ethtool 获取默认网卡速率
+  if [[ "$speed" -le 0 && -n "$dev" ]] && command -v ethtool >/dev/null 2>&1; then
+    local eth_s
+    eth_s=$(ethtool "$dev" 2>/dev/null | grep -i "Speed:" | grep -o "[0-9]\+" | head -n 1)
+    if [[ "$eth_s" =~ ^[0-9]+$ ]] && [[ "$eth_s" -gt 0 ]]; then
+      speed="$eth_s"
+    fi
+  fi
+
+  # 4. 兜底基准速率（1000 Mbps，千兆 VPS 标准）
+  if [[ "$speed" -le 0 ]]; then
+    speed=1000
+  fi
+
+  echo "$speed"
+}
+
+get_default_brutal_speed_mbps() {
+  if [[ -n "${BRUTAL_DEFAULT_MBPS:-}" && "${BRUTAL_DEFAULT_MBPS}" != "auto" ]]; then
+    echo "$BRUTAL_DEFAULT_MBPS"
+    return 0
+  fi
+
+  local max_spd
+  max_spd=$(get_machine_max_speed_mbps)
+  local target=$(( max_spd * 95 / 100 ))
+  [[ "$target" -gt 0 ]] || target=950
+  echo "$target"
+}
+
+choose_brutal_speed() {
+  local input="${1:-}"
+  if [[ -n "$input" && "$input" != "auto" ]]; then
+    echo "$input"
+    return 0
+  fi
+
+  if [[ ! -t 0 ]]; then
+    get_default_brutal_speed_mbps
+    return 0
+  fi
+
+  local max_spd def_spd
+  max_spd=$(get_machine_max_speed_mbps)
+  def_spd=$(( max_spd * 95 / 100 ))
+  [[ "$def_spd" -gt 0 ]] || def_spd=950
+
+  echo "" >&2
+  echo -e "${CYAN}--- 请选择 TCP Brutal 下发速率 (建议对齐客户端实际下行宽带) ---${NC}" >&2
+  echo -e "  ${YELLOW}注意：Brutal 属固定速率发包；若高于客户端物理带宽会引发严重丢包，设为下行 80%~90% 最优。${NC}" >&2
+  echo "  1) 100 Mbps   (手机蜂窝 / 百兆宽带，推荐下发 90M)" >&2
+  echo "  2) 300 Mbps   (主流家庭宽带，推荐下发 270M)" >&2
+  echo "  3) 500 Mbps   (中高规格宽带，推荐下发 450M)" >&2
+  echo "  4) 1000 Mbps  (千兆极速光纤，推荐下发 900M)" >&2
+  echo "  5) 峰值最大   (本机网卡 95%: ${def_spd} Mbps)" >&2
+  echo "  6) 自定义速率 (手动输入 Mbps)" >&2
+  read -rp "请选择 [1-6，直接回车推荐 300M (270)]: " choice >&2
+
+  case "$choice" in
+    1) echo "90" ;;
+    2|"") echo "270" ;;
+    3) echo "450" ;;
+    4) echo "900" ;;
+    5) echo "$def_spd" ;;
+    6)
+      read -rp "请输入自定义下发速率 (Mbps，如 200): " custom >&2
+      if [[ "$custom" =~ ^[0-9]+$ && "$custom" -gt 0 ]]; then
+        echo "$custom"
+      else
+        echo "270"
+      fi
+      ;;
+    *)
+      if [[ "$choice" =~ ^[0-9]+$ && "$choice" -gt 0 ]]; then
+        echo "$choice"
+      else
+        echo "270"
+      fi
+      ;;
+  esac
+}
+
+# 报告内核里的 bbr 是 v1 还是 v3。
+#
+# 主判据：/proc/kallsyms 里的函数符号。v3 重写了 ProbeBW 状态机，引入
+# bbr_start_bw_probe_down / bbr_is_inflight_too_high / bbr_skb_marked_lost，
+# 同时删掉了 v1 专属的 bbr_lt_bw_sampling。即使 kptr_restrict=2 把地址清零，
+# 符号名仍在，所以这条判据几乎总是可用。
+#
+# 兜底判据只在拿不到 kallsyms 时才用，而且**只看 pacing_gain**：
+#   v1 STARTUP 的 high_gain = 2.88672；v3 STARTUP = 2.77344。
+# 注意不能用 cwnd_gain 判版本——**v1 在 PROBE_BW 阶段的 cwnd_gain 同样是 2**，
+# 它区分的是连接所处状态而不是 BBR 版本，长连接上会给出错误答案。
+# 而 pacing_gain 也只在 STARTUP 期有区分度，因此兜底命中不了就报 unknown，不猜。
+detect_bbr_version() {
+  local avail
+  avail=$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null || true)
+  case "$avail" in *bbr*) ;; *) echo "not-available"; return ;; esac
+
+  # 内核自己声明的版本最可靠：带 BBRv3 的内核（如 joeyblog 编译版）在 /sys/module/tcp_bbr/version 里写 3。
+  if [ -r /sys/module/tcp_bbr/version ]; then
+    case "$(cat /sys/module/tcp_bbr/version 2>/dev/null)" in
+      3) echo "v3"; return ;;
+      2) echo "v2"; return ;;
+    esac
+  fi
+
+  if [ -r /proc/kallsyms ]; then
+    if grep -qE ' bbr_(start_bw_probe_down|is_inflight_too_high|skb_marked_lost)$' /proc/kallsyms 2>/dev/null; then
+      echo "v3"; return
+    fi
+    if grep -qE ' bbr_lt_bw_sampling$' /proc/kallsyms 2>/dev/null; then
+      echo "v1"; return
+    fi
+  fi
+  case "$(ss -tin 2>/dev/null | grep -o 'pacing_gain:[0-9.]*' | head -1 | cut -d: -f2)" in
+    2.88672) echo "v1?" ;;
+    2.77344) echo "v3?" ;;
+    *)       echo "unknown" ;;
+  esac
+}
+
+patch_tcp_brutal_tso_segs() {
+  # 内核 7.1 起 tcp_congestion_ops 把 min_tso_segs(sk) 改成 tso_segs(sk, mss_now)，
+  # 上游 tcp-brutal（HyNetworks/apernet）2.0.0 及更早未适配（2.0.1 起自带，见下方跳过判断）：在 7.1+ 上 dkms 编译直接失败，
+  # 结果是 brutal 静默不可用，而本项目的 sockopt 里写着 tcpcongestion=brutal。
+  # 判别式直接 grep 目标内核头文件，不用 LINUX_VERSION_CODE 猜边界。
+  local src f mk
+  for src in /usr/src/tcp-brutal-*; do
+    [ -d "$src" ] || continue
+    f="$src/brutal_cc.c"; mk="$src/Makefile"
+    [ -f "$f" ] && [ -f "$mk" ] || continue
+    grep -q 'HAVE_TSO_SEGS_MSS' "$f" 2>/dev/null && continue   # 已打过，幂等
+    # 上游 v2.0.1 起自带适配（BRUTAL_HAVE_TSO_SEGS）且语义正确：新钩子 tso_segs 的返回值是
+    # 「一次发送的段数」，本补丁把它接到恒返回 2 的 min_tso_segs 上，会把 TSO 限成每次 2 段。
+    # 上游已适配时一律不打，本补丁只留给 2.0.0 及更早的源码。
+    grep -q 'BRUTAL_HAVE_TSO_SEGS' "$f" 2>/dev/null && continue
+
+    awk '
+      /^static u32 brutal_min_tso_segs\(struct sock \*sk\)$/ {
+        print "#ifdef HAVE_TSO_SEGS_MSS"
+        print "static u32 brutal_min_tso_segs(struct sock *sk, unsigned int mss_now)"
+        print "#else"
+        print $0
+        print "#endif"
+        next
+      }
+      /^[[:space:]]*\.min_tso_segs = brutal_min_tso_segs,$/ {
+        print "#ifdef HAVE_TSO_SEGS_MSS"
+        print "    .tso_segs = brutal_min_tso_segs,"
+        print "#else"
+        print $0
+        print "#endif"
+        next
+      }
+      { print }
+    ' "$f" > "$f.new" && mv "$f.new" "$f"
+
+    # Makefile 里加探测。三个坑：本文件会被 kbuild 二次读取（那时只有 srctree、
+    # 没有 KERNEL_DIR）；$(shell) 里不能用反斜杠续行；**make 找 $(shell ...) 的
+    # 右括号时不认引号**，所以 grep 模式里绝不能出现 ')'，用无括号的
+    # 'tso_segs.*mss_now' 代替（旧内核 0 命中、新内核 1 命中）。
+    awk '
+      /^ccflags-y := / && !done {
+        print $0
+        print "TSO_SEGS_HDR := $(firstword $(wildcard $(srctree)/include/net/tcp.h $(KERNEL_DIR)/include/net/tcp.h))"
+        print "TSO_SEGS_MSS := $(shell grep -c '\''tso_segs.*mss_now'\'' $(TSO_SEGS_HDR) 2>/dev/null)"
+        print "ifneq ($(TSO_SEGS_MSS),0)"
+        print "ccflags-y += -DHAVE_TSO_SEGS_MSS"
+        print "endif"
+        done=1
+        next
+      }
+      { print }
+    ' "$mk" > "$mk.new" && mv "$mk.new" "$mk"
+
+    info "已为新内核 ABI 修补 tcp-brutal（min_tso_segs → tso_segs）：$src" 2>/dev/null \
+      || echo "已为新内核 ABI 修补 tcp-brutal：$src"
+  done
+}
+
+install_tcp_brutal_module() {
+  local avail
+  avail=$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null || true)
+  if [[ "$avail" == *brutal* ]] && command -v brutalctl >/dev/null 2>&1; then
+    return 0
+  fi
+
+  info "正在检测并安装 TCP Brutal (tcp-brutal) 内核模块..."
+  if ! command -v dkms >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y -qq dkms "linux-headers-$(uname -r)" || true
+  fi
+
+  if ! command -v dkms >/dev/null 2>&1; then
+    warn "未安装 dkms，无法自动编译 tcp-brutal 内核模块"
+    return 1
+  fi
+
+  local tmp_dir tmp_tar tmp_sha
+  tmp_dir=$(mktemp -d)
+  tmp_tar="${tmp_dir}/tcp-brutal.dkms.tar.gz"
+  tmp_sha="${tmp_dir}/checksums.txt"
+
+  if curl -fsSL --max-time 60 https://github.com/HyNetworks/tcp-brutal/releases/latest/download/tcp-brutal.dkms.tar.gz -o "$tmp_tar" 2>/dev/null; then
+    # 校验 GitHub release SHA256 摘要（若提供 checksums.txt）
+    if curl -fsSL --max-time 15 https://github.com/HyNetworks/tcp-brutal/releases/latest/download/checksums.txt -o "$tmp_sha" 2>/dev/null; then
+      local expected_hash actual_hash
+      expected_hash=$(grep "tcp-brutal.dkms.tar.gz" "$tmp_sha" 2>/dev/null | awk '{print $1}')
+      actual_hash=$(sha256sum "$tmp_tar" 2>/dev/null | awk '{print $1}')
+      if [[ -n "$expected_hash" && "$expected_hash" != "$actual_hash" ]]; then
+        warn "tcp-brutal 归档 SHA256 校验失败，已放弃加载"
+        rm -rf "$tmp_dir"
+        return 1
+      fi
+    fi
+
+    # 先 ldtarball 把源码摊到 /usr/src，打完新内核 ABI 补丁再编译。
+    if dkms ldtarball "$tmp_tar" >/dev/null 2>&1; then
+      patch_tcp_brutal_tso_segs
+      local _bv
+      _bv=$(basename "$(ls -d /usr/src/tcp-brutal-* 2>/dev/null | tail -1)" 2>/dev/null | sed 's/^tcp-brutal-//')
+      [[ -n "$_bv" ]] && dkms install "tcp-brutal/$_bv" 2>/dev/null || true
+    else
+      dkms install "$tmp_tar" 2>/dev/null || true
+    fi
+  fi
+  rm -rf "$tmp_dir"
+
+  if ! command -v brutalctl >/dev/null 2>&1; then
+    patch_tcp_brutal_tso_segs
+    dkms autoinstall 2>/dev/null || true
+  fi
+
+  modprobe brutal 2>/dev/null || true
+  if lsmod | grep -qw brutal; then
+    echo "brutal" > /etc/modules-load.d/tcp-brutal.conf 2>/dev/null || true
+    info "TCP Brutal 内核模块已加载成功"
+    return 0
+  else
+    warn "TCP Brutal 模块加载失败，请确认内核头文件匹配"
+    return 1
+  fi
+}
+
+install_tcp_brutal_service() {
+  local default_mbps="${1:-}"
+  if [[ -z "$default_mbps" || "$default_mbps" == "auto" ]]; then
+    default_mbps="$(get_default_brutal_speed_mbps)"
+  fi
+
+  if [[ ! -f "$TCP_BRUTAL_RULES_FILE" ]]; then
+    cat << EOF > "$TCP_BRUTAL_RULES_FILE"
+# TCP Brutal Destination Rules (/etc/tcp-brutal.rules)
+# Format: <prefix> <rate_in_mbps> [noroute|lock|nolock]
+0.0.0.0/0 ${default_mbps} noroute
+::/0 ${default_mbps} noroute
+EOF
+  fi
+
+  cat << 'EOF' > "$TCP_BRUTAL_RESTORE_BIN"
+#!/usr/bin/env bash
+set -euo pipefail
+RULES_FILE="/etc/tcp-brutal.rules"
+
+if ! modprobe brutal 2>/dev/null && ! lsmod | grep -qw brutal; then
+  exit 0
+fi
+
+command -v brutalctl >/dev/null 2>&1 || exit 0
+
+brutalctl flush 2>/dev/null || true
+
+if [[ -f "$RULES_FILE" ]]; then
+  while read -r line || [[ -n "$line" ]]; do
+    line="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [[ -z "$line" || "$line" =~ ^# ]] && continue
+    read -r prefix rate opts <<< "$line"
+    if [[ -n "$prefix" && -n "$rate" ]]; then
+      if [[ -n "${opts:-}" ]]; then
+        brutalctl add "$prefix" "$rate" $opts 2>/dev/null || true
+      else
+        brutalctl add "$prefix" "$rate" 2>/dev/null || true
+      fi
+    fi
+  done < "$RULES_FILE"
+fi
+EOF
+  chmod +x "$TCP_BRUTAL_RESTORE_BIN"
+
+  cat << EOF > "$TCP_BRUTAL_SERVICE_FILE"
+[Unit]
+Description=TCP Brutal Rules Persistence Service
+After=network.target systemd-modules-load.service
+Wants=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=${TCP_BRUTAL_RESTORE_BIN}
+ExecReload=${TCP_BRUTAL_RESTORE_BIN}
+ExecStop=/usr/local/bin/brutalctl flush
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload 2>/dev/null || true
+  systemctl enable tcp-brutal-rules.service 2>/dev/null || true
+  systemctl restart tcp-brutal-rules.service 2>/dev/null || true
+}
+
+set_tcp_brutal_xray() {
+  local action="$1"
+  local mbps="${2:-}"
+  local cfg="/usr/local/etc/xray/config.json"
+  [[ -f "$cfg" ]] || { warn "未找到 Xray 配置文件: $cfg"; return 1; }
+
+  local bak="${cfg}.bak-brutal"
+  cp -a "$cfg" "$bak"
+
+  if [[ "$action" == "on" ]]; then
+    if [[ -z "$mbps" || "$mbps" == "auto" ]]; then
+      mbps="$(choose_brutal_speed auto)"
+    fi
+    install_tcp_brutal_module || true
+    install_tcp_brutal_service "$mbps"
+
+    python3 -c "
+import re
+
+cfg = '$cfg'
+with open(cfg, 'r', encoding='utf-8') as f:
+    text = f.read()
+
+# 1. 对所有已存在 sockopt 但缺少 tcpcongestion 的块注入 tcpcongestion: brutal
+s = re.sub(r'(\"sockopt\"\s*:\s*\{)(?![^}]*\"tcpcongestion\")', r'\1\n                    \"tcpcongestion\": \"brutal\",', text)
+# 2. 对已存在 tcpcongestion 的块替换为 brutal
+s = re.sub(r'\"tcpcongestion\"\s*:\s*\"[^\"]*\"', '\"tcpcongestion\": \"brutal\"', s)
+# 3. 对 Reality 入站 (network: raw) 若尚无 sockopt 则注入（避免 realitySettings 超 400 字符时重复注入）
+s = re.sub(r'(\"realitySettings\"\s*:\s*\{[\s\S]*?\n\s*\})(?!\s*,\s*\"sockopt\")', r'\1,\n                \"sockopt\": {\n                    \"tcpcongestion\": \"brutal\"\n                }', s)
+# 4. 严格保护 freedom 直连出站：严禁出站使用 brutal，始终维持 bbr
+s = re.sub(r'(\"protocol\"\s*:\s*\"freedom\"[\s\S]*?\"sockopt\"\s*:\s*\{[\s\S]*?\"tcpcongestion\"\s*:\s*)\"brutal\"', r'\g<1>\"bbr\"', s)
+
+with open(cfg, 'w', encoding='utf-8') as f:
+    f.write(s)
+" 2>/dev/null || true
+
+    if "$XRAY_BIN" run -test -c "$cfg" >/dev/null 2>&1; then
+      rm -f "$bak"
+      svc restart xray
+      if declare -f update_node_env >/dev/null 2>&1; then
+        update_node_env "XRAY_TCP_CC" "brutal"
+        update_node_env "FEATURE_BRUTAL" "true"
+      fi
+      info "Xray 已成功开启 TCP Brutal（入站下发速率: ${mbps} Mbps，Freedom 出站维持 BBR 保护）"
+    else
+      warn "Xray 配置文件测试失败，正在回滚..."
+      mv -f "$bak" "$cfg"
+      return 1
+    fi
+  else
+    python3 -c "
+import re
+
+cfg = '$cfg'
+with open(cfg, 'r', encoding='utf-8') as f:
+    text = f.read()
+
+# 入站切回 BBR（若已有 tcpcongestion 则改为 bbr）
+s = re.sub(r'\"tcpcongestion\"\s*:\s*\"brutal\"', '\"tcpcongestion\": \"bbr\"', text)
+
+with open(cfg, 'w', encoding='utf-8') as f:
+    f.write(s)
+" 2>/dev/null || true
+
+    if "$XRAY_BIN" run -test -c "$cfg" >/dev/null 2>&1; then
+      rm -f "$bak"
+      svc restart xray
+      if declare -f update_node_env >/dev/null 2>&1; then
+        update_node_env "XRAY_TCP_CC" "bbr"
+        update_node_env "FEATURE_BRUTAL" "false"
+      fi
+      info "Xray 已成功切回 BBR 拥塞控制"
+    else
+      warn "Xray 配置文件测试失败，正在回滚..."
+      mv -f "$bak" "$cfg"
+      return 1
+    fi
+  fi
+}
+
+# ---------- 更新提醒与 GitHub 资产校验（v4.9.47）----------
+# 每周任务只「检查并提醒」、不自动安装：有新版本时写入提醒文件，登录 shell 与
+# xh status 会显示；实际更新由管理员手动执行，且下载物必须通过校验。
+XH_UPDATE_NOTICE="${STATE_DIR:-/etc/xhttp-cdn}/updates-available"
+XH_UPDATE_PROFILE="/etc/profile.d/xh-updates.sh"
+
+# update_notice <组件> [提醒文本]：有文本则写入 / 替换该组件的提醒，无文本则清除
+update_notice() {
+  local comp="$1" msg="${2:-}" f="$XH_UPDATE_NOTICE"
+  mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
+  { grep -v "^\[${comp}\] " "$f" 2>/dev/null; [[ -n "$msg" ]] && echo "[${comp}] ${msg}"; } > "${f}.tmp"
+  mv -f "${f}.tmp" "$f"
+  if [[ -s "$f" ]]; then
+    printf '%s\n' "# 由 xh 生成：检查到新版本时在 root 登录时提醒；无待更新项时自动删除" \
+      "[ -s ${f} ] && [ \"\$(id -u)\" = 0 ] && case \$- in *i*) printf '\\033[33m[xh] 有可用更新（手动执行对应命令）：\\033[0m\\n'; sed 's/^/  /' ${f};; esac" \
+      > "$XH_UPDATE_PROFILE"
+  else
+    rm -f "$f" "$XH_UPDATE_PROFILE"
+  fi
+}
+
+# gh_latest_tag <owner/repo>：GitHub releases/latest 的 tag（只含正式版）
+gh_latest_tag() {
+  curl -fsSL --max-time 20 "https://api.github.com/repos/$1/releases/latest" 2>/dev/null \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("tag_name",""))' 2>/dev/null
+}
+
+# fetch_verified_github_asset <owner/repo> <tag> <资产名> <输出文件>
+# 双重校验：文件 sha256 必须同时等于① 发布者上传的 hashes.txt 中的值，② GitHub 在上传时
+# 独立计算并通过 API 返回的资产 digest。任一缺失或不符即删除文件并返回失败。
+fetch_verified_github_asset() {
+  local repo="$1" tag="$2" asset="$3" out="$4" base api_sum list_sum got
+  base="https://github.com/${repo}/releases/download/${tag}"
+  api_sum=$(curl -fsSL --max-time 20 "https://api.github.com/repos/${repo}/releases/tags/${tag}" 2>/dev/null \
+    | python3 -c 'import json,sys
+a=sys.argv[1]
+for x in json.load(sys.stdin).get("assets",[]):
+    if x.get("name")==a: print((x.get("digest") or "").replace("sha256:",""))' "$asset" 2>/dev/null)
+  list_sum=$(curl -fsSL --max-time 20 "${base}/hashes.txt" 2>/dev/null \
+    | awk -v a="$asset" '{n=$2; sub(/.*\//,"",n); if (n==a) {print $1; exit}}')
+  if [[ -z "$api_sum" || -z "$list_sum" ]]; then
+    warn "缺少校验数据（GitHub digest: ${api_sum:-无}，hashes.txt: ${list_sum:-无}），拒绝使用 ${asset}"; return 1
+  fi
+  [[ "$api_sum" == "$list_sum" ]] || { warn "GitHub digest 与 hashes.txt 不一致，拒绝使用 ${asset}"; return 1; }
+  curl -fsSL --max-time 120 "${base}/${asset}" -o "$out" || { warn "下载 ${asset} 失败"; return 1; }
+  got=$(sha256sum "$out" | cut -d' ' -f1)
+  if [[ "$got" != "$api_sum" ]]; then
+    rm -f "$out"; warn "${asset} sha256 校验失败（期望 ${api_sum:0:16}…，实际 ${got:0:16}…）"; return 1
+  fi
+  info "${asset} ${tag} sha256 校验通过（hashes.txt 与 GitHub digest 一致）：${got:0:16}…"
+}
+
+# ---------- tcp-brutal 模块更新（v4.9.47，手动）----------
+# 只把新版编译进 DKMS（下次开机自动加载），不动运行中的模块；立即生效用 reload。
+# 同机 sbbox（v2.7.35 起）也能更新 brutal，两边共用一把锁，避免并发跑 dkms。
+BRUTAL_UPDATE_LOCK="/run/tcp-brutal-update.lock"
+
+brutal_dkms_installed_ver() {
+  dkms status 2>/dev/null | sed -n 's|^tcp-brutal/\([^,]*\),.*: installed.*|\1|p' | sort -V | tail -1
+}
+
+# 每周任务调用：只检查、写提醒
+check_tcp_brutal_update() {
+  command -v dkms >/dev/null 2>&1 || return 0
+  local inst latest
+  inst=$(brutal_dkms_installed_ver); [[ -n "$inst" ]] || return 0
+  latest=$(gh_latest_tag apernet/tcp-brutal); latest="${latest#v}"
+  [[ -n "$latest" ]] || { warn "查询 tcp-brutal 最新版本失败"; return 0; }
+  if [[ "$(printf '%s\n%s\n' "$latest" "$inst" | sort -V | tail -1)" != "$inst" ]]; then
+    update_notice tcp-brutal "${inst} → ${latest}（手动更新：${MANAGE_CMD:-xh} brutal update）"
+    info "tcp-brutal 有新版本：${inst} → ${latest}"
+  else
+    update_notice tcp-brutal ""
+    info "tcp-brutal 已是最新：${inst}"
+  fi
+}
+
+update_tcp_brutal() {
+  command -v dkms >/dev/null 2>&1 || { info "未安装 dkms，跳过 tcp-brutal 更新"; return 0; }
+  [[ -n "$(dkms status 2>/dev/null | grep '^tcp-brutal/')" ]] || { info "未安装 tcp-brutal，跳过"; return 0; }
+  exec 9>"$BRUTAL_UPDATE_LOCK"
+  flock -w 900 9 || { warn "另一个 tcp-brutal 更新正在进行，跳过"; return 0; }
+
+  local tag ver inst tmp
+  inst=$(brutal_dkms_installed_ver)
+  tag=$(gh_latest_tag apernet/tcp-brutal); ver="${tag#v}"
+  [[ -n "$ver" ]] || { warn "查询 tcp-brutal 最新版本失败"; flock -u 9; return 1; }
+  if [[ -n "$inst" && "$(printf '%s\n%s\n' "$ver" "$inst" | sort -V | tail -1)" == "$inst" ]]; then
+    info "tcp-brutal 已是最新：DKMS ${inst}，运行中 $(cat /sys/module/brutal/version 2>/dev/null || echo 未加载)"
+    update_notice tcp-brutal ""; flock -u 9; return 0
+  fi
+  tmp=$(mktemp -d) || { flock -u 9; return 1; }
+  if ! fetch_verified_github_asset apernet/tcp-brutal "$tag" tcp-brutal.dkms.tar.gz "$tmp/t.tgz"; then
+    rm -rf "$tmp"; flock -u 9; return 1
+  fi
+  tar -xzf "$tmp/t.tgz" -C "$tmp" 2>/dev/null
+  if [[ "$(sed -n 's/^PACKAGE_VERSION="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$tmp"/*/dkms.conf 2>/dev/null | head -1)" != "$ver" ]]; then
+    warn "源码包内版本与 ${tag} 不符，已中止"; rm -rf "$tmp"; flock -u 9; return 1
+  fi
+
+  info "tcp-brutal ${inst:-无} → ${ver}：编译进 DKMS ..."
+  [[ -d "/usr/src/tcp-brutal-${ver}" ]] || dkms ldtarball "$tmp/t.tgz" >/dev/null 2>&1
+  patch_tcp_brutal_tso_segs
+  if dkms install "tcp-brutal/${ver}" -k "$(uname -r)" --force >/dev/null 2>&1 && \
+     [[ "$(brutal_dkms_installed_ver)" == "$ver" ]]; then
+    local v
+    for v in $(dkms status 2>/dev/null | sed -n 's|^tcp-brutal/\([^,]*\),.*|\1|p' | sort -u); do
+      [[ "$v" == "$ver" ]] || dkms remove "tcp-brutal/${v}" --all >/dev/null 2>&1 || true
+    done
+    update_notice tcp-brutal ""
+    info "tcp-brutal ${ver} 已编译安装，下次开机生效（立即生效：${MANAGE_CMD} brutal reload，会短暂中断 443 连接）"
+  else
+    warn "tcp-brutal ${ver} 编译失败，保留现有 ${inst:-版本}"
+    dkms remove "tcp-brutal/${ver}" --all >/dev/null 2>&1 || true
+  fi
+  rm -rf "$tmp"; flock -u 9
+}
+
+# 热替换运行中的 brutal 模块：卸载需要引用计数归零，即先停掉持有 brutal 连接的 Xray
+reload_tcp_brutal() {
+  local want cur
+  want=$(modinfo -F version brutal 2>/dev/null); cur=$(cat /sys/module/brutal/version 2>/dev/null)
+  [[ -n "$want" ]] || fail "未找到 brutal 模块文件"
+  if [[ "$cur" == "$want" ]]; then info "运行中的 brutal 已是 ${cur}"; return 0; fi
+  warn "将重载 brutal 模块 ${cur:-未加载} → ${want}，期间 Xray 会停止数秒"
+  svc stop xray || true
+  sleep 1
+  if lsmod | grep -q '^brutal '; then
+    rmmod brutal 2>/dev/null || { svc start xray || true; fail "brutal 仍被占用，无法卸载（ss -ti | grep brutal 查看持有者）"; }
+  fi
+  modprobe brutal || { svc start xray || true; fail "加载新 brutal 模块失败"; }
+  systemctl restart tcp-brutal-rules.service 2>/dev/null || true
+  svc start xray || warn "Xray 启动失败，请检查 ${MANAGE_CMD} log"
+  info "brutal 模块已重载：$(cat /sys/module/brutal/version 2>/dev/null)"
+}
+
+set_tcp_brutal_speed() {
+  local mbps="${1:-}"
+  if [[ -z "$mbps" || "$mbps" == "auto" ]]; then
+    mbps="$(choose_brutal_speed auto)"
+    info "下发速率已设置为: ${mbps} Mbps"
+  fi
+  install_tcp_brutal_service "$mbps"
+
+  sed -i -E "s/^(0\.0\.0\.0\/0)[[:space:]]+[0-9]+/\1 ${mbps}/" "$TCP_BRUTAL_RULES_FILE" 2>/dev/null || true
+  sed -i -E "s/^(::\/0)[[:space:]]+[0-9]+/\1 ${mbps}/" "$TCP_BRUTAL_RULES_FILE" 2>/dev/null || true
+
+  if command -v brutalctl >/dev/null 2>&1; then
+    brutalctl add 0.0.0.0/0 "$mbps" noroute 2>/dev/null || true
+    brutalctl add ::/0 "$mbps" noroute 2>/dev/null || true
+    info "TCP Brutal 全局默认下发速率已更新为: ${mbps} Mbps"
+  fi
+}
+
+add_tcp_brutal_rule() {
+  local ip="${1:-}"
+  local mbps="${2:-}"
+  [[ -n "$ip" ]] || { echo "用法: ${MANAGE_CMD} brutal add <目标IP/网段> [速率Mbps]"; return 1; }
+  if [[ -z "$mbps" || "$mbps" == "auto" ]]; then
+    mbps="$(get_default_brutal_speed_mbps)"
+  fi
+  [[ "$ip" == *"/"* ]] || {
+    if [[ "$ip" == *":"* ]]; then ip="${ip}/128"; else ip="${ip}/32"; fi
+  }
+
+  install_tcp_brutal_service
+  sed -i "\|^${ip}[[:space:]]|d" "$TCP_BRUTAL_RULES_FILE" 2>/dev/null || true
+  echo "${ip} ${mbps}" >> "$TCP_BRUTAL_RULES_FILE"
+
+  if command -v brutalctl >/dev/null 2>&1; then
+    brutalctl add "$ip" "$mbps"
+    info "已为 ${ip} 添加 TCP Brutal 限速规则: ${mbps} Mbps"
+  fi
+}
+
+del_tcp_brutal_rule() {
+  local ip="${1:-}"
+  [[ -n "$ip" ]] || { echo "用法: ${MANAGE_CMD} brutal del <目标IP/网段>"; return 1; }
+  [[ "$ip" == *"/"* ]] || {
+    if [[ "$ip" == *":"* ]]; then ip="${ip}/128"; else ip="${ip}/32"; fi
+  }
+
+  sed -i "\|^${ip}[[:space:]]|d" "$TCP_BRUTAL_RULES_FILE" 2>/dev/null || true
+
+  if command -v brutalctl >/dev/null 2>&1; then
+    brutalctl del "$ip" 2>/dev/null || true
+    info "已删除 ${ip} 的 TCP Brutal 规则"
+  fi
+}
+
