@@ -54,8 +54,8 @@ fi
 _HY2_OBFS_PORT_NOTE=""
 [[ "${FEATURE_HY2_OBFS:-false}" == true ]] && _HY2_OBFS_PORT_NOTE="、UDP ${HY2_PORT}"
 _REALITY_PQ_PORT_NOTE=""
-[[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]] && _REALITY_PQ_PORT_NOTE="TCP 8447、"
-if [[ "$FEATURE_H3_DIRECT" == true || "$FEATURE_HY2" == true || "$FEATURE_H2_DIRECT" == true || "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
+[[ "${FEATURE_REALITY_PQ_VISION:-false}" == true ]] && _REALITY_PQ_PORT_NOTE="TCP 8447、"
+if [[ "$FEATURE_H3_DIRECT" == true || "$FEATURE_HY2" == true || "$FEATURE_H2_DIRECT" == true || "${FEATURE_REALITY_PQ_VISION:-false}" == true ]]; then
   echo -e "${RED}※ 直连节点需要在云厂商安全组放行 ${_REALITY_PQ_PORT_NOTE}UDP ${H3_PORT}、UDP ${HY2_H3_PORT}${_HY2_OBFS_PORT_NOTE} 与 TCP ${H2_PORT}${NC}"
   echo "  安全组在虚拟机外面，本机 ss 显示监听正常也可能被云平台丢包。"
 fi

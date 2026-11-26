@@ -42,18 +42,19 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
 
 ## 📡 核心节点矩阵与实机压测指标
 
-项目精选 **6 大全协议主力节点**，不带任何开关的默认安装命令即装出这 6 个节点。其余节点（如 `VLESS-CDN-Up-Reality-Down`、`VLESS-TLS+PQ+XHTTP+CDN`、`VLESS-XHTTP-Direct-H2`、`VLESS-Reality-Vision-Direct`）可通过对应 `FEATURE_*` 开关或 `xh` 命令按需启用：
+项目精选 **6 大全协议主力节点**，不带任何开关的默认安装命令即装出这 6 个节点。其余节点（如 `VLESS-CDN-Up-Reality-Down`、`VLESS-REALITY+PQ+Vision`（`xh pq reality on`）、`VLESS-XHTTP-Direct-H2`、`VLESS-Reality-Vision-Direct`）可通过对应 `FEATURE_*` 开关或 `xh` 命令按需启用：
 
 | 节点名称 | 传输协议 / 端口 | 特色技术与混淆 | 实测握手 | 实测下行 | 实测上行 | 适用网络与推荐场景 |
 | :--- | :--- | :--- | :---: | :---: | :---: | :--- |
 | **`VLESS-Reality-XHTTP-Direct`** | VLESS + REALITY (443) | TCP Fast Open (TFO) + vlessenc 解密 | **7.0 ms** | **957.7M** | **541.3M** | **极速首选**：千兆跑满，游戏/秒级网页响应 |
-| **`VLESS-REALITY+PQ+Vision`** | VLESS + REALITY (443) | ML-KEM-768 后量子 + Vision 流控 | 未实测 | 未实测 | 未实测 | 直连 443 的抗量子 Reality 通道，兼顾抗破译与低延迟 |
+| **`VLESS-TLS+PQ+XHTTP+CDN`** | VLESS + XHTTP (443 / Cloudflare CDN) | ML-KEM-768 后量子 + TLS 1.3 | 41 ms¹ | 未实测 | 未实测 | 全程走 CDN，隐藏源站 IP，直连被封时的稳定备用 |
 | **`VLESS-Reality-Up-CDN-Down`** | VLESS + XHTTP (443) | 上行直连低延时 + 下行 CDN 大带宽转发 | 23.6 ms | 735.2M | 537.5M | 直连上行保低延迟，突发下载走 CDN 保护 |
 | **`VLESS-XHTTP-Direct-H3`** | VLESS + XHTTP (8443) | 原生 QUIC (HTTP/3) / 64MB 窗口 | 17.7 ms | 681.2M | 419.2M | 跨洋链路高丢包环境直连极速加速 |
 | **`Hysteria2-H3-Direct`** | Hysteria2 (UDP 高端口) | 原生 BBRv3 / 128MB 连接流控窗口 | 57.4 ms | 818.7M | **764.4M** | 移动/校园网等严苛丢包网络千兆跑满 |
 | **`Hysteria2-Salamander-Direct`** | Hysteria2 (UDP 高端口) | Salamander 强混淆 + BBRv3 | 34.2 ms | 316.2M | 428.0M | 运营商严酷封锁 UDP 重灾区专用穿透通道 |
 
 > [!NOTE]
+> - ¹ `xh ping` 中位握手延迟（含 Cloudflare 一跳）。
 > - **实机实测环境**：Oracle Cloud ARM64 (4 OCPU / 24GB RAM / 1Gbps) 端到端真实 `xh bench` 回环压测。
 > - **后量子安全 (PQ)**：核心节点全面支持 NIST ML-KEM-768 密钥交换，并在客户端配置中自动注入 `support-x25519mlkem768: true`，杜绝 ClientHello 握手失败。
 

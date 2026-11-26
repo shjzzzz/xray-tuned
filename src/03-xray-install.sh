@@ -166,7 +166,7 @@ check_udp_port_conflict() {
     fi
   fi
 
-  if [[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]] && ss -lntp 2>/dev/null | grep -qE ":8447\b"; then
+  if [[ "${FEATURE_REALITY_PQ_VISION:-false}" == true ]] && ss -lntp 2>/dev/null | grep -qE ":8447\b"; then
     local pq_holder
     pq_holder=$(ss -lntpH 2>/dev/null | grep -E ":8447\b" | grep -oE 'users:\(\("[^"]+' | head -1 | sed 's/.*"//')
     if [[ "$pq_holder" != "xray" ]]; then

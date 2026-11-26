@@ -38,14 +38,14 @@ The default install command (no `FEATURE_*` switches) generates exactly these 6 
 | # | Node Name | Protocol & Transport | Port / Mode | Obfuscation / Cipher | Recommended Use Case |
 | :---: | :--- | :--- | :--- | :--- | :--- |
 | **1** | `VLESS-Reality-XHTTP-Direct` | VLESS + REALITY (RAW) | 443 fallback to 8001 | XHTTP + vlessenc local fallback | Reality camouflage on the standard port with protocol routing |
-| **2** | `VLESS-REALITY+PQ+Vision` | VLESS + REALITY (RAW) | 443 / TCP (Direct) | ML-KEM-768 + xtls-rprx-vision | Quantum-resistant direct connection on port 443 |
+| **2** | `VLESS-TLS+PQ+XHTTP+CDN` | VLESS + XHTTP (H2) | 443 (Cloudflare CDN) | ML-KEM-768 + TLS 1.3 | Fully CDN-fronted, hides the origin IP; stable fallback when direct routes are blocked |
 | **3** | `VLESS-Reality-Up-CDN-Down` | VLESS + XHTTP | 443 (up: Reality direct, down: CDN) | Split up/down links | Low-latency direct upload, CDN-carried bulk download |
 | **4** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8443 / UDP (Direct) | Native QUIC (H3) / 64MB window | Direct low-latency cross-ocean high throughput |
 | **5** | `Hysteria2-H3-Direct` | Hysteria2 | UDP Dynamic Port | BBRv3 / Standard HTTP/3 | Gigabit line-rate throughput & fast recovery from packet loss |
 | **6** | `Hysteria2-Salamander-Direct` | Hysteria2 | UDP Dynamic Port | Salamander Obfs + BBR + 64MB window | Extreme ISP UDP throttling & active-probing evasion |
 
 > [!NOTE]
-> - **Optional nodes** (off by default): `VLESS-TLS+PQ+XHTTP+CDN`, `VLESS-CDN-Up-Reality-Down`, `VLESS-XHTTP-Direct-H2` (8445 TCP, `xh h2direct on`), `VLESS-Reality-Vision-Direct` (`xh reality vision on`), CDN H2/H3 nodes (`xh cdnh2 on` / `xh cdnh3 on`).
+> - **Optional nodes** (off by default): `VLESS-REALITY+PQ+Vision` (`xh pq reality on`), `VLESS-CDN-Up-Reality-Down`, `VLESS-XHTTP-Direct-H2` (8445 TCP, `xh h2direct on`), `VLESS-Reality-Vision-Direct` (`xh reality vision on`), CDN H2/H3 nodes (`xh cdnh2 on` / `xh cdnh3 on`).
 > - **Hysteria2 nodes** use dynamic high UDP ports and declare 64MB stream / 128MB connection receive windows to eliminate BDP bottlenecks.
 > - **Turn any node on or off later** with `xh pq|reality|split|hy2|h3direct|h2direct|cdnh2|cdnh3`.
 

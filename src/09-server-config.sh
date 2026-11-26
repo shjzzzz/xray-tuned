@@ -211,7 +211,7 @@ fi
 # 443 入站本身（含到本机 nginx 的 target）始终保留：CDN 域名的回源也要靠它。
 REALITY_VISION_CLIENT_JSON=""
 REALITY_XHTTP_FALLBACK_JSON=""
-if [[ "${FEATURE_REALITY_VISION:-true}" == true || "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
+if [[ "${FEATURE_REALITY_VISION:-true}" == true || "${FEATURE_REALITY_PQ_VISION:-false}" == true ]]; then
   printf -v REALITY_VISION_CLIENT_JSON '\n        // >>xh:realityvision\n                    {\n                        "id": "%s",\n                        "level": 0,\n                        "flow": "%s"\n                    }\n        // <<xh:realityvision\n' "${UUID1}" "${VISION_FLOW:-xtls-rprx-vision}"
 fi
 if [[ "${FEATURE_REALITY_XHTTP:-true}" == true ]]; then
@@ -241,6 +241,8 @@ xray_reality_pq_vision_inbound() {
             "streamSettings": {
                 "network": "raw",
                 "security": "reality",
+                // 服务端开启 TCP Fast Open：客户端链接带 tfo=1，重连省一次 TCP 握手往返
+                "sockopt": { "tcpFastOpen": true },
                 "realitySettings": {
                     "show": false,
                     "target": "127.0.0.1:8003",
@@ -268,7 +270,7 @@ PQEOF
 }
 
 XRAY_REALITY_PQ_VISION_INBOUND=""
-if [[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]]; then
+if [[ "${FEATURE_REALITY_PQ_VISION:-false}" == true ]]; then
   XRAY_REALITY_PQ_VISION_INBOUND="$(xray_reality_pq_vision_inbound)"$'\n'
 fi
 
@@ -824,9 +826,9 @@ info "写入 ${NODE_ENV_FILE} ..."
   printf 'FEATURE_NOISE_LINKS=%q\n'    "${FEATURE_NOISE_LINKS:-false}"
   printf 'FEATURE_REALITY_VISION=%q\n'  "${FEATURE_REALITY_VISION:-false}"
   printf 'FEATURE_REALITY_XHTTP=%q\n'   "${FEATURE_REALITY_XHTTP:-true}"
-  printf 'FEATURE_TLS_PQ_XHTTP=%q\n'    "${FEATURE_TLS_PQ_XHTTP:-false}"
+  printf 'FEATURE_TLS_PQ_XHTTP=%q\n'    "${FEATURE_TLS_PQ_XHTTP:-true}"
   printf 'FEATURE_TLS_PQ_VISION=%q\n'   "${FEATURE_TLS_PQ_VISION:-false}"
-  printf 'FEATURE_REALITY_PQ_VISION=%q\n' "${FEATURE_REALITY_PQ_VISION:-true}"
+  printf 'FEATURE_REALITY_PQ_VISION=%q\n' "${FEATURE_REALITY_PQ_VISION:-false}"
   printf 'XRAY_CHANNEL=%q\n'   "${XRAY_CHANNEL:-stable}"
   printf 'NOISE_EXP_PACKET=%q\n'       "${NOISE_EXP_PACKET:-<b 16030100><r 32><t><c><rd 8>}"
   printf 'NOISE_EXP_DELAY=%q\n'        "${NOISE_EXP_DELAY:-10-50}"

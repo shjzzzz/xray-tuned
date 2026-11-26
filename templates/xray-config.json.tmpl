@@ -26,7 +26,10 @@
             "1.1.1.1",
             "9.9.9.10"
         ],
-        "queryStrategy": "UseIPv4"
+        "queryStrategy": "UseIPv4",
+        // 缓存过期后先用旧结果立即建连、后台再刷新，新连接不再等 DNS 查询
+        "serveStale": true,
+        "serveExpiredTTL": 86400
     },
     ${XRAY_POLICY_JSON}
     "routing": {
@@ -70,6 +73,8 @@
             "streamSettings": {
                 "network": "raw",
                 "security": "reality",
+                // 服务端开启 TCP Fast Open：客户端链接带 tfo=1，重连省一次 TCP 握手往返
+                "sockopt": { "tcpFastOpen": true },
                 "realitySettings": {
                     "show": false,
                     "target": "127.0.0.1:8003",

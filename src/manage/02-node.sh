@@ -2660,7 +2660,7 @@ cmd_reality() {
       echo -e "${CYAN}=== Reality 与后量子精选核心节点 (最佳本机配置) ===${NC}"
       printf '  %-40s %s\n' "1) VLESS-TLS+PQ+XHTTP+CDN" "$([[ "${FEATURE_TLS_PQ_XHTTP:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  CF CDN(443)  TLS+ML-KEM+XHTTP(16流)"
       printf '  %-40s %s\n' "2) VLESS-TLS+PQ+Vision+XHTTP+CDN" "$([[ "${FEATURE_TLS_PQ_VISION:-false}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  CF CDN(443)  TLS+ML-KEM+Vision+XHTTP"
-      printf '  %-40s %s\n' "3) VLESS-REALITY+PQ+Vision" "$([[ "${FEATURE_REALITY_PQ_VISION:-true}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  直连(443)    REALITY+ML-KEM+Vision(BBR)"
+      printf '  %-40s %s\n' "3) VLESS-REALITY+PQ+Vision" "$([[ "${FEATURE_REALITY_PQ_VISION:-false}" == true ]] && echo -e "${GREEN}已开启${NC}" || echo -e "${YELLOW}未开启${NC}")  直连(443)    REALITY+ML-KEM+Vision(BBR)"
       echo ""
       echo -e "${CYAN}--- 核心节点链接 (可直接导入客户端) ---${NC}"
       echo -e "  ${YELLOW}[1] VLESS-TLS+PQ+XHTTP+CDN:${NC}"
@@ -2756,7 +2756,7 @@ cmd_split() {
 cmd_pq() {
   local target="${1:-show}" action="${2:-show}"
   local cc="${USER_HOME:-/root}/client-config.txt"
-  local s_xhttp="${FEATURE_TLS_PQ_XHTTP:-false}"
+  local s_xhttp="${FEATURE_TLS_PQ_XHTTP:-true}"
   local s_vision="${FEATURE_TLS_PQ_VISION:-false}"
   local s_reality="${FEATURE_REALITY_PQ_VISION:-false}"
 
