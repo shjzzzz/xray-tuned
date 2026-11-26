@@ -224,7 +224,6 @@ if os.path.isfile(txt_file):
             line = re.sub(r'("address":")[^"]+(")', r'\g<1>' + cdn_addr + r'\g<2>', line)
         elif "Direct-H3" in tag:
             line = re.sub(r'[&?]tfo=[0-9]+', '', line)
-            line = re.sub(r'&fm=[^&#]*', '', line)
         new_lines.append(line)
     with open(txt_file, "w", encoding="utf-8") as f:
         f.write("\n".join(new_lines) + "\n")
@@ -1164,7 +1163,7 @@ def frag(line):
 def match(line):
     if frag(line).startswith(name):
         return True
-    if name in ('Hysteria2-TLS-BBR-Salamander', 'Hysteria2-Obfs-Direct') and any(frag(line).startswith(x) for x in ('Hysteria2-TLS-BBR-Salamander', 'Hysteria2-Obfs-Direct')):
+    if name in ('Hysteria2-Salamander-Direct', 'Hysteria2-Obfs-Direct') and any(frag(line).startswith(x) for x in ('Hysteria2-Salamander-Direct', 'Hysteria2-Obfs-Direct')):
         return True
     return False
 
@@ -1538,7 +1537,7 @@ cmd_backup_server_node() {
   case "$key" in
     h3direct) flag=FEATURE_H3_DIRECT; name="VLESS-XHTTP-Direct-H3"; label="XHTTP-Direct-H3（UDP QUIC/HTTP3 直连）";               proto=udp; port="${H3_PORT:-8443}" ;;
     h2direct) flag=FEATURE_H2_DIRECT; name="VLESS-XHTTP-Direct-H2"; label="XHTTP-Direct-H2（TCP 直连，h3-direct 的孪生体）"; proto=tcp; port="${H2_PORT:-8445}" ;;
-    hy2obfs)  flag=FEATURE_HY2_OBFS;  name="Hysteria2-TLS-BBR-Salamander"; label="Hysteria2-TLS-BBR-Salamander（salamander 混淆）";       proto=udp; port="${HY2_PORT}" ;;
+    hy2obfs)  flag=FEATURE_HY2_OBFS;  name="Hysteria2-Salamander-Direct"; label="Hysteria2-Salamander-Direct（salamander 混淆）";       proto=udp; port="${HY2_PORT}" ;;
     masque)   flag=FEATURE_MASQUE;    name="MASQUE-CONNECT-IP";     label="MASQUE 标准 L3 隧道 (RFC 9484 CONNECT-IP)";        proto=udp; port="${MASQUE_PORT:-8447}" ;;
   esac
   cur="${!flag:-false}"

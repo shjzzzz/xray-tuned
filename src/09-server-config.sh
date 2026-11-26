@@ -325,6 +325,15 @@ xray_h3_direct_inbound() {
                         }
                     ]
                 }${XRAY_SOCKOPT_JSON},
+                "finalmask": {
+                    "quicParams": {
+                        "keepAlivePeriod": 10,
+                        "initStreamReceiveWindow": 8388608,
+                        "maxStreamReceiveWindow": 67108864,
+                        "initConnectionReceiveWindow": 16777216,
+                        "maxConnectionReceiveWindow": 134217728
+                    }
+                },
                 "xhttpSettings": {
                     "host": "",
                     "path": "${XHTTP_PATH}",

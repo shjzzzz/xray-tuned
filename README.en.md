@@ -42,7 +42,7 @@ The default install command (no `FEATURE_*` switches) generates exactly these 6 
 | **3** | `VLESS-Reality-Up-CDN-Down` | VLESS + XHTTP | 443 (up: Reality direct, down: CDN) | Split up/down links | Low-latency direct upload, CDN-carried bulk download |
 | **4** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8443 / UDP (Direct) | Native QUIC (H3) / 64MB window | Direct low-latency cross-ocean high throughput |
 | **5** | `Hysteria2-H3-Direct` | Hysteria2 | UDP Dynamic Port | BBRv3 / Standard HTTP/3 | Gigabit line-rate throughput & fast recovery from packet loss |
-| **6** | `Hysteria2-TLS-BBR-Salamander` | Hysteria2 | UDP Dynamic Port | Salamander Obfs + BBR + 64MB window | Extreme ISP UDP throttling & active-probing evasion |
+| **6** | `Hysteria2-Salamander-Direct` | Hysteria2 | UDP Dynamic Port | Salamander Obfs + BBR + 64MB window | Extreme ISP UDP throttling & active-probing evasion |
 
 > [!NOTE]
 > - **Optional nodes** (off by default): `VLESS-TLS+PQ+XHTTP+CDN`, `VLESS-CDN-Up-Reality-Down`, `VLESS-XHTTP-Direct-H2` (8445 TCP, `xh h2direct on`), `VLESS-Reality-Vision-Direct` (`xh reality vision on`), CDN H2/H3 nodes (`xh cdnh2 on` / `xh cdnh3 on`).
@@ -57,7 +57,7 @@ The default install command (no `FEATURE_*` switches) generates exactly these 6 
 | **5** | `VLESS-XHTTP-CDN-H3` | VLESS + XHTTP (H3) | 443 (Cloudflare CDN) | QUIC (H3) 0-RTT / 64MB window | Packet-loss resistant CDN acceleration on unstable mobile networks |
 | **6** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8443 / UDP (Direct) | Native QUIC (H3) / 64MB window | Direct low-latency cross-ocean high throughput |
 | **7** | `Hysteria2-H3-Direct` | Hysteria2 | UDP Dynamic Port (e.g., 19142) | BBRv3 / Standard HTTP/3 | Gigabit line-rate throughput & instant recovery from packet loss |
-| **8** | `Hysteria2-TLS-BBR-Salamander` | Hysteria2 | UDP Dynamic Port (e.g., 38969) | Salamander Obfs + BBR + 64MB window | Extreme ISP UDP throttling & active-probing evasion |
+| **8** | `Hysteria2-Salamander-Direct` | Hysteria2 | UDP Dynamic Port (e.g., 38969) | Salamander Obfs + BBR + 64MB window | Extreme ISP UDP throttling & active-probing evasion |
 | **9** | `VLESS-Reality-Vision-Direct` | VLESS + REALITY (RAW) | 443 / TCP (Direct) | xtls-rprx-vision zero-copy | Standard port 443 direct connection enjoying highest carrier QoS |
 | **10** | `VLESS-Reality-XHTTP-Direct` | VLESS + REALITY (RAW) | 443 fallback to 8001 | XHTTP + vlessenc local fallback | Dual-layer fallback combining Reality camouflage with protocol routing |
 

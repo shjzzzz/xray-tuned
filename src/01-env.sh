@@ -50,7 +50,7 @@ fi
 # ==================================================
 
 PROJECT_NAME="xray-xhttp"
-PROJECT_VERSION="1.0.1"
+PROJECT_VERSION="1.0.2"
 PROJECT_REPO="shjzzzz/xray-tuned"
 # 默认推荐的 Xray-core 版本：回退版本 v26.10.21（含 v26.9.30 起的 XDRIVE / MASQUE / Noise / WFP 特性，并移除了 3 张被攻破的中间 CA 根证书；
 # v26.10.10 / v26.10.17 已被官方撤版）。正常情况下按通道（stable=/releases/latest）自适应取最新，查询失败才用它。
@@ -109,7 +109,7 @@ AUTO=${AUTO:-0}
 #   3. VLESS-XHTTP-Direct-H3         直连 UDP 8443，QUIC/h3
 #   4. VLESS-XHTTP-Direct-H2         直连 TCP 8445，h2
 #   5. Hysteria2-H3-Direct           直连 UDP 随机高端口，标准 HTTP/3
-#   6. Hysteria2-TLS-BBR-Salamander  直连 UDP 随机高端口，salamander 混淆
+#   6. Hysteria2-Salamander-Direct  直连 UDP 随机高端口，salamander 混淆
 #   7. VLESS-Reality-Vision-Direct   直连 TCP 443，xtls-rprx-vision 零拷贝直通
 #   8. VLESS-Reality-XHTTP-Direct    直连 TCP 443，XHTTP 上下行不分离
 # 备用（默认关闭）：CDN-H2、CDN-H3、上下行分离、MASQUE 等。

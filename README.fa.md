@@ -41,7 +41,7 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
 | **۳** | `VLESS-Reality-Up-CDN-Down` | VLESS + XHTTP | 443 (آپلود: Reality مستقیم، دانلود: CDN) | جداسازی مسیر آپلود و دانلود | آپلود مستقیم با تأخیر کم و دانلود حجیم از طریق CDN |
 | **۴** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8443 / UDP (مستقیم) | QUIC (H3) بومی / پنجره ۶۴ مگابایت | توان عملیاتی بالا و تأخیر کم در مسیرهای فرااقیانوسی |
 | **۵** | `Hysteria2-H3-Direct` | Hysteria2 | پورت تصادفی UDP | BBRv3 / HTTP/3 استاندارد | سرعت گیگابیتی و بازیابی سریع از افت بسته |
-| **۶** | `Hysteria2-TLS-BBR-Salamander` | Hysteria2 | پورت تصادفی UDP | Salamander + BBR + پنجره ۶۴ مگابایت | عبور از محدودسازی شدید UDP و تشخیص فعال |
+| **۶** | `Hysteria2-Salamander-Direct` | Hysteria2 | پورت تصادفی UDP | Salamander + BBR + پنجره ۶۴ مگابایت | عبور از محدودسازی شدید UDP و تشخیص فعال |
 
 > [!NOTE]
 > - نودهای اختیاری (به‌صورت پیش‌فرض خاموش): `VLESS-TLS+PQ+XHTTP+CDN`، `VLESS-CDN-Up-Reality-Down`، `VLESS-XHTTP-Direct-H2` (پورت 8445 TCP، دستور `xh h2direct on`)، `VLESS-Reality-Vision-Direct` (دستور `xh reality vision on`) و نودهای CDN H2/H3 (دستورهای `xh cdnh2 on` / `xh cdnh3 on`).
@@ -56,7 +56,7 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
 | **۵** | `VLESS-XHTTP-CDN-H3` | VLESS + XHTTP (H3) | 443 (Cloudflare CDN) | شتاب CDN همراه با QUIC 0-RTT بافر ۶۴MB | بهترین شتاب روی اینترنت‌های موبایل و دارای پکت‌لاس |
 | **۶** | `VLESS-XHTTP-Direct-H3` | VLESS + XHTTP (H3) | 8443 / UDP (مستقیم) | اتصال مستقیم QUIC / بافر ۶۴MB | اتصال مستقیم با تاخیر کم و پایداری بالا |
 | **۷** | `Hysteria2-H3-Direct` | Hysteria2 | UDP پورت تصادفی (مثلا 19142) | BBRv3 / استاندارد HTTP/3 | حداکثر سرعت دانلود و بازیابی آنی بسته‌های از دست رفته |
-| **۸** | `Hysteria2-TLS-BBR-Salamander` | Hysteria2 | UDP پورت تصادفی (مثلا 38969) | مبهم‌سازی Salamander + بافر ۶۴MB | عبور تضمینی از شدیدترین اختلالات و فیلترینگ ترافیک UDP |
+| **۸** | `Hysteria2-Salamander-Direct` | Hysteria2 | UDP پورت تصادفی (مثلا 38969) | مبهم‌سازی Salamander + بافر ۶۴MB | عبور تضمینی از شدیدترین اختلالات و فیلترینگ ترافیک UDP |
 | **۹** | `VLESS-Reality-Vision-Direct` | VLESS + REALITY (RAW) | 443 / TCP (پورت استاندارد) | اتصال مستقیم xtls-rprx-vision | پورت مستقیم ۴۴۳ با بالاترین اولویت شبکه |
 | **۱۰** | `VLESS-Reality-XHTTP-Direct` | VLESS + REALITY (RAW) | 443 بازگشت به 8001 | XHTTP + رمزگشایی داخلی vlessenc | نود رزرو با پوشش ترکیبی پورت ۴۴۳ |
 

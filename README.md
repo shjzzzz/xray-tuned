@@ -51,7 +51,7 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
 | **`VLESS-Reality-Up-CDN-Down`** | VLESS + XHTTP (443) | 上行直连低延时 + 下行 CDN 大带宽转发 | 23.6 ms | 735.2M | 537.5M | 直连上行保低延迟，突发下载走 CDN 保护 |
 | **`VLESS-XHTTP-Direct-H3`** | VLESS + XHTTP (8443) | 原生 QUIC (HTTP/3) / 64MB 窗口 | 17.7 ms | 681.2M | 419.2M | 跨洋链路高丢包环境直连极速加速 |
 | **`Hysteria2-H3-Direct`** | Hysteria2 (UDP 高端口) | 原生 BBRv3 / 128MB 连接流控窗口 | 57.4 ms | 818.7M | **764.4M** | 移动/校园网等严苛丢包网络千兆跑满 |
-| **`Hysteria2-TLS-BBR-Salamander`** | Hysteria2 (UDP 高端口) | Salamander 强混淆 + BBRv3 | 34.2 ms | 316.2M | 428.0M | 运营商严酷封锁 UDP 重灾区专用穿透通道 |
+| **`Hysteria2-Salamander-Direct`** | Hysteria2 (UDP 高端口) | Salamander 强混淆 + BBRv3 | 34.2 ms | 316.2M | 428.0M | 运营商严酷封锁 UDP 重灾区专用穿透通道 |
 
 > [!NOTE]
 > - **实机实测环境**：Oracle Cloud ARM64 (4 OCPU / 24GB RAM / 1Gbps) 端到端真实 `xh bench` 回环压测。
