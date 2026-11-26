@@ -20,16 +20,36 @@ prefer_ipv4_for_acme() {
 ACME_CERT_HOME="/root/.acme.sh/${REALITY_DOMAIN}_ecc"
 ACME_CERT_CONF="${ACME_CERT_HOME}/${REALITY_DOMAIN}.conf"
 
+# cert_covers <证书> <域名>：证书 SAN 是否覆盖该域名（精确匹配，或单级通配符 *.parent）
+cert_covers() {
+  local cert="$1" dom="$2" sans
+  [[ -f "$cert" && -n "$dom" ]] || return 1
+  sans=$(openssl x509 -in "$cert" -noout -ext subjectAltName 2>/dev/null | grep -o 'DNS:[^,[:space:]]*' | sed 's/^DNS://' || true)
+  grep -Fxqi "$dom" <<< "$sans" && return 0
+  [[ "$dom" == *.*.* ]] && grep -Fxqi "*.${dom#*.}" <<< "$sans"
+}
+
+# cert_usable <证书>：未在 $2 秒内过期，且同时覆盖 REALITY_DOMAIN 与 CDN_DOMAIN
+#
+# 真实事故（2026-11-26）：先用 Acme-yg 向导只给 reality 域名签了单域名证书，
+# 重装时下面的复用逻辑只看「没过期」就把它部署了——Reality / h3 / hy2 照常可用
+# （它们只用 reality 域名），但 Cloudflare 回源 cdn 域名时证书名不匹配，
+# Full(strict) 下返回 526，Reality-Up-CDN-Down 等所有走 CDN 的节点全断，
+# 而服务端日志、xh diag 都显示一切正常。复用前必须校验 SAN。
+cert_usable() {
+  local cert="$1" secs="${2:-86400}"
+  openssl x509 -in "$cert" -noout -checkend "$secs" >/dev/null 2>&1 || return 1
+  if ! cert_covers "$cert" "$REALITY_DOMAIN" || ! cert_covers "$cert" "$CDN_DOMAIN"; then
+    warn "跳过 $cert：证书未同时覆盖 ${REALITY_DOMAIN} 与 ${CDN_DOMAIN}（部署后 CDN 节点会 526）" >&2
+    return 1
+  fi
+}
+
 have_existing_dual_cert() {
   [[ -f "$ACME_CERT_CONF" ]] || return 1
   [[ -f "$ACME_CERT_HOME/fullchain.cer" ]] || return 1
   [[ -f "$ACME_CERT_HOME/${REALITY_DOMAIN}.key" ]] || return 1
-
-  openssl x509 -in "$ACME_CERT_HOME/fullchain.cer" -noout -checkend 1209600 >/dev/null 2>&1 || return 1  # 14 天内过期则重签
-  local cert_domains
-  cert_domains=$(openssl x509 -in "$ACME_CERT_HOME/fullchain.cer" -noout -ext subjectAltName 2>/dev/null | grep -o 'DNS:[^,[:space:]]*' | sed 's/^DNS://' || true)
-  grep -Fxq "$REALITY_DOMAIN" <<< "$cert_domains" &&
-    grep -Fxq "$CDN_DOMAIN" <<< "$cert_domains"
+  cert_usable "$ACME_CERT_HOME/fullchain.cer" 1209600  # 14 天内过期则重签
 }
 
 issue_dual_cert() {
@@ -65,14 +85,14 @@ issue_dual_cert() {
 detect_install_cert() {
   # 1. 优先检查 /root/ygkkkca/ (Acme-yg 证书库)
   if [[ -f "/root/ygkkkca/cert.crt" && -f "/root/ygkkkca/private.key" ]]; then
-    if openssl x509 -in "/root/ygkkkca/cert.crt" -noout -checkend 86400 >/dev/null 2>&1; then
+    if cert_usable "/root/ygkkkca/cert.crt"; then
       printf '%s:%s:%s' "/root/ygkkkca/cert.crt" "/root/ygkkkca/private.key" "Acme-yg 证书库 (/root/ygkkkca/)"
       return 0
     fi
   fi
   # 2. 检查 /etc/ssl/private/ (生产已有有效证书)
   if [[ -f "/etc/ssl/private/fullchain.cer" && -f "/etc/ssl/private/private.key" ]]; then
-    if openssl x509 -in "/etc/ssl/private/fullchain.cer" -noout -checkend 86400 >/dev/null 2>&1; then
+    if cert_usable "/etc/ssl/private/fullchain.cer"; then
       printf '%s:%s:%s' "/etc/ssl/private/fullchain.cer" "/etc/ssl/private/private.key" "现有生产证书 (/etc/ssl/private/)"
       return 0
     fi
@@ -120,6 +140,10 @@ else
           chmod 644 /etc/ssl/private/fullchain.cer 2>/dev/null || true
           chmod 640 /etc/ssl/private/private.key 2>/dev/null || true
           chown root:xray /etc/ssl/private/private.key 2>/dev/null || true
+          if ! cert_covers /etc/ssl/private/fullchain.cer "$CDN_DOMAIN"; then
+            warn "Acme-yg 证书不含 ${CDN_DOMAIN}：Cloudflare 回源会 526，所有 CDN 节点不可用"
+            warn "装完后执行 ${MANAGE_CMD:-xh} cert apply 重新签发双域名证书"
+          fi
         fi
       fi
     fi

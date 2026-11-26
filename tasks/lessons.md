@@ -50,3 +50,11 @@
   2. 在容器里用只读挂载跑一遍，是发现泄漏最便宜的办法；
   3. 判断「默认值」「基线」前，先 `git pull` 并以当前 `origin/main` 为准，不要用落后的本地克隆（上一轮据此写错了 README 的开关列表）；
   4. REALITY+PQ+Vision 与 Vision-Direct 共用 443 上同一个 Vision 客户端项，任何关闭 Vision 的操作都要先检查 PQ-Vision 是否还在用。
+
+## 8. 复用证书必须校验 SAN，不能只看有没有过期 (2026-11-26)
+- **错误现象**：除 `VLESS-Reality-Up-CDN-Down` 外所有节点正常；该节点超时、无任何服务端错误日志。`curl https://<cdn域名>/` 返回 Cloudflare **526**。`xh diag` 15 项全过。
+- **根本原因**：先前用 Acme-yg 向导只为 reality 域名签了单域名证书。安装脚本 `detect_install_cert` 复用 `/root/ygkkkca/`、`/etc/ssl/private/` 下的证书时只做 `-checkend`，不看 SAN，于是把它当成双域名证书部署。Reality / h3 / hy2 只用 reality 域名，全部可用；Cloudflare 以 Full(strict) 回源 cdn 域名时名称不匹配 → 526，Up-CDN-Down 的下行腿全断。diag 只检查「证书是否落地、指纹是否一致」，不检查证书内容。
+- **治理与防范规则**：
+  1. 任何「复用 / 导入 / 部署」证书的路径都要经过 `cert_usable`（未过期 **且** SAN 覆盖 `REALITY_DOMAIN` 与 `CDN_DOMAIN`，单级通配符算覆盖）；`deploy_cert_files` 遇到不覆盖的证书要明确告警；
+  2. `xh diag` 必须有一项端到端的 CDN 回源探测（525/526/52x 判失败），配置自检全过不等于链路通；
+  3. 节点是否可用以 `xh ping` 的实测结果为准；只涉及 CDN 一条腿的节点（Up-CDN-Down）尤其要单独看。

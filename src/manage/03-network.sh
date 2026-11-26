@@ -232,6 +232,35 @@ cmd_diag() {
   # 重启服务，但服务重新加载的还是那份从未更新过的旧文件——直到旧证书到期当天，
   # h3-direct / hy2 / 全部 CDN 节点同时失效。续期成功、重启成功、日志无异常，
   # 问题要到一个月后才发作，因此必须靠自检提前拦下。
+  # 证书 SAN 必须同时覆盖 reality 与 cdn 两个域名。
+  #
+  # 真实事故（2026-11-26）：部署的是只含 reality 域名的单域名证书（Acme-yg 向导签发，
+  # 重装时被直接复用）。Reality / h3 / hy2 只认 reality 域名，全部正常；但 Cloudflare
+  # 以 Full(strict) 回源 cdn 域名时证书名不匹配，返回 526，所有走 CDN 的节点断流。
+  # 下面「落地路径 / 指纹一致 / reloadcmd」各项全部通过——它们只检查证书有没有
+  # 更新到位，不检查证书本身签对了没有。
+  if [[ -f /etc/ssl/private/fullchain.cer ]]; then
+    local _miss; _miss=$(cert_missing_domains /etc/ssl/private/fullchain.cer)
+    if [[ -z "$_miss" ]]; then
+      chk "证书 SAN 覆盖 ${REALITY_DOMAIN:-?} 与 ${CDN_DOMAIN:-?}" 0
+    else
+      chk "证书 SAN 未覆盖: ${_miss}" 1 \
+        "CDN 回源会 526。执行 ${MANAGE_CMD} cert apply 选 2) DNS-01 重新签发双域名证书"
+    fi
+  fi
+
+  # 端到端：经 Cloudflare 访问 CDN 域名，525/526 = CF 到本机回源的 TLS 失败
+  if [[ -n "${CDN_DOMAIN:-}" ]] && command -v curl >/dev/null 2>&1; then
+    local _cc; _cc=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 "https://${CDN_DOMAIN}/" 2>/dev/null || true)
+    case "$_cc" in
+      525) chk "CDN 回源 525（CF 与源站 TLS 握手失败）" 1 "检查 443 上 Reality serverNames 是否包含 ${CDN_DOMAIN}、dest 是否指向 nginx" ;;
+      526) chk "CDN 回源 526（源站证书不被 Cloudflare 接受）" 1 "证书需覆盖 ${CDN_DOMAIN} 且未过期；或在 CF SSL/TLS 中确认模式" ;;
+      52[0-4]) chk "CDN 回源 ${_cc}（Cloudflare 连不上源站）" 1 "检查源站 443 是否可达、云安全组是否放行 TCP 443" ;;
+      000|"") chk "CDN 域名 ${CDN_DOMAIN} 请求超时" 1 "本机到 Cloudflare 的网络或 DNS 异常" ;;
+      *) chk "CDN 回源链路可用（https://${CDN_DOMAIN}/ → HTTP ${_cc}）" 0 ;;
+    esac
+  fi
+
   if [[ -n "${REALITY_DOMAIN:-}" ]] && [[ -d "$HOME/.acme.sh" ]]; then
     local _ac=""
     for _d in "$HOME/.acme.sh/${REALITY_DOMAIN}_ecc" "$HOME/.acme.sh/${REALITY_DOMAIN}"; do
@@ -681,8 +710,8 @@ NGINX_PGP_FPRS="D6786CE303D9A9022998DC6CC8464D549AF75C0A 43387825DDB1BB97EC36BA5
 # ==================================================
 # 节点真实网速压测与吞吐基准 (bench / speed)
 # ==================================================
-cmd_bench() {
-  info "正在准备全协议节点端到端网速压测引擎..."
+# 定位全量节点明文链接文件（bench / ping 共用）
+find_sub_raw() {
   local sub_dir="" raw_file=""
   if [[ -d "/usr/local/nginx/html/sub" ]]; then
     sub_dir=$(ls -d /usr/local/nginx/html/sub/*/ 2>/dev/null | head -1 || true)
@@ -690,11 +719,18 @@ cmd_bench() {
   fi
   [[ -z "$raw_file" && -f "/root/client-config.txt" ]] && raw_file="/root/client-config.txt"
   [[ -z "$raw_file" && -f "/etc/xhttp-cdn/all/client-config.txt" ]] && raw_file="/etc/xhttp-cdn/all/client-config.txt"
-  [[ -f "$raw_file" ]] || fail "未找到节点订阅配置文件，无法执行测速"
+  [[ -f "$raw_file" ]] || return 1
+  printf '%s' "$raw_file"
+}
+
+cmd_bench() {
+  info "正在准备全协议节点端到端网速压测引擎..."
+  local raw_file
+  raw_file=$(find_sub_raw) || fail "未找到节点订阅配置文件，无法执行测速"
 
   local filter="${1:-}"
   python3 - "$raw_file" "$filter" << 'PYBENCH'
-import sys, os, subprocess, json, time, urllib.parse, copy
+import sys, os, subprocess, json, time, urllib.parse, copy, shutil
 
 raw_file = sys.argv[1]
 filter_arg = sys.argv[2].lower() if len(sys.argv) > 2 else ""
@@ -788,7 +824,10 @@ for idx, (name, raw_line, parsed) in enumerate(nodes, 1):
     cfg = {}
     proc = None
 
-    if parsed.scheme == "hysteria2":
+    # sing-box 不是本项目的依赖，多数机器上没有；没有时改用 Xray 原生 hysteria 出站
+    # （Xray ≥ 26.3.27），否则两个 Hysteria2 节点在压测里永远显示 FAIL。
+    sb_bin = "/root/sbbox/sing-box" if os.path.isfile("/root/sbbox/sing-box") else shutil.which("sing-box")
+    if parsed.scheme == "hysteria2" and sb_bin:
         core_type = "sing-box"
         qs = urllib.parse.parse_qs(parsed.query)
         q = lambda k, d=None: qs.get(k, [d])[0]
@@ -812,15 +851,35 @@ for idx, (name, raw_line, parsed) in enumerate(nodes, 1):
         }
         cfg_file = f"{TMP_DIR}/sb_{idx}.json"
         with open(cfg_file, 'w') as f: json.dump(cfg, f)
-        sb_bin = "/root/sbbox/sing-box" if os.path.isfile("/root/sbbox/sing-box") else "sing-box"
         proc = subprocess.Popen([sb_bin, "run", "-c", cfg_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    elif parsed.scheme == "hysteria2":
+        qs = urllib.parse.parse_qs(parsed.query)
+        q = lambda k, d=None: qs.get(k, [d])[0]
+        ss = {"network": "hysteria", "security": "tls",
+              "tlsSettings": {"serverName": q("sni", ""), "alpn": ["h3"], "allowInsecure": q("insecure") == "1"},
+              "hysteriaSettings": {"version": 2, "auth": urllib.parse.unquote(parsed.username or "")}}
+        if q("fm"):
+            try: ss["finalmask"] = json.loads(q("fm"))
+            except Exception: pass
+        cfg = {
+            "log": {"loglevel": "error"},
+            "inbounds": [{"tag": "socks-in", "listen": "127.0.0.1", "port": port, "protocol": "socks", "settings": {"udp": True}}],
+            "outbounds": [{"tag": "proxy-out", "protocol": "hysteria",
+                           "settings": {"version": 2, "address": "127.0.0.1", "port": parsed.port or 443},
+                           "streamSettings": ss}]
+        }
+        cfg_file = f"{TMP_DIR}/xray_{idx}.json"
+        with open(cfg_file, 'w') as f: json.dump(cfg, f)
+        proc = subprocess.Popen(["xray", "run", "-c", cfg_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
         # VLESS 节点解析
         qs = urllib.parse.parse_qs(parsed.query)
         q = lambda k, d=None: qs.get(k, [d])[0]
         sec = q("security", "none")
         net = q("type", "tcp")
-        alpn = qs.get("alpn", ["h2"])
+        # 链接里是 alpn=h2,http/1.1（一个逗号分隔的字符串），要拆成列表；
+        # 原样塞进去会变成一个名为 "h2,http/1.1" 的非法 ALPN
+        alpn = [a for a in q("alpn", "h2").split(",") if a]
         sni = q("sni", "")
         uid = parsed.username or ""
         tgt_addr = "127.0.0.1" if sec != "tls" or "cdn" not in name.lower() else (q("host", "") or "127.0.0.1")
@@ -857,6 +916,10 @@ for idx, (name, raw_line, parsed) in enumerate(nodes, 1):
                 except: pass
             ob["streamSettings"]["xhttpSettings"] = xh
 
+        if q("fm"):
+            # H3 节点的 QUIC 窗口等参数放在 fm（finalmask）里，不带上测出来的是默认窗口
+            try: ob["streamSettings"]["finalmask"] = json.loads(q("fm"))
+            except Exception: pass
         ob["streamSettings"]["sockopt"] = {"tcpFastOpen": True, "tcpNoDelay": True}
         cfg = {
             "log": {"loglevel": "error"},
@@ -899,6 +962,142 @@ for r in results:
     print(f"{r['name']:<38} {r['core']:<9} {ttfb_s:>9} {dl_s:>20} {ul_s:>20} {st:>8}")
 print("="*112)
 PYBENCH
+}
+
+# ==================================================
+# 节点轻量连通性测试 (ping)
+# ==================================================
+# 和 bench 的区别：不跑 60MB 流量，每个节点只发 3 次 generate_204 + 1 次出口 IP 查询，
+# 数秒出结果，适合改完配置 / 换证书后快速确认「通不通」。
+#
+# 每个节点测两条路径：
+#   public   链接里的真实地址（域名 / 公网 IP），经过 DNS、云安全组、CDN
+#   loopback 强制连 127.0.0.1，只经过本机 xray / nginx
+# public 失败而 loopback 通过 ⇒ 问题在网络路径（安全组 / DNS / 回环 NAT）；
+# 两者都失败 ⇒ 服务端配置问题。注意 Up-CDN-Down 这类节点的下行始终经 Cloudflare，
+# loopback 也替代不了，两条都失败时先看 xh diag 的「CDN 回源」一项。
+#
+# 用法: xh ping [关键词] [public|loopback|all]   默认 all
+cmd_ping() {
+  local raw_file filter="" modes="public,loopback"
+  raw_file=$(find_sub_raw) || fail "未找到节点订阅配置文件，无法测试"
+  command -v xray >/dev/null 2>&1 || fail "未找到 xray 可执行文件"
+  for a in "$@"; do
+    case "$a" in
+      public|loopback) modes="$a" ;;
+      all) modes="public,loopback" ;;
+      *) filter="$a" ;;
+    esac
+  done
+  info "节点连通性测试（每节点 3 次 generate_204，路径: ${modes}）"
+  python3 -I - "$raw_file" "$filter" "$modes" << 'PYPING'
+import sys, os, json, time, subprocess, tempfile, shutil, statistics, urllib.parse as U
+
+raw, flt, modes = sys.argv[1], sys.argv[2].lower(), sys.argv[3].split(",")
+TMP = tempfile.mkdtemp(prefix="xh_ping_")
+
+def jload(v):
+    try: return json.loads(v)
+    except Exception: return None
+
+def build(p, addr):
+    q = {k: v[0] for k, v in U.parse_qs(p.query).items()}
+    port = p.port or 443
+    if p.scheme == "hysteria2":
+        ss = {"network": "hysteria", "security": "tls",
+              "tlsSettings": {"serverName": q.get("sni", ""), "alpn": ["h3"], "allowInsecure": q.get("insecure") == "1"},
+              "hysteriaSettings": {"version": 2, "auth": U.unquote(p.username or "")}}
+        if jload(q.get("fm", "")): ss["finalmask"] = jload(q["fm"])
+        return {"protocol": "hysteria", "settings": {"version": 2, "address": addr, "port": port}, "streamSettings": ss}
+    sec, net = q.get("security", "none"), q.get("type", "tcp")
+    user = {"id": p.username, "encryption": q.get("encryption", "none")}
+    if q.get("flow"): user["flow"] = q["flow"]
+    ss = {"network": net, "security": sec}
+    if sec == "reality":
+        ss["realitySettings"] = {"serverName": q.get("sni", ""), "fingerprint": q.get("fp", "chrome"),
+                                 "publicKey": q.get("pbk", ""), "shortId": q.get("sid", ""), "spiderX": q.get("spx", "")}
+    elif sec == "tls":
+        ss["tlsSettings"] = {"serverName": q.get("sni", ""), "fingerprint": q.get("fp", "chrome"),
+                             "alpn": [a for a in q.get("alpn", "h2").split(",") if a],
+                             "allowInsecure": q.get("allowInsecure") == "1" or q.get("insecure") == "1"}
+    if net == "xhttp":
+        x = {"path": q.get("path", "/"), "mode": q.get("mode", "auto")}
+        if q.get("host"): x["host"] = q["host"]
+        if jload(q.get("extra", "")): x["extra"] = jload(q["extra"])
+        ss["xhttpSettings"] = x
+    if jload(q.get("fm", "")): ss["finalmask"] = jload(q["fm"])
+    return {"protocol": "vless", "settings": {"vnext": [{"address": addr, "port": port, "users": [user]}]}, "streamSettings": ss}
+
+def curl(port, url, body=False):
+    r = subprocess.run(["curl", "-s", "-o", "-" if body else "/dev/null", "--max-time", "8",
+                        "--socks5-hostname", f"127.0.0.1:{port}", "-w", "\n%{http_code} %{time_total}", url],
+                       capture_output=True, text=True)
+    lines = r.stdout.rstrip("\n").split("\n")
+    code, tt = (lines[-1].split() + ["000", "0"])[:2]
+    return code, float(tt), "\n".join(lines[:-1])
+
+def run(idx, p, mode):
+    port = 31800 + idx
+    ob = build(p, "127.0.0.1" if mode == "loopback" else p.hostname)
+    ob["tag"] = "proxy"
+    cfg = {"log": {"loglevel": "warning"},
+           "inbounds": [{"listen": "127.0.0.1", "port": port, "protocol": "socks", "settings": {"udp": True}}],
+           "outbounds": [ob]}
+    cf, lf = f"{TMP}/{idx}.json", f"{TMP}/{idx}.log"
+    with open(cf, "w") as f: json.dump(cfg, f)
+    t = subprocess.run(["xray", "run", "-test", "-c", cf], capture_output=True, text=True)
+    if t.returncode != 0:
+        msg = (t.stdout + t.stderr).strip().splitlines()
+        return None, "客户端配置无效: " + (msg[-1][-120:] if msg else "?")
+    with open(lf, "w") as log:
+        proc = subprocess.Popen(["xray", "run", "-c", cf], stdout=log, stderr=subprocess.STDOUT)
+    try:
+        time.sleep(1.0)
+        lat = [tt * 1000 for code, tt, _ in (curl(port, "http://www.gstatic.com/generate_204") for _ in range(3)) if code == "204"]
+        if not lat:
+            errs = [l.strip() for l in open(lf, errors="replace") if "rror" in l or "fail" in l.lower()]
+            return None, (errs[-1][-140:] if errs else "请求超时（xray 无错误日志）")
+        ip = ""
+        code, _, body = curl(port, "https://www.cloudflare.com/cdn-cgi/trace", body=True)
+        if code == "200":
+            d = dict(l.split("=", 1) for l in body.splitlines() if "=" in l)
+            ip = f"{d.get('ip', '?')} ({d.get('loc', '?')}/{d.get('colo', '?')})"
+        return {"n": len(lat), "first": lat[0], "med": statistics.median(lat), "ip": ip}, None
+    finally:
+        proc.terminate()
+        try: proc.wait(2)
+        except Exception: proc.kill()
+
+nodes = []
+for line in open(raw, encoding="utf-8"):
+    line = line.strip()
+    if not line or "://" not in line: continue
+    p = U.urlparse(line)
+    if p.scheme not in ("vless", "hysteria2"): continue
+    name = U.unquote(p.fragment or p.hostname or "?")
+    if flt and flt not in name.lower(): continue
+    nodes.append((name, p))
+if not nodes:
+    print(f"没有匹配的节点（关键词: '{flt}'）"); sys.exit(0)
+
+w = max(len(n) for n, _ in nodes) + 2
+print(f"{'节点':<{w}}{'路径':<10}{'结果':<6}{'成功':>5}{'首包ms':>9}{'中位ms':>9}  出口 / 错误")
+print("-" * (w + 70))
+fails = i = 0
+for name, p in nodes:
+    for m in modes:
+        i += 1
+        r, err = run(i, p, m)
+        if r:
+            print(f"{name:<{w}}{m:<10}\033[32mPASS\033[0m  {r['n']:>3}/3{r['first']:>9.0f}{r['med']:>9.0f}  {r['ip']}", flush=True)
+        else:
+            fails += 1
+            print(f"{name:<{w}}{m:<10}\033[31mFAIL\033[0m  {'0/3':>5}{'-':>9}{'-':>9}  {err}", flush=True)
+shutil.rmtree(TMP, ignore_errors=True)
+print("-" * (w + 70))
+print(f"共 {i} 项，失败 {fails} 项" + ("；失败项可先跑 xh diag 排查服务端" if fails else ""))
+sys.exit(1 if fails else 0)
+PYPING
 }
 
 # ==================================================

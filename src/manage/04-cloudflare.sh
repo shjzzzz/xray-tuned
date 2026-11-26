@@ -20,18 +20,44 @@ cdn_behind_proxy() {
   ! grep -Fxq "$VPS_IP" <<< "$_ips"
 }
 
+# cert_covers <证书> <域名>：证书 SAN 是否覆盖该域名（精确匹配，或单级通配符 *.parent）
+cert_covers() {
+  local cert="$1" dom="$2" sans
+  [[ -f "$cert" && -n "$dom" ]] || return 1
+  sans=$(openssl x509 -in "$cert" -noout -ext subjectAltName 2>/dev/null | grep -o 'DNS:[^,[:space:]]*' | sed 's/^DNS://' || true)
+  grep -Fxqi "$dom" <<< "$sans" && return 0
+  [[ "$dom" == *.*.* ]] && grep -Fxqi "*.${dom#*.}" <<< "$sans"
+}
+
+# cert_missing_domains <证书>：输出本项目需要、但证书 SAN 未覆盖的域名（空 = 全覆盖）
+cert_missing_domains() {
+  local d out=""
+  for d in "${REALITY_DOMAIN:-}" "${CDN_DOMAIN:-}"; do
+    [[ -n "$d" ]] || continue
+    cert_covers "$1" "$d" || out="$out $d"
+  done
+  printf '%s' "${out# }"
+}
+
+# cert_usable <证书>：一天内不过期且覆盖双域名。只看「没过期」会把单域名证书
+# （如 Acme-yg 只签了 reality 域名）当成可用，部署后 CDN 回源 526，见 cert_covers。
+cert_usable() {
+  openssl x509 -in "$1" -noout -checkend 86400 >/dev/null 2>&1 || return 1
+  [[ -z "$(cert_missing_domains "$1")" ]]
+}
+
 # 智能检测现有证书路径（返回 "fullchain:key:source_desc"）
 detect_existing_cert() {
   # 1. 优先检测当前生产生效证书 /etc/ssl/private/
   if [[ -f "/etc/ssl/private/fullchain.cer" && -f "/etc/ssl/private/private.key" ]]; then
-    if openssl x509 -in "/etc/ssl/private/fullchain.cer" -noout -checkend 86400 >/dev/null 2>&1; then
+    if cert_usable "/etc/ssl/private/fullchain.cer"; then
       printf '%s:%s:%s' "/etc/ssl/private/fullchain.cer" "/etc/ssl/private/private.key" "生产证书库 (/etc/ssl/private/)"
       return 0
     fi
   fi
   # 2. 检测 Acme-yg 证书库 /root/ygkkkca/
   if [[ -f "/root/ygkkkca/cert.crt" && -f "/root/ygkkkca/private.key" ]]; then
-    if openssl x509 -in "/root/ygkkkca/cert.crt" -noout -checkend 86400 >/dev/null 2>&1; then
+    if cert_usable "/root/ygkkkca/cert.crt"; then
       printf '%s:%s:%s' "/root/ygkkkca/cert.crt" "/root/ygkkkca/private.key" "Acme-yg 证书库 (/root/ygkkkca/)"
       return 0
     fi
@@ -40,7 +66,7 @@ detect_existing_cert() {
   local _d
   for _d in "$HOME/.acme.sh/${REALITY_DOMAIN:-}_ecc" "$HOME/.acme.sh/${REALITY_DOMAIN:-}"; do
     if [[ -f "$_d/fullchain.cer" && -f "$_d/${REALITY_DOMAIN:-}.key" ]]; then
-      if openssl x509 -in "$_d/fullchain.cer" -noout -checkend 86400 >/dev/null 2>&1; then
+      if cert_usable "$_d/fullchain.cer"; then
         printf '%s:%s:%s' "$_d/fullchain.cer" "$_d/${REALITY_DOMAIN:-}.key" "acme.sh 证书库 ($_d)"
         return 0
       fi
@@ -53,6 +79,12 @@ detect_existing_cert() {
 deploy_cert_files() {
   local src_cert="$1" src_key="$2"
   [[ -f "$src_cert" && -f "$src_key" ]] || fail "指定的证书或私钥不存在: $src_cert / $src_key"
+  local _miss; _miss=$(cert_missing_domains "$src_cert")
+  if [[ -n "$_miss" ]]; then
+    warn "该证书未覆盖: ${_miss}"
+    warn "Cloudflare 以 Full(strict) 回源时会返回 526，走 CDN 的节点（含 Reality-Up-CDN-Down）将不可用"
+    warn "建议改用 ${MANAGE_CMD} cert apply → 2) Cloudflare DNS-01 签发双域名证书"
+  fi
 
   mkdir -p /etc/ssl/private
   chmod 755 /etc/ssl/private 2>/dev/null || true

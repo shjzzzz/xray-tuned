@@ -142,6 +142,7 @@ _menu_define() {
     "屏蔽广告域名  关闭::cmd_block ads off")
 
   MENU_PERF=("[2] 链路测速与性能审计"
+    "⚡ 节点轻量连通性测试 (ping)::cmd_ping"
     "🚀 节点全量真实网速与吞吐压测 (bench / speed)::cmd_bench"
     "🚀 按关键词过滤压测…::menu_ask 关键词 cmd_bench"
     "🔍 只读全栈系统与网络性能审计 (audit)::cmd_audit"

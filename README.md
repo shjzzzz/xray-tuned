@@ -72,6 +72,7 @@ xh restart              # 平滑重载并重启 xray 与 nginx 服务
 xh log xray|nginx       # 跟踪实时出入站访问与错误日志
 
 # === 2. 真实网速与系统性能审计 ===
+xh ping                 # 数秒内测完所有节点通不通（握手延迟 + 出口 IP，不跑流量）
 xh bench                # 一键对所有节点执行端到端并发测速（握手延迟、下行/上行带宽、TTFB）
 xh audit                # 只读诊断 CPU 拓扑、网卡中断均衡 (RPS/FQ)、BBRv3 状态及内核冲突
 

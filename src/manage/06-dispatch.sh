@@ -20,9 +20,10 @@ xray-xhttp 全能管理命令 (v${XH_VERSION:-5.2.2})
   xh uninstall          卸载全部组件并清理配置
 
 【链路压测与性能审计 (集成)】
+  xh ping [<filter>] [public|loopback]  ⚡ 轻量节点连通性测试 (每节点 3 次握手+出口 IP，数秒出结果)，别名: xh check
   xh bench [<filter>]   🚀 真实端到端网速压测 (50MB下行/10MB上行/TTFB/延时)，别名: xh speed
   xh audit              🔍 只读全栈系统性能审计 (CPU拓扑/中断平衡/BBRv3/NAPI队列)
-  xh diag               UDP 与 HTTP/3 节点连通性链路自检
+  xh diag               服务端链路自检 (UDP/HTTP3 监听、证书 SAN、CDN 回源)
   xh conflict           sysctl 内核参数冲突与覆盖检测
   xh portconflict       系统端口占用排查
 
@@ -84,6 +85,7 @@ case "${1:-}" in
   portconflict) cmd_portconflict ;;
   diag)       cmd_diag ;;
   bench|speed|test) shift; cmd_bench "$@" ;;
+  ping|check) shift; cmd_ping "$@" ;;
   audit|perf) shift; cmd_audit "$@" ;;
   log)        shift; cmd_log "$@" ;;
   block)      shift; cmd_block "$@" ;;
