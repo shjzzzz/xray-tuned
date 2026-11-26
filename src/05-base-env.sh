@@ -219,11 +219,15 @@ if [[ -n "${NODE_TAG:-}" && "${NODE_TAG}" != "vps" && "${NODE_TAG}" != "localhos
 else
   NODE_SUFFIX=""
 fi
-UUID1=$(xray uuid)
-UUID2=$(xray uuid)
-KEY_OUTPUT=$(xray x25519 2>&1)
-PRIVATE_KEY=$(echo "$KEY_OUTPUT" | awk 'tolower($0) ~ /private/ { print $NF; exit }')
-PUBLIC_KEY=$(echo "$KEY_OUTPUT"  | awk 'tolower($0) ~ /public/  { print $NF; exit }')
+# 重装保持订阅不变：UUID 与 Reality 密钥对可由环境变量传入（取自 /etc/xhttp-cdn/node.env），未提供才新生成。
+# 私钥与公钥必须成对提供，缺一则一并重新生成，避免密钥对不匹配。
+UUID1="${UUID1:-$(xray uuid)}"
+UUID2="${UUID2:-$(xray uuid)}"
+if [[ -z "${PRIVATE_KEY:-}" || -z "${PUBLIC_KEY:-}" ]]; then
+  KEY_OUTPUT=$(xray x25519 2>&1)
+  PRIVATE_KEY=$(echo "$KEY_OUTPUT" | awk 'tolower($0) ~ /private/ { print $NF; exit }')
+  PUBLIC_KEY=$(echo "$KEY_OUTPUT"  | awk 'tolower($0) ~ /public/  { print $NF; exit }')
+fi
 [[ -z "$PRIVATE_KEY" ]] && error "未能提取 Private Key，xray x25519 输出: $KEY_OUTPUT"
 [[ -z "$PUBLIC_KEY" ]] && error "未能提取 Public Key，xray x25519 输出: $KEY_OUTPUT"
 SHORT_ID="${SHORT_ID:-$(openssl rand -hex 4 2>/dev/null || echo "$UUID1" | tr -d '-' | cut -c1-8)}"
