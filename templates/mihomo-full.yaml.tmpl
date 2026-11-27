@@ -178,6 +178,46 @@ proxy-groups:
       #>>FEATURE_REALITY_VISION
     icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/speed.svg
 
+  # H3 优先（fallback，默认项）：按列表顺序取第一个可用节点——先 QUIC/HTTP3，全部不通再回落到 TCP/HTTP2。
+  # ALPN 本身做不到「先 h3 后 h2」：h3 只能走 QUIC、h2 只能走 TCP，客户端在发 ALPN 前就已选定传输层，
+  # Xray 也没有 QUIC 失败自动回落 TCP 的机制，所以「优先 h3」只能在节点组层面实现。
+  # 已知取舍（见「直连择优」注释）：fallback 只判断通不通、不判断快不快，h3 晚高峰变慢但仍可用时不会切走；
+  # 这时可在「节点选择」里手动切到「直连择优」或「自动选择」（按延迟择优）。
+  - name: H3 优先
+    type: fallback
+    interval: 60
+    timeout: 5000
+    url: https://www.google.com/generate_204
+    expected-status: 204
+    lazy: true
+    max-failed-times: 3
+    hidden: false
+    proxies:
+      # —— HTTP/3（QUIC / UDP）——
+      #<<FEATURE_H3_DIRECT
+      - VLESS-XHTTP-Direct-H3${NODE_SUFFIX}
+      #>>FEATURE_H3_DIRECT
+      #<<FEATURE_HY2_H3
+      - Hysteria2-H3-Direct${NODE_SUFFIX}
+      #>>FEATURE_HY2_H3
+      #<<FEATURE_CDN_H3
+      - VLESS-XHTTP-CDN-H3${NODE_SUFFIX}
+      #>>FEATURE_CDN_H3
+      #<<FEATURE_HY2_OBFS
+      - Hysteria2-Obfs-Direct${NODE_SUFFIX}
+      #>>FEATURE_HY2_OBFS
+      # —— HTTP/2（TCP）回落 ——
+      #<<FEATURE_REALITY_XHTTP
+      - VLESS-Reality-XHTTP-Direct${NODE_SUFFIX}
+      #>>FEATURE_REALITY_XHTTP
+      #<<FEATURE_UP_CDN_DOWN_MIHOMO
+      - VLESS-Reality-Up-CDN-Down${NODE_SUFFIX}
+      #>>FEATURE_UP_CDN_DOWN_MIHOMO
+      #<<FEATURE_TLS_PQ_XHTTP
+      - VLESS-TLS+PQ+XHTTP+CDN${NODE_SUFFIX}
+      #>>FEATURE_TLS_PQ_XHTTP
+    icon: https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/speed.svg
+
   - name: 节点选择
     type: select
     interval: 300
@@ -187,6 +227,7 @@ proxy-groups:
     max-failed-times: 3
     hidden: false
     proxies:
+      - H3 优先
       - 自动选择
       - 直连择优
     include-all: true

@@ -335,6 +335,9 @@ if yaml:
             cfg["proxies"] = new_proxies
             valid_names = {p.get("name") for p in new_proxies if isinstance(p, dict)}
             for g in (cfg.get("proxy-groups") or []):
+                # 「H3 优先」只按现有节点裁剪：成员是固定顺序的 h3→h2 列表，引用已关闭的节点 mihomo 会拒绝加载
+                if isinstance(g, dict) and g.get("name") == "H3 优先" and isinstance(g.get("proxies"), list):
+                    g["proxies"] = [x for x in g["proxies"] if x in valid_names]
                 if isinstance(g, dict) and g.get("name") == "直连择优" and isinstance(g.get("proxies"), list):
                     gp = [x for x in g["proxies"] if x in valid_names]
                     for rname in ("VLESS-REALITY+PQ+Vision", "VLESS-Reality-Vision-Direct", "VLESS-Reality-XHTTP-Direct"):
@@ -1025,7 +1028,7 @@ cmd_cdnh3() {
     show|status)
       echo ""
       echo -e "${CYAN}=== CDN QUIC(h3) 节点状态 ===${NC}"
-      local cur_h3="${FEATURE_CDN_H3:-false}"
+      local cur_h3="${FEATURE_CDN_H3:-true}"
       if [[ "$cur_h3" == "true" ]]; then
         echo -e "  当前状态:       ${GREEN}已开启 (Enabled)${NC}"
       else

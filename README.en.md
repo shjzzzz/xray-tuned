@@ -45,7 +45,8 @@ The default install command (no `FEATURE_*` switches) generates exactly these 6 
 | **6** | `Hysteria2-Salamander-Direct` | Hysteria2 | UDP Dynamic Port | Salamander Obfs + BBR + 64MB window | Extreme ISP UDP throttling & active-probing evasion |
 
 > [!NOTE]
-> - **Optional nodes** (off by default): `VLESS-REALITY+PQ+Vision` (`xh pq reality on`), `VLESS-CDN-Up-Reality-Down`, `VLESS-XHTTP-Direct-H2` (8445 TCP, `xh h2direct on`), `VLESS-Reality-Vision-Direct` (`xh reality vision on`), CDN H2/H3 nodes (`xh cdnh2 on` / `xh cdnh3 on`).
+> - **Optional nodes** (off by default): `VLESS-REALITY+PQ+Vision` (`xh pq reality on`), `VLESS-CDN-Up-Reality-Down`, `VLESS-XHTTP-Direct-H2` (8445 TCP, `xh h2direct on`), `VLESS-Reality-Vision-Direct` (`xh reality vision on`), CDN H2 node (`xh cdnh2 on`). `VLESS-XHTTP-CDN-H3` is on by default (requires HTTP/3 enabled in Cloudflare).
+> - **H3-first group**: the Mihomo subscription defaults to an `H3 优先` fallback group — HTTP/3 (QUIC) nodes first, falling back to HTTP/2 (TCP) nodes only when all H3 nodes fail.
 > - **Hysteria2 nodes** use dynamic high UDP ports and declare 64MB stream / 128MB connection receive windows to eliminate BDP bottlenecks.
 > - **Turn any node on or off later** with `xh pq|reality|split|hy2|h3direct|h2direct|cdnh2|cdnh3`.
 

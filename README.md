@@ -55,6 +55,7 @@ bash <(curl -fsSL https://github.com/shjzzzz/xray-tuned/releases/latest/download
 
 > [!NOTE]
 > - ¹ `xh ping` 中位握手延迟（含 Cloudflare 一跳）。
+> - **H3 优先**：`VLESS-XHTTP-CDN-H3`（经 Cloudflare 的 QUIC 节点）默认开启；Mihomo 订阅默认使用「H3 优先」故障转移组——先用 HTTP/3（QUIC）节点，全部不通才回落到 HTTP/2（TCP）节点。ALPN 本身无法做到「先 h3 后 h2」，所以在节点组层面实现。
 > - **实机实测环境**：Oracle Cloud ARM64 (4 OCPU / 24GB RAM / 1Gbps) 端到端真实 `xh bench` 回环压测。
 > - **后量子安全 (PQ)**：核心节点全面支持 NIST ML-KEM-768 密钥交换，并在客户端配置中自动注入 `support-x25519mlkem768: true`，杜绝 ClientHello 握手失败。
 

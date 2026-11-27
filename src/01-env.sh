@@ -50,7 +50,7 @@ fi
 # ==================================================
 
 PROJECT_NAME="xray-xhttp"
-PROJECT_VERSION="1.1.0"
+PROJECT_VERSION="1.1.1"
 PROJECT_REPO="shjzzzz/xray-tuned"
 # 默认推荐的 Xray-core 版本：回退版本 v26.10.21（含 v26.9.30 起的 XDRIVE / MASQUE / Noise / WFP 特性，并移除了 3 张被攻破的中间 CA 根证书；
 # v26.10.10 / v26.10.17 已被官方撤版）。正常情况下按通道（stable=/releases/latest）自适应取最新，查询失败才用它。
@@ -133,8 +133,8 @@ HY2_PORT=${HY2_PORT:-}
 # FEATURE_CDN_H2：是否生成经 CDN 的 TCP(h2) 节点 VLESS-XHTTP-CDN-H2（默认关闭；需要开启时 FEATURE_CDN_H2=true 或装好后 xh cdnh2 on）。
 FEATURE_CDN_H2=${FEATURE_CDN_H2:-false}
 
-# FEATURE_CDN_H3：是否生成经 CDN 的 QUIC(h3) 节点 VLESS-XHTTP-CDN-H3（默认关闭；需要开启时 FEATURE_CDN_H3=true 或装好后 xh cdnh3 on）。
-FEATURE_CDN_H3=${FEATURE_CDN_H3:-false}
+# FEATURE_CDN_H3：是否生成经 CDN 的 QUIC(h3) 节点 VLESS-XHTTP-CDN-H3（默认开启，需 Cloudflare 开启 HTTP/3；关闭用 FEATURE_CDN_H3=false 或 xh cdnh3 off）。
+FEATURE_CDN_H3=${FEATURE_CDN_H3:-true}
 
 # FEATURE_BLOCK_CN / FEATURE_BLOCK_ADS（v4.9.53，默认关闭）：出站屏蔽回国 IP（geoip:cn）/ 广告域名
 # （geosite:category-ads-all），参考 zxcvos/Xray-script 的可选规则。运行期用 xh block cn|ads on|off 切换。

@@ -55,7 +55,7 @@ append_profile() {
 FEATURE_XPADDING=${FEATURE_XPADDING:-false}
 FEATURE_CDN_ECH=${FEATURE_CDN_ECH:-true}
 FEATURE_CDN_H2=${FEATURE_CDN_H2:-false}
-FEATURE_CDN_H3=${FEATURE_CDN_H3:-false}
+FEATURE_CDN_H3=${FEATURE_CDN_H3:-true}
 FEATURE_TLS_PQ_XHTTP=${FEATURE_TLS_PQ_XHTTP:-true}
 FEATURE_TLS_PQ_VISION=${FEATURE_TLS_PQ_VISION:-false}
 FEATURE_REALITY_PQ_VISION=${FEATURE_REALITY_PQ_VISION:-false}
@@ -106,7 +106,7 @@ cp "$OUT_DIR/install.sh" "$OUT_DIR/install-xpadding.sh"
 
 # 生成干净的 xh 独立可执行管理脚本
 sed -n '/cat > "\$MANAGE_BIN" << .XHMANAGEEOF./,/^XHMANAGEEOF$/p' "$OUT_DIR/install.sh" | sed '1d;$d' > "$OUT_DIR/xh"
-sed -i 's|@@XH_VERSION@@|1.1.0|' "$OUT_DIR/xh"
+sed -i 's|@@XH_VERSION@@|1.1.1|' "$OUT_DIR/xh"
 chmod +x "$OUT_DIR/xh"
 
 echo "Generated $OUT_DIR/install.sh, $OUT_DIR/install-xpadding.sh, and $OUT_DIR/xh"

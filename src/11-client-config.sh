@@ -313,7 +313,7 @@ fi
 # 之所以必须另开一条而不能给节点 1 加个 h3：mihomo 仅在 alpn **恰好等于** h3 时才走
 # HTTP/3（transport/xhttp/client.go:159），列表里多一个值就退回 TCP。
 # 默认关闭（v4.9.64；FEATURE_CDN_H3=true 或 xh cdnh3 on 开启）。
-if [[ "${FEATURE_CDN_H3:-false}" == true ]]; then
+if [[ "${FEATURE_CDN_H3:-true}" == true ]]; then
   H3_CDN_NODE_LINE="vless://${UUID2}@${CDN_CONNECT_ADDR}:443?encryption=none&security=tls&sni=${CDN_DOMAIN}&fp=chrome&alpn=h3&insecure=0&allowInsecure=0${CDN_ECH_QUERY_ENC:+&ech=${CDN_ECH_QUERY_ENC}}&type=xhttp&host=${CDN_DOMAIN}&path=${XHTTP_PATH}&mode=auto&extra=${XPAD_CDN_EXTRA_ENC}${XH3_FM_PARAM}#VLESS-XHTTP-CDN-H3${NODE_SUFFIX}"
 else
   H3_CDN_NODE_LINE=""
@@ -391,7 +391,7 @@ else
   MASQUE_NODE_LINE=""
 fi
 
-info "节点集: cdn-h2(${FEATURE_CDN_H2:-false}) cdn-h3(${FEATURE_CDN_H3:-false}) + h3-direct(${FEATURE_H3_DIRECT}) + Hysteria2-H3(${FEATURE_HY2_H3:-false}) + Hysteria2-Obfs(${FEATURE_HY2_OBFS:-false}) + Reality-up-CDN-down(${FEATURE_REALITY_UP_CDN_DOWN:-false}) + Reality x2 [备用默认关闭: CDN-up-Reality-down(${FEATURE_CDN_UP_REALITY_DOWN:-false}) MASQUE(${FEATURE_MASQUE:-false})]"
+info "节点集: cdn-h2(${FEATURE_CDN_H2:-false}) cdn-h3(${FEATURE_CDN_H3:-true}) + h3-direct(${FEATURE_H3_DIRECT}) + Hysteria2-H3(${FEATURE_HY2_H3:-false}) + Hysteria2-Obfs(${FEATURE_HY2_OBFS:-false}) + Reality-up-CDN-down(${FEATURE_REALITY_UP_CDN_DOWN:-false}) + Reality x2 [备用默认关闭: CDN-up-Reality-down(${FEATURE_CDN_UP_REALITY_DOWN:-false}) MASQUE(${FEATURE_MASQUE:-false})]"
 
 cat > "$USER_HOME/client-config.txt" << CLIENTEOF
 @@include templates/client-config.txt.tmpl
